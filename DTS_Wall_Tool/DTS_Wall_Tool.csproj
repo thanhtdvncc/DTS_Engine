@@ -76,24 +76,47 @@
     <Reference Include="System.Xml" />
   </ItemGroup>
   <ItemGroup>
-    <Compile Include="Core\AcadUtils.cs" />
-    <Compile Include="Core\Geometry.cs" />
-    <Compile Include="Core\LabelUtils.cs" />
-    <Compile Include="Core\MappingEngine.cs" />
-    <Compile Include="Core\MappingRecord.cs" />
-    <Compile Include="Core\SapData.cs" />
-    <Compile Include="Core\SapUtils.cs" />
-    <Compile Include="Core\StoryData.cs" />
-    <Compile Include="Core\WallData.cs" />
-    <Compile Include="Core\XDataUtils.cs" />
-    <Compile Include="Engines\LoadCalculator.cs" />
-    <Compile Include="Engines\SpatialHash.cs" />
-    <Compile Include="Engines\WallSegmentProcessor.cs" />
+    <Compile Include="Commands\CommandBase.cs" />
+    <Compile Include="Commands\LinkCommands.cs" />
+    <Compile Include="Commands\OriginCommands.cs" />
+    <Compile Include="Commands\ProcessCommands.cs" />
+    <Compile Include="Commands\SapCommands.cs" />
+    <Compile Include="Commands\ScanCommands.cs" />
+    <Compile Include="Commands\UtilityCommands.cs" />
+    <Compile Include="Core\Algorithms\AngleAlgorithms.cs" />
+    <Compile Include="Core\Algorithms\DistanceAlgorithms.cs" />
+    <Compile Include="Core\Algorithms\IntersectionAlgorithms.cs" />
+    <Compile Include="Core\Algorithms\MergeAlgorithms.cs" />
+    <Compile Include="Core\Algorithms\OverlapAlgorithms.cs" />
+    <Compile Include="Core\Algorithms\ProjectionAlgorithms.cs" />
+    <Compile Include="Core\Data\MappingRecord.cs" />
+    <Compile Include="Core\Data\SapFrame.cs" />
+    <Compile Include="Core\Data\StoryData.cs" />
+    <Compile Include="Core\Data\WallData.cs" />
+    <Compile Include="Core\Engines\LoadCalculator.cs" />
+    <Compile Include="Core\Engines\MappingEngine.cs" />
+    <Compile Include="Core\Engines\WallSegmentProcessor.cs" />
+    <Compile Include="Core\GeoAlgo.cs" />
+    <Compile Include="Core\GlobalUsings.cs" />
+    <Compile Include="Core\Interfaces\IActivatable.cs" />
+    <Compile Include="Core\Interfaces\IIdentifiable.cs" />
+    <Compile Include="Core\Interfaces\ILineGeometry.cs" />
+    <Compile Include="Core\Primitives\BoundingBox.cs" />
+    <Compile Include="Core\Primitives\GeometryConstants.cs" />
+    <Compile Include="Core\Primitives\LineSegment2D.cs" />
+    <Compile Include="Core\Primitives\Point2D.cs" />
+    <Compile Include="Core\Primitives\GeometryResults.cs" />
+    <Compile Include="Core\Utils\AcadUtils.cs" />
+    <Compile Include="Core\Utils\LabelUtils.cs" />
+    <Compile Include="Core\Utils\SapUtils.cs" />
+    <Compile Include="Core\Utils\XDataUtils.cs" />
+    <Compile Include="DataStructures\SpatialHash.cs" />
     <Compile Include="Models\AxisLine.cs" />
+    <Compile Include="Models\Base\LineGeometryBase.cs" />
     <Compile Include="Models\CenterLine.cs" />
     <Compile Include="Models\WallSegment.cs" />
-    <Compile Include="MyCommands.cs" />
     <Compile Include="Properties\AssemblyInfo.cs" />
   </ItemGroup>
+  <ItemGroup />
   <Import Project="$(MSBuildToolsPath)\Microsoft.CSharp.targets" />
 </Project>

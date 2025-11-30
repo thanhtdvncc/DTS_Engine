@@ -1,98 +1,105 @@
 ﻿using System;
 using System.Collections.Generic;
 using System.Linq;
-using DTS_Wall_Tool.Core;
-using DTS_Wall_Tool.Models;
+using DTS_Wall_Tool.Core.Data;
 
-namespace DTS_Wall_Tool.Engines
+namespace DTS_Wall_Tool.Core.Engines
 {
     /// <summary>
-    /// Calculates wall loads for SAP2000
-    /// Replaces VBA module n03_ACAD_Wall_AutoForce_SAP2000
+    /// Tính toán tải trọng tường
     /// </summary>
     public class LoadCalculator
     {
         #region Configuration
 
         /// <summary>
-        /// Unit weight of masonry wall (kN/m³)
+        /// Dung trọng tường xây (kN/m³)
         /// </summary>
         public double WallUnitWeight { get; set; } = 18.0;
 
         /// <summary>
-        /// Default story height (mm)
+        /// Chiều cao tầng mặc định (mm)
         /// </summary>
         public double DefaultStoryHeight { get; set; } = 3300;
 
         /// <summary>
-        /// Height deduction for beam (mm)
+        /// Chiều cao dầm trừ đi (mm)
         /// </summary>
         public double BeamHeightDeduction { get; set; } = 400;
 
         /// <summary>
-        /// Plaster thickness per side (mm)
+        /// Chiều dày vữa trát mỗi bên (mm)
         /// </summary>
         public double PlasterThickness { get; set; } = 15;
 
         /// <summary>
-        /// Unit weight of plaster (kN/m³)
+        /// Dung trọng vữa trát (kN/m³)
         /// </summary>
         public double PlasterUnitWeight { get; set; } = 20.0;
 
         /// <summary>
-        /// Load factor for dead load
+        /// Hệ số tải trọng
         /// </summary>
-        public double LoadFactorDead { get; set; } = 1.0;
+        public double LoadFactor { get; set; } = 1.0;
 
         /// <summary>
-        /// Load factor for super dead load (SDL)
-        /// </summary>
-        public double LoadFactorSDL { get; set; } = 1.0;
-
-        /// <summary>
-        /// Default load pattern name
+        /// Load pattern mặc định
         /// </summary>
         public string DefaultLoadPattern { get; set; } = "DL";
 
         /// <summary>
-        /// List of modifier definitions
+        /// Danh sách modifier
         /// </summary>
-        public List<ModifierDef> Modifiers { get; set; } = new List<ModifierDef>();
+        public List<LoadModifier> Modifiers { get; set; } = new List<LoadModifier>();
 
         #endregion
 
-        #region Load Calculation Methods
+        #region Constructors
+
+        public LoadCalculator()
+        {
+            InitializeDefaultModifiers();
+        }
+
+        public LoadCalculator(double storyHeight, double beamHeight) : this()
+        {
+            DefaultStoryHeight = storyHeight;
+            BeamHeightDeduction = beamHeight;
+        }
+
+        #endregion
+
+        #region Main Calculation Methods
 
         /// <summary>
-        /// Calculate line load for a wall segment (kN/m)
+        /// Tính tải phân bố (kN/m)
         /// </summary>
-        /// <param name="thickness">Wall thickness in mm</param>
-        /// <param name="height">Wall height in mm</param>
-        /// <param name="modifiers">List of modifier names to apply</param>
-        /// <returns>Line load in kN/m</returns>
-        public double CalculateLineLoad(double thickness, double height, IEnumerable<string> modifiers = null)
+        /// <param name="thickness">Độ dày tường (mm)</param>
+        /// <param name="height">Chiều cao tường (mm)</param>
+        /// <param name="modifierNames">Danh sách modifier áp dụng</param>
+        public double CalculateLineLoad(double thickness, double height, IEnumerable<string> modifierNames = null)
         {
-            // Convert mm to m
-            double thickM = thickness / 1000.0;
+            // Chuyển mm sang m
+            double thickM = thickness / 1000. 0;
             double heightM = height / 1000.0;
             double plasterM = PlasterThickness / 1000.0;
 
-            // Base wall load (kN/m²)
+            // Tải tường cơ bản (kN/m²)
             double wallLoadPerM2 = thickM * WallUnitWeight;
 
-            // Plaster load (both sides)
+            // Tải vữa trát (2 mặt)
             double plasterLoadPerM2 = plasterM * PlasterUnitWeight * 2;
 
-            // Total area load
+            // Tổng tải diện tích
             double totalAreaLoad = wallLoadPerM2 + plasterLoadPerM2;
 
-            // Convert to line load (kN/m)
+            // Chuyển sang tải đường (kN/m)
             double lineLoad = totalAreaLoad * heightM;
 
-            // Apply modifiers
-            if (modifiers != null)
+            // Áp dụng modifiers
+            if (modifierNames != null)
             {
-                foreach (var modName in modifiers)
+                foreach (var modName in modifierNames)
                 {
                     var mod = Modifiers.FirstOrDefault(m =>
                         m.Name.Equals(modName, StringComparison.OrdinalIgnoreCase));
@@ -104,23 +111,23 @@ namespace DTS_Wall_Tool.Engines
                 }
             }
 
-            // Apply load factor
-            lineLoad *= LoadFactorDead;
+            // Áp dụng hệ số tải
+            lineLoad *= LoadFactor;
 
             return Math.Round(lineLoad, 2);
         }
 
         /// <summary>
-        /// Calculate line load using default story height with beam deduction
+        /// Tính tải với chiều cao mặc định (có trừ dầm)
         /// </summary>
-        public double CalculateLineLoadWithDeduction(double thickness, IEnumerable<string> modifiers = null)
+        public double CalculateLineLoadWithDeduction(double thickness, IEnumerable<string> modifierNames = null)
         {
             double effectiveHeight = DefaultStoryHeight - BeamHeightDeduction;
-            return CalculateLineLoad(thickness, effectiveHeight, modifiers);
+            return CalculateLineLoad(thickness, effectiveHeight, modifierNames);
         }
 
         /// <summary>
-        /// Calculate load for a WallData object
+        /// Tính và gán tải cho WallData
         /// </summary>
         public void CalculateAndAssign(WallData wallData, double storyHeight = 0)
         {
@@ -130,7 +137,6 @@ namespace DTS_Wall_Tool.Engines
             double height = storyHeight > 0 ? storyHeight : DefaultStoryHeight;
             double effectiveHeight = height - BeamHeightDeduction;
 
-            // Get modifiers from wall type (e.g., "W220_PARAPET" -> ["PARAPET"])
             var modifiers = ExtractModifiersFromType(wallData.WallType);
 
             double lineLoad = CalculateLineLoad(wallData.Thickness.Value, effectiveHeight, modifiers);
@@ -143,15 +149,14 @@ namespace DTS_Wall_Tool.Engines
 
         #region Helper Methods
 
-        private double ApplyModifier(double baseLoad, ModifierDef mod, double height)
+        private double ApplyModifier(double baseLoad, LoadModifier mod, double height)
         {
-            switch (mod.ModifierType.ToUpperInvariant())
+            switch (mod.Type.ToUpperInvariant())
             {
                 case "FACTOR":
                     return baseLoad * mod.Factor;
 
                 case "HEIGHT_OVERRIDE":
-                    // Recalculate with different height
                     double heightM = mod.HeightOverride / 1000.0;
                     return baseLoad * (heightM / (height / 1000.0));
 
@@ -173,9 +178,8 @@ namespace DTS_Wall_Tool.Engines
             if (string.IsNullOrEmpty(wallType))
                 return modifiers;
 
-            // Parse modifiers from wall type (e.g., "W220_PARAPET_FIRE")
             var parts = wallType.Split('_');
-            foreach (var part in parts.Skip(1)) // Skip "W220"
+            foreach (var part in parts.Skip(1))
             {
                 if (Modifiers.Any(m => m.Name.Equals(part, StringComparison.OrdinalIgnoreCase)))
                 {
@@ -188,61 +192,58 @@ namespace DTS_Wall_Tool.Engines
 
         #endregion
 
-        #region Preset Methods
+        #region Initialization
 
-        /// <summary>
-        /// Initialize default modifiers
-        /// </summary>
-        public void InitializeDefaultModifiers()
+        private void InitializeDefaultModifiers()
         {
-            Modifiers = new List<ModifierDef>
+            Modifiers = new List<LoadModifier>
             {
-                new ModifierDef
+                new LoadModifier
                 {
                     Name = "PARAPET",
-                    ModifierType = "HEIGHT_OVERRIDE",
+                    Type = "HEIGHT_OVERRIDE",
                     HeightOverride = 1200,
-                    Description = "Parapet wall (1. 2m height)"
+                    Description = "Tường lan can (cao 1. 2m)"
                 },
-                new ModifierDef
+                new LoadModifier
                 {
                     Name = "HALF",
-                    ModifierType = "FACTOR",
+                    Type = "FACTOR",
                     Factor = 0.5,
-                    Description = "Half-height wall"
+                    Description = "Tường nửa chiều cao"
                 },
-                new ModifierDef
+                new LoadModifier
                 {
                     Name = "FIRE",
-                    ModifierType = "ADD",
+                    Type = "ADD",
                     AddValue = 0.5,
-                    Description = "Fire-rated wall (+0.5 kN/m)"
+                    Description = "Tường chống cháy (+0.5 kN/m)"
                 },
-                new ModifierDef
+                new LoadModifier
                 {
                     Name = "FULL",
-                    ModifierType = "HEIGHT_OVERRIDE",
+                    Type = "HEIGHT_OVERRIDE",
                     HeightOverride = DefaultStoryHeight,
-                    Description = "Full height wall (no beam deduction)"
+                    Description = "Tường full (không trừ dầm)"
                 }
             };
         }
 
+        #endregion
+
+        #region Static Helpers
+
         /// <summary>
-        /// Get quick load value for common wall types
+        /// Bảng tra nhanh tải cho các độ dày phổ biến
         /// </summary>
         public static Dictionary<int, double> GetQuickLoadTable(double storyHeight = 3300, double beamHeight = 400)
         {
-            var calc = new LoadCalculator
-            {
-                DefaultStoryHeight = storyHeight,
-                BeamHeightDeduction = beamHeight
-            };
+            var calc = new LoadCalculator(storyHeight, beamHeight);
 
-            int[] commonThicknesses = { 100, 110, 150, 200, 220, 250, 300 };
+            int[] thicknesses = { 100, 110, 150, 200, 220, 250, 300 };
             var result = new Dictionary<int, double>();
 
-            foreach (var t in commonThicknesses)
+            foreach (var t in thicknesses)
             {
                 result[t] = calc.CalculateLineLoadWithDeduction(t);
             }
@@ -254,20 +255,17 @@ namespace DTS_Wall_Tool.Engines
     }
 
     /// <summary>
-    /// Definition of a load modifier
+    /// Định nghĩa modifier cho tải trọng
     /// </summary>
-    public class ModifierDef
+    public class LoadModifier
     {
         public string Name { get; set; }
-        public string ModifierType { get; set; } // FACTOR, HEIGHT_OVERRIDE, ADD, SUBTRACT
+        public string Type { get; set; } // FACTOR, HEIGHT_OVERRIDE, ADD, SUBTRACT
         public double Factor { get; set; } = 1.0;
         public double HeightOverride { get; set; }
         public double AddValue { get; set; }
         public string Description { get; set; }
 
-        public override string ToString()
-        {
-            return $"{Name} ({ModifierType})";
-        }
+        public override string ToString() => $"{Name} ({Type})";
     }
 }

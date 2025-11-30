@@ -1,12 +1,14 @@
 ﻿using System;
 using System.Collections.Generic;
 using System.Linq;
-using DTS_Wall_Tool.Core;
+using DTS_Wall_Tool.Core.Algorithms;
+using DTS_Wall_Tool.Core.Data;
+using DTS_Wall_Tool.Core.Primitives;
 
-namespace DTS_Wall_Tool.Core
+namespace DTS_Wall_Tool.Core.Engines
 {
     /// <summary>
-    /// Class containing mapping results for a single wall
+    /// Kết quả mapping cho một tường
     /// </summary>
     public class MappingResult
     {
@@ -14,83 +16,45 @@ namespace DTS_Wall_Tool.Core
         public double WallLength { get; set; }
         public List<MappingRecord> Mappings { get; set; } = new List<MappingRecord>();
 
-        /// <summary>
-        /// Total covered length by all mappings
-        /// </summary>
         public double CoveredLength => Mappings.Sum(m => m.CoveredLength);
-
-        /// <summary>
-        /// Coverage percentage (0-100)
-        /// </summary>
         public double CoveragePercent => WallLength > 0 ? (CoveredLength / WallLength) * 100 : 0;
+        public bool IsFullyCovered => CoveragePercent >= 99. 0;
+        public bool HasMapping => Mappings.Count > 0 && Mappings[0].TargetFrame != "New";
 
-        /// <summary>
-        /// True if wall is fully covered
-        /// </summary>
-        public bool IsFullyCovered => CoveragePercent >= 99.0;
-
-        /// <summary>
-        /// Generate composite label text
-        /// </summary>
         public string GetLabelText(string wallType, string loadPattern, double loadValue)
         {
             string loadStr = $"{wallType} {loadPattern}={loadValue:0.00}";
 
-            if (Mappings.Count == 0)
-                return loadStr + " to New";
+            if (Mappings.Count == 0 || !HasMapping)
+                return loadStr + " -> New";
 
             if (Mappings.Count == 1)
-                return loadStr + " to " + Mappings[0].TargetFrame;
+                return loadStr + " -> " + Mappings[0].TargetFrame;
 
-            // Multiple mappings
             var frameNames = Mappings.Select(m => m.TargetFrame).Distinct();
-            return loadStr + " to " + string.Join(",", frameNames);
+            return loadStr + " -> " + string.Join(", ", frameNames);
         }
     }
 
-    // LƯU Ý: MappingRecord đã được định nghĩa trong WallData.cs
-    // Nếu cần thêm thuộc tính, hãy sửa trong WallData.cs
-
     /// <summary>
-    /// Core mapping engine - finds SAP2000 frames that support a wall
+    /// Engine mapping tường lên dầm SAP2000
     /// </summary>
     public static class MappingEngine
     {
-        #region Constants (Tunable)
+        #region Configuration
 
-        /// <summary>
-        /// Maximum Z elevation difference (mm)
-        /// </summary>
-        public static double TOLERANCE_Z = 200.0;
-
-        /// <summary>
-        /// Maximum perpendicular distance from wall centerline to frame (mm)
-        /// </summary>
+        public static double TOLERANCE_Z = 200. 0;
         public static double TOLERANCE_DIST = 300.0;
-
-        /// <summary>
-        /// Minimum overlap length to consider mapping (mm)
-        /// </summary>
         public static double MIN_OVERLAP = 100.0;
-
-        /// <summary>
-        /// Angle tolerance for parallelism (radians)
-        /// </summary>
-        public static double TOLERANCE_ANGLE = 5 * GeoAlgo.DEG_TO_RAD;
+        public static double TOLERANCE_ANGLE = 5 * GeometryConstants.DEG_TO_RAD;
 
         #endregion
 
-        #region Main Mapping Function
+        #region Main Mapping
 
         /// <summary>
-        /// Find all frames that support a wall segment
+        /// Tìm tất cả dầm đỡ một tường
         /// </summary>
-        /// <param name="wallStart">Wall start point (2D)</param>
-        /// <param name="wallEnd">Wall end point (2D)</param>
-        /// <param name="wallZ">Wall elevation</param>
-        /// <param name="frames">List of SAP2000 frames to search</param>
-        /// <param name="insertionOffset">Offset from CAD origin to SAP2000 origin</param>
-        /// <returns>Mapping result with all matched frames</returns>
         public static MappingResult FindMappings(
             Point2D wallStart,
             Point2D wallEnd,
@@ -103,55 +67,43 @@ namespace DTS_Wall_Tool.Core
                 WallLength = wallStart.DistanceTo(wallEnd)
             };
 
-            if (result.WallLength < GeoAlgo.EPSILON)
+            if (result.WallLength < GeometryConstants.EPSILON)
                 return result;
 
-            // Apply offset if provided
+            // Áp dụng offset
             var wStart = new Point2D(wallStart.X - insertionOffset.X, wallStart.Y - insertionOffset.Y);
             var wEnd = new Point2D(wallEnd.X - insertionOffset.X, wallEnd.Y - insertionOffset.Y);
             var wallSeg = new LineSegment2D(wStart, wEnd);
 
-            // Step 1: Filter candidates by Z elevation
+            // Bước 1: Lọc theo cao độ
             var zFiltered = frames.Where(f => IsElevationMatch(f, wallZ)).ToList();
 
             if (zFiltered.Count == 0)
             {
-                // No frames at this elevation - mark as NEW
-                result.Mappings.Add(new MappingRecord
-                {
-                    TargetFrame = "New",
-                    MatchType = "NEW",
-                    CoveredLength = (int)result.WallLength
-                });
+                result.Mappings.Add(CreateNewMapping(result.WallLength));
                 return result;
             }
 
-            // Step 2: Filter by parallelism and proximity
+            // Bước 2: Lọc theo song song và khoảng cách
             var candidates = new List<FrameCandidate>();
 
             foreach (var frame in zFiltered)
             {
-                // Skip columns (vertical elements)
-                if (frame.IsVertical)
-                    continue;
+                if (frame.IsVertical) continue;
 
                 var frameSeg = new LineSegment2D(frame.StartPt, frame.EndPt);
 
-                // Check parallel
-                if (!GeoAlgo.IsParallel(wallSeg.Angle, frameSeg.Angle, TOLERANCE_ANGLE))
+                if (!AngleAlgorithms.IsParallel(wallSeg.Angle, frameSeg.Angle, TOLERANCE_ANGLE))
                     continue;
 
-                // Check proximity (perpendicular distance)
-                double perpDist = GeoAlgo.DistBetweenParallelSegments(wallSeg, frameSeg);
+                double perpDist = DistanceAlgorithms.BetweenParallelSegments(wallSeg, frameSeg);
                 if (perpDist > TOLERANCE_DIST)
                     continue;
 
-                // Calculate overlap
-                var overlap = GeoAlgo.CalculateOverlap(wallSeg, frameSeg);
+                var overlap = OverlapAlgorithms.CalculateOverlap(wallSeg, frameSeg);
                 if (!overlap.HasOverlap || overlap.OverlapLength < MIN_OVERLAP)
                     continue;
 
-                // This is a valid candidate
                 candidates.Add(new FrameCandidate
                 {
                     Frame = frame,
@@ -162,20 +114,16 @@ namespace DTS_Wall_Tool.Core
 
             if (candidates.Count == 0)
             {
-                // No matching frames - mark as NEW
-                result.Mappings.Add(new MappingRecord
-                {
-                    TargetFrame = "New",
-                    MatchType = "NEW",
-                    CoveredLength = (int)result.WallLength
-                });
+                result.Mappings.Add(CreateNewMapping(result.WallLength));
                 return result;
             }
 
-            // Step 3: Sort candidates by proximity (closer = better)
-            candidates = candidates.OrderBy(c => c.PerpDist).ThenByDescending(c => c.OverlapLength).ToList();
+            // Bước 3: Sắp xếp theo khoảng cách
+            candidates = candidates.OrderBy(c => c.PerpDist)
+                                   .ThenByDescending(c => c.OverlapLength)
+                                   .ToList();
 
-            // Step 4: Calculate mapping details for each candidate
+            // Bước 4: Tính chi tiết mapping
             foreach (var candidate in candidates)
             {
                 var mapping = CalculateMappingDetails(wallSeg, candidate.Frame, candidate.OverlapLength);
@@ -185,39 +133,47 @@ namespace DTS_Wall_Tool.Core
                 }
             }
 
-            // Step 5: Remove duplicates and optimize
+            // Bước 5: Tối ưu hóa
             result.Mappings = OptimizeMappings(result.Mappings, result.WallLength);
 
             return result;
         }
 
+        /// <summary>
+        /// Tìm mapping cho LineSegment2D
+        /// </summary>
+        public static MappingResult FindMappings(LineSegment2D wallSegment, double wallZ,
+            IEnumerable<SapFrame> frames, Point2D insertionOffset = default)
+        {
+            return FindMappings(wallSegment.Start, wallSegment.End, wallZ, frames, insertionOffset);
+        }
+
         #endregion
 
-        #region Helper Functions
+        #region Helper Methods
 
-        /// <summary>
-        /// Check if frame elevation matches wall elevation
-        /// </summary>
         private static bool IsElevationMatch(SapFrame frame, double wallZ)
         {
-            // Frame's Z should be at or below wall Z (beam supports wall from below)
             double frameZ = Math.Min(frame.Z1, frame.Z2);
             return Math.Abs(frameZ - wallZ) <= TOLERANCE_Z;
         }
 
-        /// <summary>
-        /// Calculate detailed mapping information
-        /// </summary>
+        private static MappingRecord CreateNewMapping(double length)
+        {
+            return new MappingRecord
+            {
+                TargetFrame = "New",
+                MatchType = "NEW",
+                CoveredLength = length
+            };
+        }
+
         private static MappingRecord CalculateMappingDetails(LineSegment2D wallSeg, SapFrame frame, double overlapLength)
         {
-            var frameSeg = new LineSegment2D(frame.StartPt, frame.EndPt);
-
-            // Project wall endpoints onto frame direction
             double wallAngle = wallSeg.Angle;
             double cosA = Math.Cos(wallAngle);
             double sinA = Math.Sin(wallAngle);
 
-            // Project all 4 points onto wall direction
             var basePoint = wallSeg.Start;
 
             double wStartProj = 0;
@@ -226,24 +182,16 @@ namespace DTS_Wall_Tool.Core
             double fStartProj = (frame.StartPt.X - basePoint.X) * cosA + (frame.StartPt.Y - basePoint.Y) * sinA;
             double fEndProj = (frame.EndPt.X - basePoint.X) * cosA + (frame.EndPt.Y - basePoint.Y) * sinA;
 
-            // Normalize projections - swap if needed
+            // Sắp xếp
             if (wStartProj > wEndProj)
-            {
                 (wStartProj, wEndProj) = (wEndProj, wStartProj);
-            }
 
             if (fStartProj > fEndProj)
-            {
                 (fStartProj, fEndProj) = (fEndProj, fStartProj);
-            }
 
-            // Calculate DistI and DistJ
-            // DistI = distance from wall start to where frame starts (on wall)
-            // DistJ = distance from where frame ends to wall end
             double distI = Math.Max(0, fStartProj - wStartProj);
             double distJ = Math.Max(0, wEndProj - fEndProj);
 
-            // Determine map type
             string mapType = "PARTIAL";
             if (distI < 1 && distJ < 1)
                 mapType = "FULL";
@@ -256,25 +204,21 @@ namespace DTS_Wall_Tool.Core
                 MatchType = mapType,
                 DistI = distI,
                 DistJ = distJ,
-                CoveredLength = (int)overlapLength
+                FrameLength = frame.Length2D,
+                CoveredLength = overlapLength
             };
         }
 
-        /// <summary>
-        /// Optimize mapping list (remove duplicates, merge overlaps)
-        /// </summary>
         private static List<MappingRecord> OptimizeMappings(List<MappingRecord> mappings, double wallLength)
         {
             if (mappings.Count <= 1)
                 return mappings;
 
-            // Remove exact duplicates
             var unique = mappings
                 .GroupBy(m => m.TargetFrame)
                 .Select(g => g.First())
                 .ToList();
 
-            // Check if we have full coverage with one frame
             var fullCoverage = unique.FirstOrDefault(m => m.MatchType == "FULL");
             if (fullCoverage != null && fullCoverage.CoveredLength >= wallLength * 0.95)
             {

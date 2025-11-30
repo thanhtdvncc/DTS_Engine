@@ -1,82 +1,49 @@
 ﻿using System;
-using DTS_Wall_Tool.Core;
+using DTS_Wall_Tool.Core.Primitives;
+using DTS_Wall_Tool.Models.Base;
 
 namespace DTS_Wall_Tool.Models
 {
     /// <summary>
-    /// Represents a wall segment for processing
-    /// Equivalent to VBA Type WallSegment + CenterLine combined
+    /// Đại diện cho một đoạn tường trong quá trình xử lý. 
+    /// Kế thừa từ LineGeometryBase để tái sử dụng code geometry.
     /// </summary>
-    public class WallSegment
+    public class WallSegment : LineGeometryBase
     {
-        #region Identity
+        #region Wall-Specific Properties
 
         /// <summary>
-        /// AutoCAD handle for the source line entity
+        /// Độ dày tường (mm)
         /// </summary>
-        public string Handle { get; set; }
-
-        /// <summary>
-        /// Unique identifier for deduplication (computed from geometry)
-        /// </summary>
-        public string UniqueID { get; private set; }
-
-        /// <summary>
-        /// Index in the processing array (for quick reference)
-        /// </summary>
-        public int Index { get; set; } = -1;
-
-        #endregion
-
-        #region Geometry
-
-        public Point2D StartPt { get; set; }
-        public Point2D EndPt { get; set; }
-
-        public double Length => StartPt.DistanceTo(EndPt);
-        public Point2D Midpoint => StartPt.MidpointTo(EndPt);
-        public double Angle => Math.Atan2(EndPt.Y - StartPt.Y, EndPt.X - StartPt.X);
-
-        /// <summary>
-        /// Normalized angle [0, PI) - treats opposite directions as same
-        /// </summary>
-        public double NormalizedAngle
-        {
-            get
-            {
-                double a = Angle;
-                while (a < 0) a += Math.PI;
-                while (a >= Math.PI) a -= Math.PI;
-                return a;
-            }
-        }
-
-        /// <summary>
-        /// Get as LineSegment2D for geometric operations
-        /// </summary>
-        public LineSegment2D AsSegment => new LineSegment2D(StartPt, EndPt);
-
-        #endregion
-
-        #region Wall Properties
-
         public double Thickness { get; set; } = 0;
+
+        /// <summary>
+        /// Loại tường (VD: "W220", "W110")
+        /// </summary>
         public string WallType { get; set; } = "";
+
+        /// <summary>
+        /// Load pattern trong SAP2000
+        /// </summary>
         public string LoadPattern { get; set; } = "DL";
+
+        /// <summary>
+        /// Giá trị tải (kN/m)
+        /// </summary>
         public double LoadValue { get; set; } = 0;
 
         /// <summary>
-        /// Story elevation (Z coordinate)
+        /// Cao độ tầng (mm)
         /// </summary>
         public double StoryZ { get; set; } = 0;
 
         /// <summary>
-        /// Story name for grouping
+        /// Tên tầng
         /// </summary>
         public string StoryName { get; set; } = "";
 
         /// <summary>
-        /// Layer name in AutoCAD
+        /// Tên layer trong AutoCAD
         /// </summary>
         public string Layer { get; set; } = "";
 
@@ -85,33 +52,32 @@ namespace DTS_Wall_Tool.Models
         #region Processing State
 
         /// <summary>
-        /// True if this segment is a single line (not paired)
+        /// Index trong mảng xử lý
+        /// </summary>
+        public int Index { get; set; } = -1;
+
+        /// <summary>
+        /// True nếu là đường đơn (không ghép cặp)
         /// </summary>
         public bool IsSingleLine { get; set; } = false;
 
         /// <summary>
-        /// True if this segment has been processed/merged
+        /// True nếu đã được xử lý
         /// </summary>
         public bool IsProcessed { get; set; } = false;
 
         /// <summary>
-        /// True if this segment is still active (not deleted)
-        /// </summary>
-        public bool IsActive { get; set; } = true;
-
-        /// <summary>
-        /// Index of paired segment (for double-line walls)
-        /// -1 if no pair
+        /// ID của đoạn ghép cặp (-1 nếu không có)
         /// </summary>
         public int PairSegmentID { get; set; } = -1;
 
         /// <summary>
-        /// Index of vector group this segment belongs to
+        /// ID nhóm vector (theo góc)
         /// </summary>
         public int VectorID { get; set; } = -1;
 
         /// <summary>
-        /// If merged, this points to the target segment ID
+        /// ID đoạn đã gộp vào (-1 nếu chưa gộp)
         /// </summary>
         public int MergedIntoID { get; set; } = -1;
 
@@ -134,25 +100,21 @@ namespace DTS_Wall_Tool.Models
 
         #endregion
 
+        #region IIdentifiable Implementation
+
+        public override void UpdateUniqueID()
+        {
+            string baseID = BuildBaseUniqueID(1);
+            string th = Thickness.ToString("0");
+            UniqueID = $"{baseID}_T{th}";
+        }
+
+        #endregion
+
         #region Methods
 
         /// <summary>
-        /// Update unique ID based on current geometry
-        /// </summary>
-        public void UpdateUniqueID()
-        {
-            // Round to 0.1mm for stability
-            string sx = StartPt.X.ToString("0.0");
-            string sy = StartPt.Y.ToString("0. 0");
-            string ex = EndPt.X.ToString("0.0");
-            string ey = EndPt.Y.ToString("0. 0");
-            string th = Thickness.ToString("0");
-
-            UniqueID = $"{sx}_{sy}_{ex}_{ey}_T{th}";
-        }
-
-        /// <summary>
-        /// Recalculate WallType from Thickness if empty
+        /// Tự động tạo WallType từ Thickness nếu chưa có
         /// </summary>
         public void EnsureWallType()
         {
@@ -163,7 +125,7 @@ namespace DTS_Wall_Tool.Models
         }
 
         /// <summary>
-        /// Create a copy with new geometry (for merging)
+        /// Clone với geometry mới
         /// </summary>
         public WallSegment CloneWithGeometry(Point2D newStart, Point2D newEnd)
         {
@@ -184,9 +146,40 @@ namespace DTS_Wall_Tool.Models
             };
         }
 
+        /// <summary>
+        /// Clone đầy đủ
+        /// </summary>
+        public WallSegment Clone()
+        {
+            return CloneWithGeometry(StartPt, EndPt);
+        }
+
+        /// <summary>
+        /// Kiểm tra có thể ghép cặp với đoạn khác không
+        /// </summary>
+        public bool CanPairWith(WallSegment other)
+        {
+            return IsActive && other.IsActive &&
+                   PairSegmentID == -1 && other.PairSegmentID == -1 &&
+                   !IsProcessed && !other.IsProcessed;
+        }
+
+        /// <summary>
+        /// Đánh dấu đã ghép cặp
+        /// </summary>
+        public void SetPairedWith(WallSegment other, double thickness)
+        {
+            PairSegmentID = other.Index;
+            other.PairSegmentID = Index;
+            Thickness = thickness;
+            other.Thickness = thickness;
+        }
+
         public override string ToString()
         {
-            return $"Wall[{Handle}]: {StartPt}->{EndPt}, L={Length:0.0}, T={Thickness}, {WallType}";
+            string status = IsActive ? "" : "[X]";
+            string paired = PairSegmentID >= 0 ? $"(P:{PairSegmentID})" : "";
+            return $"{status}Wall[{Handle}]: {StartPt}->{EndPt}, L={Length:0.0}, T={Thickness}, {WallType}{paired}";
         }
 
         #endregion

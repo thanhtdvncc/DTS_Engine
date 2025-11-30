@@ -1,42 +1,28 @@
-﻿using DTS_Wall_Tool.Core;
-using System;
+﻿using System;
 using System.Collections.Generic;
-using System.Linq;
+using DTS_Wall_Tool.Core.Primitives;
 
 namespace DTS_Wall_Tool.DataStructures
 {
     /// <summary>
-    /// Spatial hash grid for fast 2D proximity queries
-    /// O(1) average lookup vs O(n) linear search
+    /// Spatial hash grid cho truy vấn không gian nhanh O(1)
     /// </summary>
     public class SpatialHash<T>
     {
         private readonly double _cellSize;
         private readonly Dictionary<long, List<SpatialEntry<T>>> _grid;
-        private readonly Func<T, Point2D> _getPosition;
-        private readonly Func<T, BoundingBox> _getBounds;
 
         public int Count { get; private set; }
 
-        /// <summary>
-        /// Create spatial hash with given cell size
-        /// </summary>
-        /// <param name="cellSize">Size of each grid cell (should match typical query radius)</param>
-        /// <param name="getPosition">Function to get position of an item (for point queries)</param>
-        /// <param name="getBounds">Function to get bounding box (for line segments)</param>
-        public SpatialHash(double cellSize,
-            Func<T, Point2D> getPosition = null,
-            Func<T, BoundingBox> getBounds = null)
+        public SpatialHash(double cellSize = 1000)
         {
             _cellSize = cellSize > 0 ? cellSize : 1000;
             _grid = new Dictionary<long, List<SpatialEntry<T>>>();
-            _getPosition = getPosition;
-            _getBounds = getBounds;
             Count = 0;
         }
 
         /// <summary>
-        /// Insert item at position
+        /// Thêm item tại vị trí
         /// </summary>
         public void Insert(T item, Point2D position)
         {
@@ -50,17 +36,16 @@ namespace DTS_Wall_Tool.DataStructures
         }
 
         /// <summary>
-        /// Insert item with bounding box (for line segments)
+        /// Thêm item với bounding box
         /// </summary>
         public void InsertWithBounds(T item, BoundingBox bounds)
         {
-            // Get all cells that the bounds overlaps
             int minCellX = (int)Math.Floor(bounds.MinX / _cellSize);
             int maxCellX = (int)Math.Floor(bounds.MaxX / _cellSize);
             int minCellY = (int)Math.Floor(bounds.MinY / _cellSize);
             int maxCellY = (int)Math.Floor(bounds.MaxY / _cellSize);
 
-            var center = new Point2D((bounds.MinX + bounds.MaxX) / 2, (bounds.MinY + bounds.MaxY) / 2);
+            var center = bounds.Center;
 
             for (int cx = minCellX; cx <= maxCellX; cx++)
             {
@@ -84,7 +69,7 @@ namespace DTS_Wall_Tool.DataStructures
         }
 
         /// <summary>
-        /// Query all items within radius of a point
+        /// Truy vấn tất cả items trong bán kính
         /// </summary>
         public List<T> QueryRadius(Point2D center, double radius)
         {
@@ -108,8 +93,7 @@ namespace DTS_Wall_Tool.DataStructures
                             if (visited.Contains(entry.Item))
                                 continue;
 
-                            double dist = center.DistanceTo(entry.Position);
-                            if (dist <= radius)
+                            if (center.DistanceTo(entry.Position) <= radius)
                             {
                                 result.Add(entry.Item);
                                 visited.Add(entry.Item);
@@ -123,7 +107,7 @@ namespace DTS_Wall_Tool.DataStructures
         }
 
         /// <summary>
-        /// Query all items whose bounds intersect with given bounds
+        /// Truy vấn tất cả items có bounds giao với bounds cho trước
         /// </summary>
         public List<T> QueryBounds(BoundingBox queryBounds)
         {
@@ -162,7 +146,7 @@ namespace DTS_Wall_Tool.DataStructures
         }
 
         /// <summary>
-        /// Clear all entries
+        /// Xóa tất cả
         /// </summary>
         public void Clear()
         {
@@ -181,7 +165,6 @@ namespace DTS_Wall_Tool.DataStructures
 
         private long GetCellKey(int cellX, int cellY)
         {
-            // Combine two 32-bit ints into one 64-bit long
             return ((long)cellX << 32) | (uint)cellY;
         }
 
@@ -189,7 +172,7 @@ namespace DTS_Wall_Tool.DataStructures
     }
 
     /// <summary>
-    /// Entry in the spatial hash
+    /// Entry trong spatial hash
     /// </summary>
     public struct SpatialEntry<T>
     {

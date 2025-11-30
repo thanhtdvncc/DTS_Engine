@@ -1,21 +1,25 @@
 ﻿using System;
 using System.Collections.Generic;
 using System.Text;
-using System.Web.Script.Serialization; // Thư viện JSON
+using System.Web.Script.Serialization;
 using Autodesk.AutoCAD.DatabaseServices;
-using Autodesk.AutoCAD.ApplicationServices;
-using Autodesk.AutoCAD.Runtime;
+using DTS_Wall_Tool.Core.Data;
 
-namespace DTS_Wall_Tool.Core
+namespace DTS_Wall_Tool.Core.Utils
 {
+    /// <summary>
+    /// Tiện ích đọc/ghi XData dạng JSON
+    /// </summary>
     public static class XDataUtils
     {
         private const string APP_NAME = "DTS_APP";
+        private const int CHUNK_SIZE = 250;
 
-        // =============================================================
-        // PHẦN 1: CÁC HÀM CẤP CAO (High-Level)
-        // =============================================================
+        #region High-Level: WallData
 
+        /// <summary>
+        /// Đọc WallData từ entity
+        /// </summary>
         public static WallData ReadWallData(DBObject obj, Transaction tr = null)
         {
             var dict = GetEntityData(obj);
@@ -25,7 +29,6 @@ namespace DTS_Wall_Tool.Core
 
             WallData data = new WallData();
 
-            // Mapping các trường cơ bản
             if (dict.ContainsKey("xThickness")) data.Thickness = ConvertToDouble(dict["xThickness"]);
             if (dict.ContainsKey("xWallType")) data.WallType = Convert.ToString(dict["xWallType"]);
             if (dict.ContainsKey("xLoadPattern")) data.LoadPattern = Convert.ToString(dict["xLoadPattern"]);
@@ -33,18 +36,22 @@ namespace DTS_Wall_Tool.Core
             if (dict.ContainsKey("xOriginHandle")) data.OriginHandle = Convert.ToString(dict["xOriginHandle"]);
             if (dict.ContainsKey("xBaseZ")) data.BaseZ = ConvertToDouble(dict["xBaseZ"]);
 
-            // --- MỚI: Mapping danh sách con ---
             if (dict.ContainsKey("xChildHandles"))
             {
                 data.ChildHandles = ConvertToStringList(dict["xChildHandles"]);
             }
 
-            // --- MỚI: Mapping danh sách Mapping SAP2000 ---
-            if (dict.ContainsKey("xMappings")) data.Mappings = ConvertToMappingList(dict["xMappings"]);
+            if (dict.ContainsKey("xMappings"))
+            {
+                data.Mappings = ConvertToMappingList(dict["xMappings"]);
+            }
 
             return data;
         }
 
+        /// <summary>
+        /// Ghi WallData vào entity (merge với dữ liệu cũ)
+        /// </summary>
         public static void SaveWallData(DBObject obj, WallData data, Transaction tr)
         {
             var updates = new Dictionary<string, object>();
@@ -57,28 +64,49 @@ namespace DTS_Wall_Tool.Core
             if (data.OriginHandle != null) updates["xOriginHandle"] = data.OriginHandle;
             if (data.BaseZ.HasValue) updates["xBaseZ"] = data.BaseZ.Value;
 
-            // --- MỚI: Lưu danh sách con ---
             if (data.ChildHandles != null && data.ChildHandles.Count > 0)
             {
                 updates["xChildHandles"] = data.ChildHandles;
             }
 
-            // --- MỚI: Lưu danh sách Mapping SAP2000 ---
-            if (data.Mappings != null && data.Mappings.Count > 0) updates["xMappings"] = data.Mappings;
-            UpdateData(obj, updates, tr);
+            if (data.Mappings != null && data.Mappings.Count > 0)
+            {
+                updates["xMappings"] = ConvertMappingsToSerializable(data.Mappings);
+            }
 
             UpdateData(obj, updates, tr);
         }
 
+        /// <summary>
+        /// Xóa WallData khỏi entity
+        /// </summary>
+        public static void ClearWallData(DBObject obj, Transaction tr)
+        {
+            ClearEntityData(obj, tr);
+        }
+
+        #endregion
+
+        #region High-Level: StoryData
+
+        /// <summary>
+        /// Ghi StoryData vào entity
+        /// </summary>
         public static void WriteStoryData(DBObject obj, StoryData data, Transaction tr)
         {
             var dict = new Dictionary<string, object>();
             dict["xType"] = "STORY_ORIGIN";
             dict["xStoryName"] = data.StoryName;
             dict["xElevation"] = data.Elevation;
+            dict["xStoryHeight"] = data.StoryHeight;
+            dict["xOffsetX"] = data.OffsetX;
+            dict["xOffsetY"] = data.OffsetY;
             SetEntityData(obj, dict, tr);
         }
 
+        /// <summary>
+        /// Đọc StoryData từ entity
+        /// </summary>
         public static StoryData ReadStoryData(DBObject obj, Transaction tr = null)
         {
             var dict = GetEntityData(obj);
@@ -88,14 +116,20 @@ namespace DTS_Wall_Tool.Core
             StoryData data = new StoryData();
             if (dict.ContainsKey("xStoryName")) data.StoryName = dict["xStoryName"].ToString();
             if (dict.ContainsKey("xElevation")) data.Elevation = ConvertToDouble(dict["xElevation"]) ?? 0;
+            if (dict.ContainsKey("xStoryHeight")) data.StoryHeight = ConvertToDouble(dict["xStoryHeight"]) ?? 3300;
+            if (dict.ContainsKey("xOffsetX")) data.OffsetX = ConvertToDouble(dict["xOffsetX"]) ?? 0;
+            if (dict.ContainsKey("xOffsetY")) data.OffsetY = ConvertToDouble(dict["xOffsetY"]) ?? 0;
             return data;
         }
 
-        // =============================================================
-        // PHẦN 2: CÁC HÀM CẤP THẤP (Low-Level)
-        // =============================================================
+        #endregion
 
-        private static Dictionary<string, object> GetEntityData(DBObject obj)
+        #region Low-Level: Generic Data Access
+
+        /// <summary>
+        /// Đọc dữ liệu JSON từ XData
+        /// </summary>
+        public static Dictionary<string, object> GetEntityData(DBObject obj)
         {
             var dict = new Dictionary<string, object>();
             ResultBuffer rb = obj.GetXDataForApplication(APP_NAME);
@@ -120,10 +154,13 @@ namespace DTS_Wall_Tool.Core
             return dict;
         }
 
-        private static void SetEntityData(DBObject obj, Dictionary<string, object> data, Transaction tr)
+        /// <summary>
+        /// Ghi dữ liệu JSON vào XData (ghi đè)
+        /// </summary>
+        public static void SetEntityData(DBObject obj, Dictionary<string, object> data, Transaction tr)
         {
             if (data == null || data.Count == 0) return;
-            AddRegAppTableRecord(APP_NAME, tr);
+            EnsureRegApp(APP_NAME, tr);
 
             var serializer = new JavaScriptSerializer();
             string jsonStr = serializer.Serialize(data);
@@ -131,25 +168,41 @@ namespace DTS_Wall_Tool.Core
             ResultBuffer rb = new ResultBuffer();
             rb.Add(new TypedValue((int)DxfCode.ExtendedDataRegAppName, APP_NAME));
 
-            int chunkSize = 250;
-            for (int i = 0; i < jsonStr.Length; i += chunkSize)
+            for (int i = 0; i < jsonStr.Length; i += CHUNK_SIZE)
             {
-                int len = Math.Min(chunkSize, jsonStr.Length - i);
+                int len = Math.Min(CHUNK_SIZE, jsonStr.Length - i);
                 rb.Add(new TypedValue((int)DxfCode.ExtendedDataAsciiString, jsonStr.Substring(i, len)));
             }
             obj.XData = rb;
         }
 
-        private static void UpdateData(DBObject obj, Dictionary<string, object> updates, Transaction tr)
+        /// <summary>
+        /// Cập nhật dữ liệu (merge với dữ liệu cũ)
+        /// </summary>
+        public static void UpdateData(DBObject obj, Dictionary<string, object> updates, Transaction tr)
         {
             var currentData = GetEntityData(obj);
-            foreach (var kvp in updates) currentData[kvp.Key] = kvp.Value;
+            foreach (var kvp in updates)
+            {
+                currentData[kvp.Key] = kvp.Value;
+            }
             SetEntityData(obj, currentData, tr);
         }
 
-        // =============================================================
-        // PHẦN 3: HÀM PHỤ TRỢ (Helper)
-        // =============================================================
+        /// <summary>
+        /// Xóa XData
+        /// </summary>
+        public static void ClearEntityData(DBObject obj, Transaction tr)
+        {
+            EnsureRegApp(APP_NAME, tr);
+            ResultBuffer rb = new ResultBuffer();
+            rb.Add(new TypedValue((int)DxfCode.ExtendedDataRegAppName, APP_NAME));
+            obj.XData = rb;
+        }
+
+        #endregion
+
+        #region Helpers
 
         private static double? ConvertToDouble(object val)
         {
@@ -158,11 +211,9 @@ namespace DTS_Wall_Tool.Core
             return null;
         }
 
-        // --- HÀM MỚI: Chuyển đổi object sang List<string> an toàn ---
         private static List<string> ConvertToStringList(object val)
         {
             var list = new List<string>();
-            // Khi deserialize JSON array, nó thường trả về ArrayList hoặc Object[]
             if (val is System.Collections.IEnumerable enumerable)
             {
                 foreach (var item in enumerable)
@@ -171,18 +222,6 @@ namespace DTS_Wall_Tool.Core
                 }
             }
             return list;
-        }
-
-        private static void AddRegAppTableRecord(string regAppName, Transaction tr)
-        {
-            RegAppTable rat = (RegAppTable)tr.GetObject(AcadUtils.Db.RegAppTableId, OpenMode.ForRead);
-            if (!rat.Has(regAppName))
-            {
-                rat.UpgradeOpen();
-                RegAppTableRecord ratr = new RegAppTableRecord { Name = regAppName };
-                rat.Add(ratr);
-                tr.AddNewlyCreatedDBObject(ratr, true);
-            }
         }
 
         private static List<MappingRecord> ConvertToMappingList(object val)
@@ -199,6 +238,7 @@ namespace DTS_Wall_Tool.Core
                         if (dict.ContainsKey("MatchType")) rec.MatchType = dict["MatchType"].ToString();
                         if (dict.ContainsKey("DistI")) rec.DistI = Convert.ToDouble(dict["DistI"]);
                         if (dict.ContainsKey("DistJ")) rec.DistJ = Convert.ToDouble(dict["DistJ"]);
+                        if (dict.ContainsKey("CoveredLength")) rec.CoveredLength = Convert.ToDouble(dict["CoveredLength"]);
                         list.Add(rec);
                     }
                 }
@@ -206,6 +246,36 @@ namespace DTS_Wall_Tool.Core
             return list;
         }
 
+        private static List<Dictionary<string, object>> ConvertMappingsToSerializable(List<MappingRecord> mappings)
+        {
+            var list = new List<Dictionary<string, object>>();
+            foreach (var m in mappings)
+            {
+                var dict = new Dictionary<string, object>
+                {
+                    ["TargetFrame"] = m.TargetFrame,
+                    ["MatchType"] = m.MatchType,
+                    ["DistI"] = m.DistI,
+                    ["DistJ"] = m.DistJ,
+                    ["CoveredLength"] = m.CoveredLength
+                };
+                list.Add(dict);
+            }
+            return list;
+        }
 
+        private static void EnsureRegApp(string regAppName, Transaction tr)
+        {
+            RegAppTable rat = (RegAppTable)tr.GetObject(AcadUtils.Db.RegAppTableId, OpenMode.ForRead);
+            if (!rat.Has(regAppName))
+            {
+                rat.UpgradeOpen();
+                RegAppTableRecord ratr = new RegAppTableRecord { Name = regAppName };
+                rat.Add(ratr);
+                tr.AddNewlyCreatedDBObject(ratr, true);
+            }
+        }
+
+        #endregion
     }
 }
