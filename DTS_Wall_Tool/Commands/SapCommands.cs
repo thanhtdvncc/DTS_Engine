@@ -16,7 +16,7 @@ namespace DTS_Wall_Tool.Commands
     public class SapCommands : CommandBase
     {
         private const string MAPPING_LAYER = "dts_mapping";
-        private const string VISUAL_LAYER = "dts_visual_fill";
+        private const string LABEL_LAYER = "dts_frame_label";
 
         /// <summary>
         /// Kiểm tra kết nối SAP2000
@@ -78,7 +78,6 @@ namespace DTS_Wall_Tool.Commands
             WriteMessage($"  - Dầm: {beamCount}");
             WriteMessage($"  - Cột: {columnCount}");
 
-            // Hiển thị 10 dầm đầu tiên
             WriteMessage("\n10 dầm đầu tiên:");
             int count = 0;
             foreach (var frame in frames)
@@ -130,10 +129,10 @@ namespace DTS_Wall_Tool.Commands
             PromptDoubleResult zRes = Ed.GetDouble(zOpt);
             double wallZ = zRes.Status == PromptStatus.OK ? zRes.Value : 0;
 
-            // Nhập Insertion Point Offset (optional)
+            // Lấy Insertion Point Offset
             Point2D insertOffset = GetInsertionOffset();
 
-            // Lấy frames từ SAP (với tolerance mở rộng)
+            // Lấy frames từ SAP
             var frames = SapUtils.GetBeamsAtElevation(wallZ, MappingEngine.TOLERANCE_Z);
             WriteMessage($"Tìm thấy {frames.Count} dầm tại cao độ {wallZ}");
 
@@ -143,10 +142,9 @@ namespace DTS_Wall_Tool.Commands
                 return;
             }
 
-            // Chuẩn bị layers
-            AcadUtils.CreateLayer(MAPPING_LAYER, 4);  // Cyan
-            AcadUtils.CreateLayer(VISUAL_LAYER, 3);   // Green
-            AcadUtils.ClearLayer(VISUAL_LAYER);
+            // Tạo layers
+            AcadUtils.CreateLayer(MAPPING_LAYER, 4);
+            AcadUtils.CreateLayer(LABEL_LAYER, 254);
 
             int mappedCount = 0;
             int unmappedCount = 0;
@@ -154,7 +152,7 @@ namespace DTS_Wall_Tool.Commands
 
             UsingTransaction(tr =>
             {
-                // Lấy BlockTableRecord để thêm visual lines
+                // Lấy BlockTableRecord để thêm MText
                 var bt = tr.GetObject(Db.BlockTableId, OpenMode.ForRead) as BlockTable;
                 var btr = tr.GetObject(bt[BlockTableRecord.ModelSpace], OpenMode.ForWrite) as BlockTableRecord;
 
@@ -169,37 +167,44 @@ namespace DTS_Wall_Tool.Commands
                     // Đọc thông tin tường hiện có
                     var wData = XDataUtils.ReadWallData(lineEnt) ?? new WallData();
                     double wallThickness = wData.Thickness ?? 200.0;
+                    string wallType = wData.WallType ?? $"W{wallThickness:0}";
+                    string loadPattern = wData.LoadPattern ?? "DL";
+                    double loadValue = wData.LoadValue ?? 0;
 
-                    // Thực hiện mapping với chiến thuật Projection & Overlap
+                    // Thực hiện mapping
                     var result = MappingEngine.FindMappings(
                         startPt, endPt, wallZ, frames,
                         insertOffset, wallThickness);
 
-                    string handle = lineId.Handle.ToString();
+                    result.WallHandle = lineId.Handle.ToString();
+
+                    string handle = result.WallHandle;
+
+                    // Xác định màu và cập nhật line
+                    int colorIndex = result.GetColorIndex();
+                    lineEnt.ColorIndex = colorIndex;
 
                     if (result.HasMapping)
                     {
-                        // Xác định loại match
                         bool isFull = result.IsFullyCovered;
                         string matchInfo = isFull ? "FULL" : "PARTIAL";
 
-                        // Tạo label text
-                        string wallType = wData.WallType ?? $"W{wallThickness:0}";
-                        string loadPattern = wData.LoadPattern ?? "DL";
-                        double loadValue = wData.LoadValue ?? 0;
-                        string label = result.GetLabelText(wallType, loadPattern, loadValue);
-
-                        WriteMessage($"[{handle}]: {label} ({matchInfo}, {result.CoveragePercent:0}% coverage)");
-
-                        // Set màu theo kết quả
-                        lineEnt.ColorIndex = result.GetColorIndex();
+                        WriteMessage($"[{handle}]: {result.GetLabelText(wallType, loadPattern, loadValue)} ({matchInfo}, {result.CoveragePercent:0}% coverage)");
 
                         // Cập nhật WallData
                         wData.Mappings = result.Mappings;
                         XDataUtils.SaveWallData(lineEnt, wData, tr);
 
-                        // Vẽ Visual Fill (đường màu xanh đè lên để nhìn rõ đoạn gán tải)
-                        DrawVisualSegments(btr, tr, result.VisualSegments, insertOffset);
+                        // Vẽ MText Labels
+                        // Dòng trên: Thông tin mapping (-> FrameName)
+                        string topLabel = result.GetTopLabelText();
+                        LabelPlotter.PlotLabel(btr, tr, startPt, endPt, topLabel,
+                            LabelPosition.MiddleTop, 60, LABEL_LAYER);
+
+                        // Dòng dưới: Thông tin load (W200 DL=7. 20)
+                        string bottomLabel = result.GetBottomLabelText(wallType, loadPattern, loadValue);
+                        LabelPlotter.PlotLabel(btr, tr, startPt, endPt, bottomLabel,
+                            LabelPosition.MiddleBottom, 60, LABEL_LAYER);
 
                         if (isFull)
                             mappedCount++;
@@ -209,7 +214,6 @@ namespace DTS_Wall_Tool.Commands
                     else
                     {
                         WriteMessage($"[{handle}]: Không tìm thấy dầm phù hợp -> NEW");
-                        lineEnt.ColorIndex = 1; // Đỏ
 
                         // Tạo mapping NEW
                         wData.Mappings = new List<MappingRecord>
@@ -223,12 +227,21 @@ namespace DTS_Wall_Tool.Commands
                         };
                         XDataUtils.SaveWallData(lineEnt, wData, tr);
 
+                        // Vẽ MText Labels cho NEW
+                        string topLabel = "{\\C1;-> NEW}";
+                        LabelPlotter.PlotLabel(btr, tr, startPt, endPt, topLabel,
+                            LabelPosition.MiddleTop, 60, LABEL_LAYER);
+
+                        string bottomLabel = $"{{\\C1;{wallType} {loadPattern}={loadValue:0.00}}}";
+                        LabelPlotter.PlotLabel(btr, tr, startPt, endPt, bottomLabel,
+                            LabelPosition.MiddleBottom, 60, LABEL_LAYER);
+
                         unmappedCount++;
                     }
                 }
             });
 
-            // Thống kê kết quả
+            // Thống kê
             WriteMessage("\n=== KẾT QUẢ ===");
             WriteMessage($"  Full Match (Xanh):    {mappedCount}");
             WriteMessage($"  Partial Match (Vàng): {partialCount}");
@@ -244,7 +257,6 @@ namespace DTS_Wall_Tool.Commands
         {
             WriteMessage("=== GÁN TẢI LÊN SAP2000 ===");
 
-            // Kiểm tra kết nối
             if (!SapUtils.IsConnected)
             {
                 bool connected = SapUtils.Connect(out string msg);
@@ -255,7 +267,6 @@ namespace DTS_Wall_Tool.Commands
                 }
             }
 
-            // Chọn tường
             var lineIds = AcadUtils.SelectObjectsOnScreen("LINE");
             if (lineIds.Count == 0)
             {
@@ -263,13 +274,11 @@ namespace DTS_Wall_Tool.Commands
                 return;
             }
 
-            // Nhập load pattern
             PromptStringOptions patternOpt = new PromptStringOptions("\nNhập Load Pattern (mặc định DL): ");
             patternOpt.DefaultValue = "DL";
             PromptResult patternRes = Ed.GetString(patternOpt);
             string loadPattern = string.IsNullOrEmpty(patternRes.StringResult) ? "DL" : patternRes.StringResult;
 
-            // Kiểm tra pattern tồn tại
             if (!SapUtils.LoadPatternExists(loadPattern))
             {
                 WriteError($"Load pattern '{loadPattern}' không tồn tại trong SAP2000!");
@@ -301,23 +310,20 @@ namespace DTS_Wall_Tool.Commands
 
                     foreach (var mapping in wData.Mappings)
                     {
-                        // Xử lý frame NEW
                         if (mapping.TargetFrame == "New")
                         {
-                            // TODO: Tạo frame mới trong SAP2000
                             WriteMessage($"[{lineId.Handle}]: Frame NEW - cần tạo thủ công");
                             createdCount++;
                             continue;
                         }
 
-                        // Gán tải với khoảng cách tuyệt đối
                         bool success = SapUtils.AssignDistributedLoad(
                             mapping.TargetFrame,
                             loadPattern,
                             wData.LoadValue.Value,
                             mapping.DistI,
                             mapping.DistJ,
-                            false // Absolute distance
+                            false
                         );
 
                         if (success)
@@ -340,20 +346,15 @@ namespace DTS_Wall_Tool.Commands
 
         #region Helper Methods
 
-        /// <summary>
-        /// Lấy Insertion Point Offset từ Origin Circle hoặc user input
-        /// </summary>
         private Point2D GetInsertionOffset()
         {
-            // Tìm origin circle trên layer dts_origin
             var originCircle = AcadUtils.FindOriginCircle();
             if (originCircle != null)
             {
-                WriteMessage(message: $"Sử dụng Origin Circle: ({originCircle.Value.X:0.0}, {originCircle.Value.Y:0.0})");
+                WriteMessage($"Sử dụng Origin Circle: ({originCircle.Value.X:0. 0}, {originCircle.Value.Y:0.0})");
                 return originCircle.Value;
             }
 
-            // Không tìm thấy -> hỏi user
             PromptPointOptions ptOpt = new PromptPointOptions("\nChọn điểm gốc (hoặc Enter để dùng 0,0): ");
             ptOpt.AllowNone = true;
             PromptPointResult ptRes = Ed.GetPoint(ptOpt);
@@ -364,29 +365,6 @@ namespace DTS_Wall_Tool.Commands
             }
 
             return new Point2D(0, 0);
-        }
-
-        /// <summary>
-        /// Vẽ Visual Segments để hiển thị vùng được gán tải
-        /// </summary>
-        private void DrawVisualSegments(BlockTableRecord btr, Transaction tr,
-            List<VisualSegment> segments, Point2D offset)
-        {
-            foreach (var seg in segments)
-            {
-                // Chuyển từ SAP coords về CAD coords
-                var startPt = new Point3d(seg.Start.X + offset.X, seg.Start.Y + offset.Y, 0);
-                var endPt = new Point3d(seg.End.X + offset.X, seg.End.Y + offset.Y, 0);
-
-                // Tạo line
-                var line = new Line(startPt, endPt);
-                line.Layer = VISUAL_LAYER;
-                line.ColorIndex = seg.ColorIndex;
-                line.LineWeight = LineWeight.LineWeight050; // Dày hơn để dễ nhìn
-
-                btr.AppendEntity(line);
-                tr.AddNewlyCreatedDBObject(line, true);
-            }
         }
 
         #endregion
