@@ -1,7 +1,7 @@
 ﻿using System.Collections.Generic;
+using System.Linq;
 using Autodesk.AutoCAD.DatabaseServices;
 using Autodesk.AutoCAD.EditorInput;
-using Autodesk.AutoCAD.Geometry;
 using Autodesk.AutoCAD.Runtime;
 using DTS_Wall_Tool.Core.Data;
 using DTS_Wall_Tool.Core.Engines;
@@ -15,8 +15,8 @@ namespace DTS_Wall_Tool.Commands
     /// </summary>
     public class SapCommands : CommandBase
     {
-        private const string MAPPING_LAYER = "dts_mapping";
         private const string LABEL_LAYER = "dts_frame_label";
+        private const string WALL_LAYER = "DTS_WALL_DIAGRAM";
 
         /// <summary>
         /// Kiểm tra kết nối SAP2000
@@ -69,10 +69,8 @@ namespace DTS_Wall_Tool.Commands
 
             foreach (var frame in frames)
             {
-                if (frame.IsBeam)
-                    beamCount++;
-                else
-                    columnCount++;
+                if (frame.IsBeam) beamCount++;
+                else columnCount++;
             }
 
             WriteMessage($"  - Dầm: {beamCount}");
@@ -92,15 +90,21 @@ namespace DTS_Wall_Tool.Commands
         }
 
         /// <summary>
-        /// Test mapping tường với dầm (Khôi phục từ VBA btnCombineWithSAP)
-        /// Chiến thuật: Hình chiếu & Chồng lấn (Projection & Overlap)
+        /// Đồng bộ tường với dầm SAP2000 (Smart Link)
+        /// Luồng xử lý:
+        /// 1. Kết nối SAP, lấy tất cả dầm
+        /// 2. Quét chọn tường
+        /// 3.  LỌC RÁC: Chỉ xử lý đối tượng có XData DTS_APP và đã Link với Origin
+        /// 4. TÌM CHA: Lấy tọa độ gốc và cao độ Z từ Origin cha
+        /// 5.  MAPPING: Chạy engine so khớp
+        /// 6. VISUAL: Đổi màu line + Vẽ nhãn
         /// </summary>
-        [CommandMethod("DTS_TEST_MAP")]
-        public void DTS_TEST_MAP()
+        [CommandMethod("DTS_SYNC_SAP")]
+        public void DTS_SYNC_SAP()
         {
-            WriteMessage("=== MAPPING TƯỜNG - DẦM (Projection & Overlap) ===");
+            WriteMessage("=== ĐỒNG BỘ TƯỜNG - DẦM SAP2000 (Smart Link) ===");
 
-            // Kết nối SAP
+            // ========== BƯỚC 1: KẾT NỐI SAP ==========
             if (!SapUtils.IsConnected)
             {
                 bool connected = SapUtils.Connect(out string msg);
@@ -111,48 +115,41 @@ namespace DTS_Wall_Tool.Commands
                 }
             }
 
-            // Chọn tường
+            // Lấy TẤT CẢ frames từ SAP (sẽ lọc theo Z sau)
+            var allFrames = SapUtils.GetAllFramesGeometry();
+            if (allFrames.Count == 0)
+            {
+                WriteError("Không có frame nào trong model SAP2000!");
+                return;
+            }
+            WriteMessage($"SAP2000: {allFrames.Count} frames (tất cả cao độ)");
+
+            // ========== BƯỚC 2: CHỌN TƯỜNG ==========
             var lineIds = AcadUtils.SelectObjectsOnScreen("LINE");
             if (lineIds.Count == 0)
             {
-                WriteMessage("Không có tường nào được chọn.");
+                WriteMessage("Không có đối tượng nào được chọn.");
                 return;
             }
+            WriteMessage($"Đã chọn {lineIds.Count} đối tượng.");
 
-            WriteMessage($"Đã chọn {lineIds.Count} tường.");
+            // ========== BƯỚC 3-6: XỬ LÝ TỪNG TƯỜNG ==========
+            int validCount = 0;
+            int skippedNoXData = 0;
+            int skippedNoLink = 0;
+            int skippedNoOrigin = 0;
+            int mappedFull = 0;
+            int mappedPartial = 0;
+            int mappedNew = 0;
 
-            // Nhập cao độ
-            PromptDoubleOptions zOpt = new PromptDoubleOptions("\nNhập cao độ Z tường (mm, mặc định 0): ");
-            zOpt.DefaultValue = 0;
-            zOpt.AllowNegative = true;
-
-            PromptDoubleResult zRes = Ed.GetDouble(zOpt);
-            double wallZ = zRes.Status == PromptStatus.OK ? zRes.Value : 0;
-
-            // Lấy Insertion Point Offset
-            Point2D insertOffset = GetInsertionOffset();
-
-            // Lấy frames từ SAP
-            var frames = SapUtils.GetBeamsAtElevation(wallZ, MappingEngine.TOLERANCE_Z);
-            WriteMessage($"Tìm thấy {frames.Count} dầm tại cao độ {wallZ}");
-
-            if (frames.Count == 0)
-            {
-                WriteError("Không có dầm nào ở cao độ này!");
-                return;
-            }
-
-            // Tạo layers
-            AcadUtils.CreateLayer(MAPPING_LAYER, 4);
+            // Tạo layer cho label
             AcadUtils.CreateLayer(LABEL_LAYER, 254);
-
-            int mappedCount = 0;
-            int unmappedCount = 0;
-            int partialCount = 0;
+            // Xóa label cũ trên layer
+            AcadUtils.ClearLayer(LABEL_LAYER);
 
             UsingTransaction(tr =>
             {
-                // Lấy BlockTableRecord để thêm MText
+                // Lấy BlockTableRecord
                 var bt = tr.GetObject(Db.BlockTableId, OpenMode.ForRead) as BlockTable;
                 var btr = tr.GetObject(bt[BlockTableRecord.ModelSpace], OpenMode.ForWrite) as BlockTableRecord;
 
@@ -161,92 +158,134 @@ namespace DTS_Wall_Tool.Commands
                     Line lineEnt = tr.GetObject(lineId, OpenMode.ForWrite) as Line;
                     if (lineEnt == null) continue;
 
+                    // --- LỌC 1: Kiểm tra layer ---
+                    if (!lineEnt.Layer.Equals(WALL_LAYER, System.StringComparison.OrdinalIgnoreCase))
+                    {
+                        // Không phải layer tường, bỏ qua im lặng
+                        skippedNoXData++;
+                        continue;
+                    }
+
+                    // --- LỌC 2: Kiểm tra có XData DTS_APP không ---
+                    WallData wData = XDataUtils.ReadWallData(lineEnt);
+                    if (wData == null || !wData.HasValidData())
+                    {
+                        skippedNoXData++;
+                        continue;
+                    }
+
+                    // --- LỌC 3: Kiểm tra đã Link với Origin chưa ---
+                    if (string.IsNullOrEmpty(wData.OriginHandle))
+                    {
+                        skippedNoLink++;
+                        continue;
+                    }
+
+                    // --- TÌM CHA: Lấy thông tin Origin ---
+                    ObjectId originId = AcadUtils.GetObjectIdFromHandle(wData.OriginHandle);
+                    if (originId == ObjectId.Null)
+                    {
+                        WriteMessage($"[{lineId.Handle}]: Origin handle không hợp lệ - bỏ qua");
+                        skippedNoOrigin++;
+                        continue;
+                    }
+
+                    DBObject originObj = tr.GetObject(originId, OpenMode.ForRead);
+                    StoryData storyData = XDataUtils.ReadStoryData(originObj);
+                    if (storyData == null)
+                    {
+                        WriteMessage($"[{lineId.Handle}]: Origin không có StoryData - bỏ qua");
+                        skippedNoOrigin++;
+                        continue;
+                    }
+
+                    // Lấy cao độ Z từ Origin
+                    double wallZ = storyData.Elevation;
+
+                    // Lấy tọa độ gốc từ Origin (để tính offset)
+                    Point2D insertOffset = new Point2D(storyData.OffsetX, storyData.OffsetY);
+
+                    // Nếu Origin là Circle, lấy tâm làm offset
+                    if (originObj is Circle circle)
+                    {
+                        insertOffset = new Point2D(circle.Center.X, circle.Center.Y);
+                    }
+
+                    // --- LỌC theo cao độ để lấy dầm phù hợp ---
+                    var beamsAtZ = allFrames
+                        .Where(f => f.IsBeam && System.Math.Abs(f.AverageZ - wallZ) <= MappingEngine.TOLERANCE_Z)
+                        .ToList();
+
+                    if (beamsAtZ.Count == 0)
+                    {
+                        WriteMessage($"[{lineId.Handle}]: Không có dầm ở cao độ Z={wallZ:0} - NEW");
+                        // Vẫn xử lý như NEW
+                    }
+
+                    // --- MAPPING ---
                     Point2D startPt = new Point2D(lineEnt.StartPoint.X, lineEnt.StartPoint.Y);
                     Point2D endPt = new Point2D(lineEnt.EndPoint.X, lineEnt.EndPoint.Y);
-
-                    // Đọc thông tin tường hiện có
-                    var wData = XDataUtils.ReadWallData(lineEnt) ?? new WallData();
                     double wallThickness = wData.Thickness ?? 200.0;
-                    string wallType = wData.WallType ?? $"W{wallThickness:0}";
-                    string loadPattern = wData.LoadPattern ?? "DL";
-                    double loadValue = wData.LoadValue ?? 0;
 
-                    // Thực hiện mapping
                     var result = MappingEngine.FindMappings(
-                        startPt, endPt, wallZ, frames,
+                        startPt, endPt, wallZ, beamsAtZ,
                         insertOffset, wallThickness);
 
                     result.WallHandle = lineId.Handle.ToString();
 
-                    string handle = result.WallHandle;
+                    // --- CẬP NHẬT WALLDATA ---
+                    wData.Mappings = result.Mappings;
+                    wData.BaseZ = wallZ;
+                    XDataUtils.SaveWallData(lineEnt, wData, tr);
 
-                    // Xác định màu và cập nhật line
+                    // --- VISUAL: Đổi màu line ---
                     int colorIndex = result.GetColorIndex();
                     lineEnt.ColorIndex = colorIndex;
 
+                    // --- VISUAL: Vẽ nhãn ---
+                    LabelUtils.UpdateWallLabels(lineId, wData, result, tr);
+
+                    // --- THỐNG KÊ ---
+                    validCount++;
                     if (result.HasMapping)
                     {
-                        bool isFull = result.IsFullyCovered;
-                        string matchInfo = isFull ? "FULL" : "PARTIAL";
-
-                        WriteMessage($"[{handle}]: {result.GetLabelText(wallType, loadPattern, loadValue)} ({matchInfo}, {result.CoveragePercent:0}% coverage)");
-
-                        // Cập nhật WallData
-                        wData.Mappings = result.Mappings;
-                        XDataUtils.SaveWallData(lineEnt, wData, tr);
-
-                        // Vẽ MText Labels
-                        // Dòng trên: Thông tin mapping (-> FrameName)
-                        string topLabel = result.GetTopLabelText();
-                        LabelPlotter.PlotLabel(btr, tr, startPt, endPt, topLabel,
-                            LabelPosition.MiddleTop, 60, LABEL_LAYER);
-
-                        // Dòng dưới: Thông tin load (W200 DL=7. 20)
-                        string bottomLabel = result.GetBottomLabelText(wallType, loadPattern, loadValue);
-                        LabelPlotter.PlotLabel(btr, tr, startPt, endPt, bottomLabel,
-                            LabelPosition.MiddleBottom, 60, LABEL_LAYER);
-
-                        if (isFull)
-                            mappedCount++;
+                        if (result.IsFullyCovered)
+                        {
+                            mappedFull++;
+                            WriteMessage($"[{lineId.Handle}]: -> {result.Mappings[0].TargetFrame} (FULL, Z={wallZ:0})");
+                        }
                         else
-                            partialCount++;
+                        {
+                            mappedPartial++;
+                            WriteMessage($"[{lineId.Handle}]: -> {result.Mappings[0].TargetFrame} (PARTIAL, Z={wallZ:0})");
+                        }
                     }
                     else
                     {
-                        WriteMessage($"[{handle}]: Không tìm thấy dầm phù hợp -> NEW");
-
-                        // Tạo mapping NEW
-                        wData.Mappings = new List<MappingRecord>
-                        {
-                            new MappingRecord
-                            {
-                                TargetFrame = "New",
-                                MatchType = "NEW",
-                                CoveredLength = result.WallLength
-                            }
-                        };
-                        XDataUtils.SaveWallData(lineEnt, wData, tr);
-
-                        // Vẽ MText Labels cho NEW
-                        string topLabel = "{\\C1;-> NEW}";
-                        LabelPlotter.PlotLabel(btr, tr, startPt, endPt, topLabel,
-                            LabelPosition.MiddleTop, 60, LABEL_LAYER);
-
-                        string bottomLabel = $"{{\\C1;{wallType} {loadPattern}={loadValue:0.00}}}";
-                        LabelPlotter.PlotLabel(btr, tr, startPt, endPt, bottomLabel,
-                            LabelPosition.MiddleBottom, 60, LABEL_LAYER);
-
-                        unmappedCount++;
+                        mappedNew++;
+                        WriteMessage($"[{lineId.Handle}]: -> NEW (Z={wallZ:0})");
                     }
                 }
             });
 
-            // Thống kê
-            WriteMessage("\n=== KẾT QUẢ ===");
-            WriteMessage($"  Full Match (Xanh):    {mappedCount}");
-            WriteMessage($"  Partial Match (Vàng): {partialCount}");
-            WriteMessage($"  New (Đỏ):             {unmappedCount}");
-            WriteMessage($"  Tổng:                 {lineIds.Count}");
+            // ========== THỐNG KÊ KẾT QUẢ ==========
+            WriteMessage("\n=== KẾT QUẢ ĐỒNG BỘ ===");
+            WriteMessage($"  Tổng chọn:              {lineIds.Count}");
+            WriteMessage($"  Đã xử lý (có Link):     {validCount}");
+            WriteMessage($"    - Full Match (Xanh):  {mappedFull}");
+            WriteMessage($"    - Partial (Vàng):     {mappedPartial}");
+            WriteMessage($"    - New (Đỏ):           {mappedNew}");
+            WriteMessage($"  Bỏ qua:");
+            WriteMessage($"    - Không có XData:     {skippedNoXData}");
+            WriteMessage($"    - Chưa Link Origin:   {skippedNoLink}");
+            WriteMessage($"    - Origin lỗi:         {skippedNoOrigin}");
+
+            if (skippedNoLink > 0)
+            {
+                WriteMessage("\n[GỢI Ý] Có đối tượng chưa Link với Origin.");
+                WriteMessage("        Chạy lệnh DTS_SET_ORIGIN để thiết lập Origin cho tầng.");
+                WriteMessage("        Sau đó chạy DTS_LINK để liên kết tường với Origin.");
+            }
         }
 
         /// <summary>
@@ -343,30 +382,5 @@ namespace DTS_Wall_Tool.Commands
             SapUtils.RefreshView();
             WriteMessage($"\nKết quả: {assignedCount} thành công, {createdCount} cần tạo mới, {failedCount} thất bại");
         }
-
-        #region Helper Methods
-
-        private Point2D GetInsertionOffset()
-        {
-            var originCircle = AcadUtils.FindOriginCircle();
-            if (originCircle != null)
-            {
-                WriteMessage($"Sử dụng Origin Circle: ({originCircle.Value.X:0. 0}, {originCircle.Value.Y:0.0})");
-                return originCircle.Value;
-            }
-
-            PromptPointOptions ptOpt = new PromptPointOptions("\nChọn điểm gốc (hoặc Enter để dùng 0,0): ");
-            ptOpt.AllowNone = true;
-            PromptPointResult ptRes = Ed.GetPoint(ptOpt);
-
-            if (ptRes.Status == PromptStatus.OK)
-            {
-                return new Point2D(ptRes.Value.X, ptRes.Value.Y);
-            }
-
-            return new Point2D(0, 0);
-        }
-
-        #endregion
     }
 }
