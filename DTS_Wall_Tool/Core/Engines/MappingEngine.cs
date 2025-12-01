@@ -17,8 +17,11 @@ namespace DTS_Wall_Tool.Core.Engines
         public List<MappingRecord> Mappings { get; set; } = new List<MappingRecord>();
 
         public double CoveredLength => Mappings.Where(m => m.TargetFrame != "New").Sum(m => m.CoveredLength);
+
+        // CoveragePercent > 95% coi như Full
         public double CoveragePercent => WallLength > 0 ? (CoveredLength / WallLength) * 100 : 0;
         public bool IsFullyCovered => CoveragePercent >= 95.0;
+
         public bool HasMapping => Mappings.Count > 0 && Mappings.Any(m => m.TargetFrame != "New");
 
         /// <summary>
@@ -26,15 +29,14 @@ namespace DTS_Wall_Tool.Core.Engines
         /// - Xanh (3): Full coverage (>=95%)
         /// - Vàng (2): Partial coverage
         /// - Đỏ (1): No match -> NEW
-        /// - Magenta (6): Has Override (user edited)
         /// </summary>
-        public int GetColorIndex(bool hasOverride = false)
+        public int GetColorIndex()
         {
-            if (hasOverride) return 6; // Magenta - User Override
             if (!HasMapping) return 1; // Red - New
             if (IsFullyCovered) return 3; // Green - Full
             return 2; // Yellow - Partial
         }
+    
 
         /// <summary>
         /// Tạo label text cho dòng trên (thông tin mapping)
@@ -437,4 +439,6 @@ namespace DTS_Wall_Tool.Core.Engines
 
         #endregion
     }
+
+
 }

@@ -90,208 +90,118 @@ namespace DTS_Wall_Tool.Commands
         }
 
         /// <summary>
-        /// Đồng bộ tường với dầm SAP2000 (Smart Link)
-        /// Luồng xử lý:
-        /// 1. Kết nối SAP, lấy tất cả dầm
-        /// 2. Quét chọn tường
-        /// 3.  LỌC RÁC: Chỉ xử lý đối tượng có XData DTS_APP và đã Link với Origin
-        /// 4. TÌM CHA: Lấy tọa độ gốc và cao độ Z từ Origin cha
-        /// 5.  MAPPING: Chạy engine so khớp
-        /// 6. VISUAL: Đổi màu line + Vẽ nhãn
+        /// Đồng bộ hình học Tường - Dầm (Geometric Mapping Only)
+        /// Không yêu cầu nhập độ dày hay tải trọng trước.
         /// </summary>
         [CommandMethod("DTS_SYNC_SAP")]
         public void DTS_SYNC_SAP()
         {
-            WriteMessage("=== ĐỒNG BỘ TƯỜNG - DẦM SAP2000 (Smart Link) ===");
+            WriteMessage("=== ĐỒNG BỘ MAPPING HÌNH HỌC (GEOMETRIC SYNC) ===");
 
-            // ========== BƯỚC 1: KẾT NỐI SAP ==========
+            // 1. Kết nối SAP
             if (!SapUtils.IsConnected)
             {
-                bool connected = SapUtils.Connect(out string msg);
-                if (!connected)
-                {
-                    WriteError(msg);
-                    return;
-                }
+                if (!SapUtils.Connect(out string msg)) { WriteError(msg); return; }
             }
-
-            // Lấy TẤT CẢ frames từ SAP (sẽ lọc theo Z sau)
             var allFrames = SapUtils.GetAllFramesGeometry();
-            if (allFrames.Count == 0)
-            {
-                WriteError("Không có frame nào trong model SAP2000!");
-                return;
-            }
-            WriteMessage($"SAP2000: {allFrames.Count} frames (tất cả cao độ)");
+            if (allFrames.Count == 0) { WriteError("Model SAP2000 trống!"); return; }
 
-            // ========== BƯỚC 2: CHỌN TƯỜNG ==========
+            // 2. Chọn tường
             var lineIds = AcadUtils.SelectObjectsOnScreen("LINE");
-            if (lineIds.Count == 0)
-            {
-                WriteMessage("Không có đối tượng nào được chọn.");
-                return;
-            }
-            WriteMessage($"Đã chọn {lineIds.Count} đối tượng.");
+            if (lineIds.Count == 0) return;
 
-            // ========== BƯỚC 3-6: XỬ LÝ TỪNG TƯỜNG ==========
-            int validCount = 0;
-            int skippedNoXData = 0;
-            int skippedNoLink = 0;
-            int skippedNoOrigin = 0;
-            int mappedFull = 0;
-            int mappedPartial = 0;
-            int mappedNew = 0;
-
-            // Tạo layer cho label
+            // 3. Chuẩn bị layer nhãn
             AcadUtils.CreateLayer(LABEL_LAYER, 254);
-            // Xóa label cũ trên layer
             AcadUtils.ClearLayer(LABEL_LAYER);
+
+            int processed = 0;
+            int mappedCount = 0;
 
             UsingTransaction(tr =>
             {
-                // Lấy BlockTableRecord
-                var bt = tr.GetObject(Db.BlockTableId, OpenMode.ForRead) as BlockTable;
-                var btr = tr.GetObject(bt[BlockTableRecord.ModelSpace], OpenMode.ForWrite) as BlockTableRecord;
-
                 foreach (ObjectId lineId in lineIds)
                 {
                     Line lineEnt = tr.GetObject(lineId, OpenMode.ForWrite) as Line;
                     if (lineEnt == null) continue;
 
-                    // --- LỌC 1: Kiểm tra layer ---
-                    if (!lineEnt.Layer.Equals(WALL_LAYER, System.StringComparison.OrdinalIgnoreCase))
-                    {
-                        // Không phải layer tường, bỏ qua im lặng
-                        skippedNoXData++;
-                        continue;
-                    }
+                    // Lọc sơ bộ Layer
+                    if (!lineEnt.Layer.Equals(WALL_LAYER, System.StringComparison.OrdinalIgnoreCase)) continue;
 
-                    // --- LỌC 2: Kiểm tra có XData DTS_APP không ---
-                    WallData wData = XDataUtils.ReadWallData(lineEnt);
-                    if (wData == null || !wData.HasValidData())
-                    {
-                        skippedNoXData++;
-                        continue;
-                    }
+                    // Đọc hoặc khởi tạo WallData mới nếu chưa có
+                    WallData wData = XDataUtils.ReadWallData(lineEnt) ?? new WallData();
 
-                    // --- LỌC 3: Kiểm tra đã Link với Origin chưa ---
+                    // --- KIỂM TRA LIÊN KẾT (BẮT BUỘC) ---
+                    // Chỉ cần biết "Con của ai" để tính Z và tọa độ tương đối
                     if (string.IsNullOrEmpty(wData.OriginHandle))
                     {
-                        skippedNoLink++;
-                        continue;
+                        continue; // Bỏ qua âm thầm những thanh chưa Link
                     }
 
-                    // --- TÌM CHA: Lấy thông tin Origin ---
+                    // --- TÌM CHA ĐỂ LẤY THAM CHIẾU ---
                     ObjectId originId = AcadUtils.GetObjectIdFromHandle(wData.OriginHandle);
-                    if (originId == ObjectId.Null)
-                    {
-                        WriteMessage($"[{lineId.Handle}]: Origin handle không hợp lệ - bỏ qua");
-                        skippedNoOrigin++;
-                        continue;
-                    }
+                    if (originId == ObjectId.Null || originId.IsErased) continue;
 
                     DBObject originObj = tr.GetObject(originId, OpenMode.ForRead);
                     StoryData storyData = XDataUtils.ReadStoryData(originObj);
-                    if (storyData == null)
-                    {
-                        WriteMessage($"[{lineId.Handle}]: Origin không có StoryData - bỏ qua");
-                        skippedNoOrigin++;
-                        continue;
-                    }
+                    if (storyData == null) continue;
 
-                    // Lấy cao độ Z từ Origin
+                    // --- CHUẨN BỊ DỮ LIỆU MAPPING ---
+                    // 1. Cao độ Z chuẩn để lọc dầm
                     double wallZ = storyData.Elevation;
 
-                    // Lấy tọa độ gốc từ Origin (để tính offset)
+                    // 2. Vector dịch chuyển (Offset) từ CAD sang SAP
                     Point2D insertOffset = new Point2D(storyData.OffsetX, storyData.OffsetY);
 
-                    // Nếu Origin là Circle, lấy tâm làm offset
-                    if (originObj is Circle circle)
-                    {
-                        insertOffset = new Point2D(circle.Center.X, circle.Center.Y);
-                    }
+                    // 3. "Độ dày tìm kiếm" (Search Thickness)
+                    // Đây không phải độ dày tường thực tế, mà là phạm vi tìm kiếm hình học.
+                    // Ta giả định một vùng tìm kiếm mặc định (ví dụ 220mm) để Engine quét.
+                    double searchScope = 220.0;
 
-                    // --- LỌC theo cao độ để lấy dầm phù hợp ---
-                    var beamsAtZ = allFrames
+                    // --- THỰC HIỆN MAPPING ---
+                    // Lọc dầm ở cao độ Z (dung sai Z=200mm)
+                    var framesAtZ = allFrames
                         .Where(f => f.IsBeam && System.Math.Abs(f.AverageZ - wallZ) <= MappingEngine.TOLERANCE_Z)
                         .ToList();
 
-                    if (beamsAtZ.Count == 0)
-                    {
-                        WriteMessage($"[{lineId.Handle}]: Không có dầm ở cao độ Z={wallZ:0} - NEW");
-                        // Vẫn xử lý như NEW
-                    }
-
-                    // --- MAPPING ---
                     Point2D startPt = new Point2D(lineEnt.StartPoint.X, lineEnt.StartPoint.Y);
                     Point2D endPt = new Point2D(lineEnt.EndPoint.X, lineEnt.EndPoint.Y);
-                    double wallThickness = wData.Thickness ?? 200.0;
 
                     var result = MappingEngine.FindMappings(
-                        startPt, endPt, wallZ, beamsAtZ,
-                        insertOffset, wallThickness);
+                        startPt, endPt, wallZ, framesAtZ,
+                        insertOffset, searchScope);
 
                     result.WallHandle = lineId.Handle.ToString();
 
-                    // --- CẬP NHẬT WALLDATA ---
+                    // --- LƯU KẾT QUẢ ---
+                    // Chỉ cập nhật Mappings và BaseZ. 
+                    // KHÔNG động chạm đến Thickness hay LoadValue (giữ nguyên null nếu chưa có)
                     wData.Mappings = result.Mappings;
                     wData.BaseZ = wallZ;
+
+                    // Lưu lại WallData (lúc này có thể chỉ chứa Link và Mappings)
                     XDataUtils.SaveWallData(lineEnt, wData, tr);
 
-                    // --- VISUAL: Đổi màu line ---
-                    int colorIndex = result.GetColorIndex();
-                    lineEnt.ColorIndex = colorIndex;
+                    // --- HIỂN THỊ TRỰC QUAN ---
+                    lineEnt.ColorIndex = result.GetColorIndex();
 
-                    // --- VISUAL: Vẽ nhãn ---
+                    // Vẽ nhãn (Logic vẽ sẽ tự động thích ứng nếu thiếu data tải)
                     LabelUtils.UpdateWallLabels(lineId, wData, result, tr);
 
-                    // --- THỐNG KÊ ---
-                    validCount++;
-                    if (result.HasMapping)
-                    {
-                        if (result.IsFullyCovered)
-                        {
-                            mappedFull++;
-                            WriteMessage($"[{lineId.Handle}]: -> {result.Mappings[0].TargetFrame} (FULL, Z={wallZ:0})");
-                        }
-                        else
-                        {
-                            mappedPartial++;
-                            WriteMessage($"[{lineId.Handle}]: -> {result.Mappings[0].TargetFrame} (PARTIAL, Z={wallZ:0})");
-                        }
-                    }
-                    else
-                    {
-                        mappedNew++;
-                        WriteMessage($"[{lineId.Handle}]: -> NEW (Z={wallZ:0})");
-                    }
+                    processed++;
+                    if (result.HasMapping) mappedCount++;
                 }
             });
 
-            // ========== THỐNG KÊ KẾT QUẢ ==========
-            WriteMessage("\n=== KẾT QUẢ ĐỒNG BỘ ===");
-            WriteMessage($"  Tổng chọn:              {lineIds.Count}");
-            WriteMessage($"  Đã xử lý (có Link):     {validCount}");
-            WriteMessage($"    - Full Match (Xanh):  {mappedFull}");
-            WriteMessage($"    - Partial (Vàng):     {mappedPartial}");
-            WriteMessage($"    - New (Đỏ):           {mappedNew}");
-            WriteMessage($"  Bỏ qua:");
-            WriteMessage($"    - Không có XData:     {skippedNoXData}");
-            WriteMessage($"    - Chưa Link Origin:   {skippedNoLink}");
-            WriteMessage($"    - Origin lỗi:         {skippedNoOrigin}");
-
-            if (skippedNoLink > 0)
-            {
-                WriteMessage("\n[GỢI Ý] Có đối tượng chưa Link với Origin.");
-                WriteMessage("        Chạy lệnh DTS_SET_ORIGIN để thiết lập Origin cho tầng.");
-                WriteMessage("        Sau đó chạy DTS_LINK để liên kết tường với Origin.");
-            }
+            WriteMessage($"\nĐã Mapping xong {processed} tường. ({mappedCount} có dầm đỡ)");
+            WriteMessage("Mẹo: Dùng lệnh [DTS_SET] để gán tải trọng sau khi đã kiểm tra Mapping.");
         }
+    
 
-        /// <summary>
-        /// Gán tải lên SAP2000
-        /// </summary>
-        [CommandMethod("DTS_ASSIGN_LOAD")]
+
+/// <summary>
+/// Gán tải lên SAP2000
+/// </summary>
+[CommandMethod("DTS_ASSIGN_LOAD")]
         public void DTS_ASSIGN_LOAD()
         {
             WriteMessage("=== GÁN TẢI LÊN SAP2000 ===");
