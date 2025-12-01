@@ -1,175 +1,227 @@
-﻿using Autodesk.AutoCAD.DatabaseServices;
+﻿using System;
+using System.Collections.Generic;
+using System.Linq;
+using Autodesk.AutoCAD.DatabaseServices;
 using DTS_Wall_Tool.Core.Data;
 using DTS_Wall_Tool.Core.Engines;
 using DTS_Wall_Tool.Core.Primitives;
-using System;
-using System.Collections.Generic;
-using System.Linq;
 
 namespace DTS_Wall_Tool.Core.Utils
 {
+    /// <summary>
+    /// Tiện ích chuẩn bị nội dung Label cho việc hiển thị. 
+    /// LabelUtils là "quản lý" - chuẩn bị nội dung, màu sắc. 
+    /// LabelPlotter là "công nhân" - vẽ theo yêu cầu.
+    /// </summary>
     public static class LabelUtils
     {
-        private const double TEXT_HEIGHT_MAIN = 150.0;
-        private const double TEXT_HEIGHT_SUB = 120.0;
+        private const double TEXT_HEIGHT_MAIN = 120.0;
+        private const double TEXT_HEIGHT_SUB = 100.0;
         private const string LABEL_LAYER = "dts_frame_label";
 
-
-
-        /// <summary>
-        /// API TỔNG QUÁT: Dispatcher
-        /// Kiểm tra Type trước, sau đó gọi hàm vẽ cụ thể.
-        /// </summary>
-        public static bool RefreshEntityLabel(ObjectId objId, Transaction tr)
-        {
-            Entity ent = tr.GetObject(objId, OpenMode.ForRead) as Entity;
-            if (ent == null) return false;
-
-            // 1. Kiểm tra nhanh loại đối tượng trong XData
-            ElementType type = XDataUtils.GetElementType(ent);
-
-            // 2. Switch case để xử lý
-            switch (type)
-            {
-                case ElementType.Wall:
-                    return ProcessWallLabel(ent, objId, tr);
-
-                case ElementType.Column:
-                    // return ProcessColumnLabel(ent, objId, tr); // Mở rộng sau này
-                    return false;
-
-                case ElementType.Beam:
-                    // return ProcessBeamLabel(ent, objId, tr); // Mở rộng sau này
-                    return false;
-
-                default:
-                    // Nếu không có XData hợp lệ -> Không vẽ gì cả (hoặc xóa nhãn cũ nếu cần)
-                    return false;
-            }
-        }
-
+        #region Main API
 
         /// <summary>
-        /// Logic riêng cho Tường
+        /// Cập nhật nhãn cho Tường sau khi Sync/Mapping
+        /// Format:
+        ///   Dòng trên: [Handle] W200 DL=7. 20 kN/m
+        ///   Dòng dưới: to B15 I=0.0to3.5 hoặc to B15 (full 9m)
         /// </summary>
-        private static bool ProcessWallLabel(Entity ent, ObjectId objId, Transaction tr)
-        {
-            // Kiểm tra tính toàn vẹn hình học: Tường phải là LINE
-            if (!(ent is Line line)) return false;
-
-            // Đọc dữ liệu
-            WallData wData = XDataUtils.ReadWallData(ent);
-
-            // Validate dữ liệu
-            if (wData == null) return false;
-
-            // Chỉ vẽ nếu có dữ liệu thực sự hoặc đã mapping
-            if (!wData.HasValidData() && wData.Mappings.Count == 0) return false;
-
-            // Chuẩn bị dữ liệu hiển thị
-            MappingResult savedResult = new MappingResult
-            {
-                WallHandle = objId.Handle.ToString(),
-                WallLength = line.Length,
-                Mappings = wData.Mappings ?? new System.Collections.Generic.List<MappingRecord>()
-            };
-
-            // Vẽ
-            UpdateWallLabels(objId, wData, savedResult, tr);
-
-            // Cập nhật màu sắc Line theo trạng thái
-            if (ent.IsWriteEnabled == false) ent.UpgradeOpen();
-            ent.ColorIndex = savedResult.GetColorIndex();
-
-            return true;
-        }
-
         public static void UpdateWallLabels(ObjectId wallId, WallData wData, MappingResult mapResult, Transaction tr)
         {
             Entity ent = tr.GetObject(wallId, OpenMode.ForRead) as Entity;
-            if (!(ent is Line line)) return;
+            if (ent == null) return;
 
-            Point2D pStart = new Point2D(line.StartPoint.X, line.StartPoint.Y);
-            Point2D pEnd = new Point2D(line.EndPoint.X, line.EndPoint.Y);
+            Point2D pStart, pEnd;
+            if (ent is Line line)
+            {
+                pStart = new Point2D(line.StartPoint.X, line.StartPoint.Y);
+                pEnd = new Point2D(line.EndPoint.X, line.EndPoint.Y);
+            }
+            else return;
 
+            // Xác định màu theo trạng thái
             int statusColor = mapResult.GetColorIndex();
 
-            // --- INFO TEXT (Trên) ---
-            string topContent;
+            // === DÒNG TRÊN: [Handle] W200 DL=7. 20 kN/m ===
             string handleText = FormatColor($"[{wallId.Handle}]", statusColor);
+            string wallType = wData.WallType ?? $"W{wData.Thickness ?? 200:0}";
+            string loadPattern = wData.LoadPattern ?? "DL";
+            double loadValue = wData.LoadValue ?? 0;
+            string loadText = $"{wallType} {loadPattern}={loadValue:0.00} kN/m";
 
-            if (wData.Thickness.HasValue || wData.LoadValue.HasValue)
-            {
-                string wallType = wData.WallType ?? $"W{wData.Thickness ?? 0}";
-                // Thêm check null cho LoadValue để hiển thị đẹp hơn
-                string loadVal = wData.LoadValue.HasValue ? wData.LoadValue.Value.ToString("0.00") : "0";
-                string loadInfo = $"{wallType} {wData.LoadPattern ?? "DL"}={loadVal}";
-                topContent = $"{handleText} {FormatColor(loadInfo, 7)}"; // Màu trắng/đen cho thông tin
-            }
-            else
-            {
-                topContent = handleText;
-            }
+            string topContent = $"{handleText} {{\\C7;{loadText}}}";
 
-            // --- MAPPING TEXT (Dưới) ---
-            string botContent = GetMappingText(mapResult);
+            // === DÒNG DƯỚI: to B15 I=0. 0to3.5 ===
+            string botContent = GetMappingText(mapResult, wData.LoadPattern ?? "DL");
 
-            // --- VẼ ---
-            BlockTableRecord btr = (BlockTableRecord)tr.GetObject(ent.Database.CurrentSpaceId, OpenMode.ForWrite);
+            // Lấy BlockTableRecord để vẽ
+            BlockTableRecord btr = (BlockTableRecord)tr.GetObject(
+                ent.Database.CurrentSpaceId, OpenMode.ForWrite);
 
-            // Xóa nhãn cũ (nếu cần logic này phức tạp hơn thì dùng Dictionary ExtensionDictionary để lưu Handle của Label, nhưng tạm thời vẽ đè hoặc xóa lớp cũ như lệnh DTS_CLEANUP là ổn)
+            // Vẽ labels
+            LabelPlotter.PlotLabel(btr, tr, pStart, pEnd, topContent,
+                LabelPosition.MiddleTop, TEXT_HEIGHT_MAIN, LABEL_LAYER);
 
-            LabelPlotter.PlotLabel(btr, tr, pStart, pEnd, topContent, LabelPosition.MiddleTop, TEXT_HEIGHT_MAIN, LABEL_LAYER);
-            LabelPlotter.PlotLabel(btr, tr, pStart, pEnd, botContent, LabelPosition.MiddleBottom, TEXT_HEIGHT_SUB, LABEL_LAYER);
+            LabelPlotter.PlotLabel(btr, tr, pStart, pEnd, botContent,
+                LabelPosition.MiddleBottom, TEXT_HEIGHT_SUB, LABEL_LAYER);
         }
 
+        /// <summary>
+        /// Đổi màu entity theo trạng thái
+        /// </summary>
+        public static void SetEntityColor(ObjectId id, int colorIndex, Transaction tr)
+        {
+            Entity ent = tr.GetObject(id, OpenMode.ForWrite) as Entity;
+            if (ent != null) ent.ColorIndex = colorIndex;
+        }
+
+        #endregion
+
+        #region Content Formatting
+
+        /// <summary>
+        /// Format chuỗi với màu MText
+        /// </summary>
         public static string FormatColor(string text, int colorIndex)
         {
             return $"{{\\C{colorIndex};{text}}}";
         }
 
-        public static string GetMappingText(MappingResult res)
+        /// <summary>
+        /// Tạo nội dung text cho phần mapping
+        /// Bao gồm cả thông tin tải từ SAP nếu có
+        /// </summary>
+        public static string GetMappingText(MappingResult res, string loadPattern = "DL")
         {
-            if (!res.HasMapping) return FormatColor("to New", 1); // Đỏ
+            // Nếu chưa map
+            if (!res.HasMapping)
+                return FormatColor("to New", 1);
 
-            var parts = new List<string>();
-            foreach (var map in res.Mappings)
+            // Nếu map nhiều dầm
+            if (res.Mappings.Count > 1)
             {
-                if (map.TargetFrame == "New") continue;
-
-                string part = map.TargetFrame;
-
-                // Nếu Full Dầm -> Chỉ hiện tên dầm (gọn gàng)
-                if (map.MatchType == "FULL" || map.MatchType == "EXACT")
-                {
-                    // Giữ nguyên tên (VD: "B12")
-                }
-                else
-                {
-                    // Nếu Partial -> Hiện tọa độ mét
-                    // Format: B12(0-3.5)
-                    double i = map.DistI / 1000.0;
-                    double j = map.DistJ / 1000.0;
-
-                    // Format số: bỏ số 0 vô nghĩa (5.0 -> 5)
-                    string sI = i.ToString("0.##");
-                    string sJ = j.ToString("0.##");
-
-                    part += $"({sI}-{sJ})";
-                }
-                parts.Add(part);
+                var names = res.Mappings.Select(m => m.TargetFrame).Distinct();
+                return FormatColor("to " + string.Join(",", names), 3);
             }
 
-            if (parts.Count == 0) return FormatColor("to New", 1);
+            // Map 1 dầm
+            var map = res.Mappings[0];
+            if (map.TargetFrame == "New")
+                return FormatColor("to New", 1);
 
-            // Nối chuỗi: "to 122(5-10), 125"
-            string resultText = "to " + string.Join(", ", parts);
+            string result = $"to {map.TargetFrame}";
 
-            // --- [SỬA ĐỔI] ---
-            // Không cộng thêm chữ "(full)" nữa để tránh hiểu nhầm.
-            // Màu sắc Xanh/Vàng đã đủ để biểu thị trạng thái Full/Partial Tường.
+            if (map.MatchType == "FULL" || map.MatchType == "EXACT")
+            {
+                result += $" (full {map.CoveredLength / 1000.0:0.#}m)";
+            }
+            else
+            {
+                double i = map.DistI / 1000.0;
+                double j = map.DistJ / 1000.0;
+                result += $" I={i:0. 0}to{j:0.0}";
+            }
 
-            return FormatColor(resultText, res.GetColorIndex());
+            // Thêm thông tin tải từ SAP nếu có
+            if (SapUtils.IsConnected && map.TargetFrame != "New")
+            {
+                var sapLoads = SapUtils.GetFrameDistributedLoads(map.TargetFrame, loadPattern);
+                if (sapLoads.Count > 0)
+                {
+                    double sapLoad = sapLoads.Sum(l => l.LoadValue);
+                    result += $" [SAP:{sapLoad:0. 00}]";
+                }
+            }
+
+            int color = res.GetColorIndex();
+            return FormatColor(result, color);
         }
+
+        /// <summary>
+        /// Tạo label text với thông tin đầy đủ từ SAP
+        /// </summary>
+        public static string GetDetailedLabel(WallData wData, MappingResult mapResult)
+        {
+            var lines = new List<string>();
+
+            // Line 1: Wall info
+            string wallType = wData.WallType ?? $"W{wData.Thickness ?? 200:0}";
+            lines.Add($"{wallType} T={wData.Thickness:0}mm H={wData.Height:0}mm");
+
+            // Line 2: Load info
+            if (wData.LoadValue.HasValue)
+            {
+                lines.Add($"{wData.LoadPattern}={wData.LoadValue:0.00} kN/m");
+            }
+
+            // Line 3: Mapping info
+            if (mapResult.HasMapping)
+            {
+                var map = mapResult.Mappings.First();
+                lines.Add($"-> {map.TargetFrame} ({map.MatchType})");
+            }
+            else
+            {
+                lines.Add("-> NEW");
+            }
+
+            return string.Join("\\P", lines); // \P = newline in MText
+        }
+
+        #endregion
+
+        #region Sync Status Labels
+
+        /// <summary>
+        /// Tạo label hiển thị trạng thái đồng bộ
+        /// </summary>
+        public static string GetSyncStatusLabel(SyncState state, string details = null)
+        {
+            string statusText;
+            int color;
+
+            switch (state)
+            {
+                case SyncState.Synced:
+                    statusText = "✓ Synced";
+                    color = 3;
+                    break;
+                case SyncState.CadModified:
+                    statusText = "↑ CAD Changed";
+                    color = 2;
+                    break;
+                case SyncState.SapModified:
+                    statusText = "↓ SAP Changed";
+                    color = 5;
+                    break;
+                case SyncState.Conflict:
+                    statusText = "⚠ Conflict";
+                    color = 6;
+                    break;
+                case SyncState.SapDeleted:
+                    statusText = "✗ SAP Deleted";
+                    color = 1;
+                    break;
+                case SyncState.NewElement:
+                    statusText = "● New";
+                    color = 4;
+                    break;
+                default:
+                    statusText = "?  Unknown";
+                    color = 7;
+                    break;
+            }
+
+            string result = FormatColor(statusText, color);
+            if (!string.IsNullOrEmpty(details))
+            {
+                result += $" {details}";
+            }
+
+            return result;
+        }
+
+        #endregion
     }
 }

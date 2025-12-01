@@ -80,7 +80,7 @@ namespace DTS_Wall_Tool.Commands
                 foreach (ObjectId id in circleIds)
                 {
                     DBObject obj = tr.GetObject(id, OpenMode.ForRead);
-                    StoryData data = XDataUtils.ReadStoryData(obj, tr);
+                    StoryData data = XDataUtils.ReadStoryData(obj);
                     if (data != null)
                     {
                         WriteMessage($"\n- [{id.Handle}] {data.StoryName}: Z={data.Elevation}");

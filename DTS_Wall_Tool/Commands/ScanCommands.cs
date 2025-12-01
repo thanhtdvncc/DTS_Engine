@@ -8,170 +8,101 @@ using DTS_Wall_Tool.Core.Utils;
 namespace DTS_Wall_Tool.Commands
 {
     /// <summary>
-    /// Các lệnh scan và set dữ liệu tường
+    /// Các lệnh quét và nhận diện phần tử
     /// </summary>
     public class ScanCommands : CommandBase
     {
-        /// <summary>
-        /// Quét và hiển thị thông tin tường
-        /// </summary>
-        [CommandMethod("DTS_SCAN")]
-        public void DTS_SCAN()
+        [CommandMethod("DTS_SCAN_WALL")]
+        public void DTS_SCAN_WALL()
         {
-            WriteMessage("=== QUÉT THÔNG TIN TƯỜNG ===");
+            WriteMessage("=== QUÉT VÀ NHẬN DIỆN TƯỜNG ===");
+
+            // Nhập độ dày mặc định
+            PromptDoubleOptions thkOpt = new PromptDoubleOptions("\nĐộ dày tường mặc định (mm): ");
+            thkOpt.DefaultValue = 200;
+            thkOpt.AllowNegative = false;
+            thkOpt.AllowZero = false;
+
+            PromptDoubleResult thkRes = Ed.GetDouble(thkOpt);
+            double defaultThickness = thkRes.Status == PromptStatus.OK ? thkRes.Value : 200;
 
             var lineIds = AcadUtils.SelectObjectsOnScreen("LINE");
             if (lineIds.Count == 0)
             {
-                WriteMessage("Không có đối tượng nào được chọn.");
+                WriteMessage("Không có Line nào được chọn.");
                 return;
             }
 
-            int hasData = 0;
-            int noData = 0;
+            int createdCount = 0;
+            int updatedCount = 0;
 
             UsingTransaction(tr =>
             {
-                foreach (ObjectId id in lineIds)
+                foreach (ObjectId lineId in lineIds)
                 {
-                    DBObject obj = tr.GetObject(id, OpenMode.ForRead);
-                    WallData wData = XDataUtils.ReadWallData(obj);
+                    Entity ent = tr.GetObject(lineId, OpenMode.ForWrite) as Entity;
+                    if (ent == null) continue;
 
-                    string handle = id.Handle.ToString();
+                    // Đọc WallData hiện có
+                    WallData wData = XDataUtils.ReadWallData(ent);
 
-                    if (wData != null && wData.HasValidData())
+                    if (wData == null)
                     {
-                        WriteMessage($"  [{handle}]: {wData}");
-                        hasData++;
+                        // Tạo mới
+                        wData = new WallData
+                        {
+                            Thickness = defaultThickness
+                        };
+                        wData.EnsureWallType();
+                        createdCount++;
                     }
                     else
                     {
-                        noData++;
+                        // Cập nhật nếu chưa có thickness
+                        if (!wData.Thickness.HasValue)
+                        {
+                            wData.Thickness = defaultThickness;
+                            wData.EnsureWallType();
+                        }
+                        updatedCount++;
                     }
+
+                    XDataUtils.SaveWallData(ent, wData, tr);
+                    WriteMessage($"  [{lineId.Handle}]: {wData.WallType}");
                 }
             });
 
-            WriteMessage($"Tổng: {lineIds.Count} | Có data: {hasData} | Chưa có: {noData}");
+            WriteMessage($"\nKết quả: {createdCount} created, {updatedCount} updated");
         }
 
-        /// <summary>
-        /// Gán thuộc tính Tường (An toàn)
-        /// </summary>
-        [CommandMethod("DTS_SET_WALL")]
-        public void DTS_SET_WALL()
+        [CommandMethod("DTS_CLEAR_DATA")]
+        public void DTS_CLEAR_DATA()
         {
-            WriteMessage("\n=== THIẾT LẬP THUỘC TÍNH TƯỜNG (SET WALL) ===");
+            WriteMessage("=== XÓA DỮ LIỆU DTS ===");
 
-            // 1. Chọn đối tượng (Line)
-            var lineIds = AcadUtils.SelectObjectsOnScreen("LINE");
-            if (lineIds.Count == 0) return;
-
-            // 2. Nhập Độ dày (Cho phép Null)
-            double? inputThickness = null;
-            PromptDoubleOptions thickOpt = new PromptDoubleOptions("\nNhập độ dày tường (Enter để bỏ qua/giữ nguyên): ");
-            thickOpt.AllowNegative = false;
-            thickOpt.AllowZero = false;
-            thickOpt.AllowNone = true; // Cho phép Enter ra None
-
-            PromptDoubleResult thickRes = Ed.GetDouble(thickOpt);
-            if (thickRes.Status == PromptStatus.OK)
+            var ids = AcadUtils.SelectObjectsOnScreen("LINE,LWPOLYLINE,POLYLINE,CIRCLE");
+            if (ids.Count == 0)
             {
-                inputThickness = thickRes.Value;
-            }
-            else if (thickRes.Status != PromptStatus.None) // Nếu Cancel hoặc Error
-            {
+                WriteMessage("Không có phần tử nào được chọn.");
                 return;
             }
 
-            // 3. Nhập Loại tường (Cho phép Null/Rỗng)
-            string inputType = null;
-            PromptStringOptions typeOpt = new PromptStringOptions("\nNhập tên loại tường (Enter để bỏ qua/giữ nguyên): ");
-            typeOpt.AllowSpaces = false;
-
-            PromptResult typeRes = Ed.GetString(typeOpt);
-            if (typeRes.Status == PromptStatus.OK && !string.IsNullOrEmpty(typeRes.StringResult))
-            {
-                inputType = typeRes.StringResult;
-            }
-
-            // 4. Thực hiện Gán (Batch Processing)
-            int successCount = 0;
-            int skipCount = 0; // Đếm số đối tượng bị bỏ qua do sai loại
+            int clearedCount = 0;
 
             UsingTransaction(tr =>
             {
-                foreach (ObjectId id in lineIds)
+                foreach (ObjectId id in ids)
                 {
                     DBObject obj = tr.GetObject(id, OpenMode.ForWrite);
-
-                    // Tạo object chứa data muốn update
-                    // Các trường null sẽ không được gửi vào hàm Save
-                    WallData newData = new WallData
+                    if (XDataUtils.HasDtsData(obj))
                     {
-                        Thickness = inputThickness,
-                        WallType = inputType,
-                        // KHÔNG gán LoadPattern mặc định ở đây nữa để tránh rác
-                    };
-
-                    // Gọi hàm Save an toàn
-                    bool success = XDataUtils.SaveWallData(obj, newData, tr);
-
-                    if (success)
-                    {
-                        successCount++;
-                    }
-                    else
-                    {
-                        skipCount++;
-                        // Có thể log handle ra để user biết
-                        // WriteMessage($"\n[Cảnh báo] Bỏ qua đối tượng {id.Handle} vì nó không phải là Tường (hoặc chưa Clear).");
+                        XDataUtils.ClearElementData(obj, tr);
+                        clearedCount++;
                     }
                 }
             });
 
-            // 5. Báo cáo kết quả
-            if (inputThickness == null && inputType == null)
-            {
-                WriteMessage("\nKhông có thông tin nào được nhập. Không có thay đổi.");
-            }
-            else
-            {
-                WriteSuccess($"Đã cập nhật {successCount} tường.");
-                if (skipCount > 0)
-                {
-                    WriteError($"{skipCount} đối tượng bị bỏ qua vì đang là loại khác (Dầm/Cột...). Hãy dùng DTS_CLEAR_XDATA trước nếu muốn chuyển đổi.");
-                }
-            }
-        }
-
-
-        /// <summary>
-        /// Xóa thông Element Data của các đối tượng đã chọn
-        /// </summary>
-        [CommandMethod("DTS_CLEAR_ELEMENT")]
-        public void DTS_CLEAR()
-        {
-            WriteMessage("=== XÓA THÔNG TIN ĐỐI TƯỢNG ===");
-
-            var lineIds = AcadUtils.SelectObjectsOnScreen("LINE");
-            if (lineIds.Count == 0)
-            {
-                WriteMessage("Không có đối tượng nào được chọn.");
-                return;
-            }
-
-            int count = 0;
-            UsingTransaction(tr =>
-            {
-                foreach (ObjectId id in lineIds)
-                {
-                    DBObject obj = tr.GetObject(id, OpenMode.ForWrite);
-                    XDataUtils.ClearElementData(obj, tr);
-                    count++;
-                }
-            });
-
-            WriteSuccess($"Đã xóa thông tin của {count} đối tượng.");
+            WriteMessage($"\nĐã xóa: {clearedCount} phần tử");
         }
     }
 }

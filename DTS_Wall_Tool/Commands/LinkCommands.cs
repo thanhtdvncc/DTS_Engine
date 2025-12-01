@@ -3,254 +3,208 @@ using Autodesk.AutoCAD.DatabaseServices;
 using Autodesk.AutoCAD.EditorInput;
 using Autodesk.AutoCAD.Runtime;
 using DTS_Wall_Tool.Core.Data;
-using DTS_Wall_Tool.Core.Primitives;
 using DTS_Wall_Tool.Core.Utils;
 
 namespace DTS_Wall_Tool.Commands
 {
+    /// <summary>
+    /// Các lệnh quản lý liên kết (Link) giữa phần tử và Origin
+    /// </summary>
     public class LinkCommands : CommandBase
     {
-        private const string LINK_LAYER = "dts_linkmap";
-        private const string HIGHLIGHT_LAYER = "dts_highlight";
-
-        // --- LỆNH 2: LIÊN KẾT TƯỜNG VỚI ORIGIN ---
-        [CommandMethod("DTS_LINK", CommandFlags.UsePickSet)]
+        [CommandMethod("DTS_LINK")]
         public void DTS_LINK()
         {
-            WriteMessage("\n=== LIÊN KẾT TƯỜNG VỚI ORIGIN ===");
+            WriteMessage("=== LIÊN KẾT PHẦN TỬ VỚI ORIGIN ===");
 
-            // 1. Quét chọn hỗn hợp (Đã tự lọc rác trong AcadUtils)
-            var selection = AcadUtils.SelectObjectsOnScreen("LINE,CIRCLE");
-            if (selection.Count == 0) return;
+            // 1. Chọn Origin
+            PromptEntityOptions originOpt = new PromptEntityOptions("\nChọn Origin (Circle trên layer dts_origin): ");
+            originOpt.SetRejectMessage("\nChỉ chấp nhận Circle.");
+            originOpt.AddAllowedClass(typeof(Circle), true);
+
+            PromptEntityResult originRes = Ed.GetEntity(originOpt);
+            if (originRes.Status != PromptStatus.OK)
+            {
+                WriteMessage("Đã hủy lệnh.");
+                return;
+            }
+
+            ObjectId originId = originRes.ObjectId;
+
+            // 2.  Chọn các phần tử cần link
+            var elementIds = AcadUtils.SelectObjectsOnScreen("LINE,LWPOLYLINE,POLYLINE");
+            if (elementIds.Count == 0)
+            {
+                WriteMessage("Không có phần tử nào được chọn.");
+                return;
+            }
+
+            WriteMessage($"Đã chọn {elementIds.Count} phần tử.");
+
+            int linkedCount = 0;
+            int skippedCount = 0;
+            int createdCount = 0;
 
             UsingTransaction(tr =>
             {
-                AcadUtils.CreateLayer(LINK_LAYER, 2); // Layer Vàng
+                DBObject originObj = tr.GetObject(originId, OpenMode.ForWrite);
+                StoryData storyData = XDataUtils.ReadStoryData(originObj);
 
-                // 2. Tìm Gốc (Mẹ)
-                string originHandle = "";
-                string originInfo = "";
-                Point2D originCenter = Point2D.Origin;
-                ObjectId originId = ObjectId.Null;
-
-                foreach (ObjectId id in selection)
+                if (storyData == null)
                 {
-                    DBObject obj = tr.GetObject(id, OpenMode.ForRead);
-                    StoryData sData = XDataUtils.ReadStoryData(obj, tr);
-                    if (sData != null)
-                    {
-                        originHandle = id.Handle.ToString();
-                        originInfo = sData.StoryName;
-                        originCenter = AcadUtils.GetEntityCenter(obj as Entity);
-                        originId = id;
-                        break; // Chỉ cần 1 gốc
-                    }
-                }
-
-                if (string.IsNullOrEmpty(originHandle))
-                {
-                    WriteError("Không tìm thấy Gốc (Circle có dữ liệu) trong vùng chọn!");
+                    WriteError("Origin chưa được thiết lập.  Chạy DTS_SET_ORIGIN trước.");
                     return;
                 }
 
-                // 3. Link các Tường (Con)
-                int count = 0;
-                List<string> childHandles = new List<string>();
+                WriteMessage($"Origin: {storyData.StoryName}, Z={storyData.Elevation:0}mm");
 
-                foreach (ObjectId id in selection)
+                foreach (ObjectId elemId in elementIds)
                 {
-                    if (id == originId) continue;
-
-                    DBObject obj = tr.GetObject(id, OpenMode.ForRead);
-                    if (obj is Line line)
-                    {
-                        // Chỉ link những tường đã có dữ liệu (đã gán DTS_SET)
-                        WallData wData = XDataUtils.ReadWallData(obj, tr);
-                        if (wData == null) continue;
-
-                        // Ghi dữ liệu
-                        obj.UpgradeOpen();
-                        wData.OriginHandle = originHandle;
-                        XDataUtils.SaveWallData(obj, wData, tr);
-
-                        // Cập nhật danh sách con
-                        childHandles.Add(id.Handle.ToString());
-
-                        // Vẽ dây vàng NGAY LẬP TỨC
-                        Point2D lineCenter = AcadUtils.GetEntityCenter(line);
-                        AcadUtils.CreateLine(lineCenter, originCenter, LINK_LAYER, 2, tr);
-
-                        count++;
-                    }
-                }
-
-                // 4. Cập nhật danh sách con vào Gốc
-                if (childHandles.Count > 0)
-                {
-                    DBObject originObj = tr.GetObject(originId, OpenMode.ForWrite);
-                    var updates = new Dictionary<string, object>();
-                    updates["xChildHandles"] = childHandles;
-                    XDataUtils.UpdateData(originObj, updates, tr);
-                }
-
-                WriteSuccess($"Đã liên kết {count} tường vào {originInfo}.");
-            });
-        }
-
-        // --- LỆNH 3: HIỂN THỊ LIÊN KẾT (2 CHIỀU & CHỐNG LẶP) ---
-        [CommandMethod("DTS_SHOW_LINK", CommandFlags.UsePickSet)]
-        public void DTS_SHOW_LINK()
-        {
-            WriteMessage("\n=== HIỂN THỊ LIÊN KẾT ===");
-
-            var selection = AcadUtils.SelectObjectsOnScreen("LINE,CIRCLE");
-            if (selection.Count == 0) return;
-
-            // Xóa cũ để vẽ mới cho sạch (Tránh vẽ đè nhiều lớp)
-            AcadUtils.ClearLayer(LINK_LAYER);
-            AcadUtils.ClearLayer(HIGHLIGHT_LAYER);
-
-            UsingTransaction(tr =>
-            {
-                AcadUtils.CreateLayer(LINK_LAYER, 2);       // Vàng
-                AcadUtils.CreateLayer(HIGHLIGHT_LAYER, 6);  // Tím
-
-                int linkCount = 0;
-
-                // [BỘ NHỚ ĐỆM] Kiểm soát vẽ trùng lặp
-                // Key = "HandleCon_HandleMe"
-                HashSet<string> drawnLinks = new HashSet<string>();
-                HashSet<string> highlightedOrigins = new HashSet<string>();
-
-                foreach (ObjectId id in selection)
-                {
-                    DBObject obj = tr.GetObject(id, OpenMode.ForRead);
-                    Entity ent = obj as Entity;
+                    Entity ent = tr.GetObject(elemId, OpenMode.ForWrite) as Entity;
                     if (ent == null) continue;
 
-                    // --- TRƯỜNG HỢP A: CHỌN TƯỜNG (CON) ---
-                    WallData wData = XDataUtils.ReadWallData(obj, tr);
-                    if (wData != null && !string.IsNullOrEmpty(wData.OriginHandle))
+                    // Đọc ElementData
+                    ElementData elemData = XDataUtils.ReadElementData(ent);
+
+                    if (elemData == null)
                     {
-                        ObjectId originId = AcadUtils.GetObjectIdFromHandle(wData.OriginHandle);
-                        // Vẽ dây về mẹ
-                        if (TryDrawLink(ent, originId, tr, drawnLinks))
+                        elemData = CreateElementDataForEntity(ent);
+                        if (elemData == null)
                         {
-                            linkCount++;
-                            HighlightParent(originId, tr, highlightedOrigins);
+                            skippedCount++;
+                            continue;
                         }
+                        createdCount++;
                     }
 
-                    // --- TRƯỜNG HỢP B: CHỌN GỐC (MẸ) ---
-                    StoryData sData = XDataUtils.ReadStoryData(obj, tr);
-                    if (sData != null)
+                    if (elemData.IsLinked && elemData.OriginHandle == originId.Handle.ToString())
                     {
-                        // Highlight chính nó
-                        HighlightParent(id, tr, highlightedOrigins);
-
-                        // Tìm tất cả các con (Quét toàn bộ bản vẽ để tìm đứa nào thuộc về mình)
-                        // Mẹo: Lọc nhanh bằng XData AppName để đỡ tốn tài nguyên
-                        var allLines = AcadUtils.SelectAll("LINE");
-                        string parentHandle = id.Handle.ToString();
-
-                        foreach (ObjectId childId in allLines)
-                        {
-                            DBObject childObj = tr.GetObject(childId, OpenMode.ForRead);
-                            WallData childData = XDataUtils.ReadWallData(childObj, tr);
-
-                            // Nếu đứa này là con của Mẹ đang chọn -> Vẽ dây
-                            if (childData != null && childData.OriginHandle == parentHandle)
-                            {
-                                // Gọi hàm vẽ (Nó sẽ tự bỏ qua nếu đã vẽ ở bước A rồi)
-                                if (TryDrawLink(childObj as Entity, id, tr, drawnLinks))
-                                {
-                                    linkCount++;
-                                }
-                            }
-                        }
+                        skippedCount++;
+                        continue;
                     }
+
+                    // Thực hiện link
+                    elemData.OriginHandle = originId.Handle.ToString();
+                    elemData.BaseZ = storyData.Elevation;
+                    elemData.Height = storyData.StoryHeight;
+
+                    XDataUtils.WriteElementData(ent, elemData, tr);
+
+                    string childHandle = elemId.Handle.ToString();
+                    if (!storyData.ChildHandles.Contains(childHandle))
+                    {
+                        storyData.ChildHandles.Add(childHandle);
+                    }
+
+                    linkedCount++;
+                    WriteMessage($"  [{elemId.Handle}] {elemData.ElementType} -> Linked");
                 }
-                WriteSuccess($"Đã hiển thị {linkCount} đường liên kết.");
+
+                XDataUtils.WriteStoryData(originObj, storyData, tr);
             });
+
+            WriteMessage($"\nKết quả: {linkedCount} linked, {createdCount} created, {skippedCount} skipped");
         }
 
-        [CommandMethod("DTS_CLEAR_LINK")]
-        public void DTS_CLEAR_LINK()
+        [CommandMethod("DTS_UNLINK")]
+        public void DTS_UNLINK()
         {
-            AcadUtils.ClearLayer(LINK_LAYER);
-            AcadUtils.ClearLayer(HIGHLIGHT_LAYER);
-            WriteSuccess("Đã dọn sạch hiển thị.");
-        }
+            WriteMessage("=== XÓA LIÊN KẾT PHẦN TỬ ===");
 
-        [CommandMethod("DTS_BREAK_LINK", CommandFlags.UsePickSet)]
-        public void DTS_BREAK_LINK()
-        {
-            WriteMessage("\n=== XÓA LIÊN KẾT ===");
-            var lineIds = AcadUtils.SelectObjectsOnScreen("LINE");
-            if (lineIds.Count == 0) return;
+            var elementIds = AcadUtils.SelectObjectsOnScreen("LINE,LWPOLYLINE,POLYLINE,CIRCLE");
+            if (elementIds.Count == 0)
+            {
+                WriteMessage("Không có phần tử nào được chọn.");
+                return;
+            }
+
+            int unlinkedCount = 0;
 
             UsingTransaction(tr =>
             {
-                int broken = 0;
-                foreach (ObjectId lineId in lineIds)
+                foreach (ObjectId elemId in elementIds)
                 {
-                    DBObject obj = tr.GetObject(lineId, OpenMode.ForWrite);
-                    WallData wData = XDataUtils.ReadWallData(obj, tr);
+                    DBObject obj = tr.GetObject(elemId, OpenMode.ForWrite);
+                    var elemData = XDataUtils.ReadElementData(obj);
 
-                    if (wData != null && !string.IsNullOrEmpty(wData.OriginHandle))
+                    if (elemData != null && elemData.IsLinked)
                     {
-                        wData.OriginHandle = null; // Xóa handle
-                        XDataUtils.SaveWallData(obj, wData, tr);
-                        broken++;
+                        XDataUtils.RemoveLink(obj, tr);
+                        unlinkedCount++;
+                        WriteMessage($"  [{elemId.Handle}] Unlinked");
                     }
                 }
-                WriteSuccess($"Đã xóa liên kết của {broken} tường.");
             });
 
-            // Xóa hình ảnh cũ để tránh hiểu nhầm
-            DTS_CLEAR_LINK();
+            WriteMessage($"\nKết quả: {unlinkedCount} unlinked");
         }
 
-        #region Helpers
-
-        // Hàm vẽ thông minh: Kiểm tra trùng lặp trước khi vẽ
-        private bool TryDrawLink(Entity child, ObjectId parentId, Transaction tr, HashSet<string> drawnSet)
+        [CommandMethod("DTS_SHOW_LINK")]
+        public void DTS_SHOW_LINK()
         {
-            if (parentId == ObjectId.Null || parentId.IsErased) return false;
+            WriteMessage("=== THÔNG TIN LIÊN KẾT ===");
 
-            string parentHandle = parentId.Handle.ToString();
-            string childHandle = child.Handle.ToString();
-            string key = $"{childHandle}_{parentHandle}";
+            PromptEntityOptions opt = new PromptEntityOptions("\nChọn phần tử: ");
+            PromptEntityResult res = Ed.GetEntity(opt);
+            if (res.Status != PromptStatus.OK) return;
 
-            // Nếu đã vẽ cặp này rồi -> Bỏ qua
-            if (drawnSet.Contains(key)) return false;
+            UsingTransaction(tr =>
+            {
+                DBObject obj = tr.GetObject(res.ObjectId, OpenMode.ForRead);
 
-            Entity parent = tr.GetObject(parentId, OpenMode.ForRead) as Entity;
-            Point2D pStart = AcadUtils.GetEntityCenter(child);
-            Point2D pEnd = AcadUtils.GetEntityCenter(parent);
+                var storyData = XDataUtils.ReadStoryData(obj);
+                if (storyData != null)
+                {
+                    WriteMessage($"  Loại: STORY ORIGIN");
+                    WriteMessage($"  Tên: {storyData.StoryName}");
+                    WriteMessage($"  Cao độ: {storyData.Elevation:0} mm");
+                    WriteMessage($"  Chiều cao tầng: {storyData.StoryHeight:0} mm");
+                    WriteMessage($"  Số phần tử con: {storyData.ChildCount}");
+                    return;
+                }
 
-            AcadUtils.CreateLine(pStart, pEnd, LINK_LAYER, 2, tr);
+                var elemData = XDataUtils.ReadElementData(obj);
+                if (elemData != null)
+                {
+                    WriteMessage($"  Loại: {elemData.ElementType}");
+                    WriteMessage($"  Linked: {elemData.IsLinked}");
+                    if (elemData.IsLinked)
+                    {
+                        WriteMessage($"  Origin Handle: {elemData.OriginHandle}");
+                        WriteMessage($"  BaseZ: {elemData.BaseZ:0} mm");
+                    }
+                    WriteMessage($"  Has Mapping: {elemData.HasMapping}");
 
-            drawnSet.Add(key); // Đánh dấu đã vẽ
-            return true;
+                    if (elemData is WallData wall)
+                    {
+                        WriteMessage($"  Thickness: {wall.Thickness:0} mm");
+                        WriteMessage($"  WallType: {wall.WallType}");
+                        WriteMessage($"  Load: {wall.LoadValue:0. 00} kN/m");
+                    }
+                    return;
+                }
+
+                WriteMessage("  Không có dữ liệu DTS.");
+            });
         }
 
-        private void HighlightParent(ObjectId parentId, Transaction tr, HashSet<string> highlightedSet)
+        private ElementData CreateElementDataForEntity(Entity ent)
         {
-            if (parentId == ObjectId.Null || parentId.IsErased) return;
+            string layer = ent.Layer.ToUpperInvariant();
 
-            string key = parentId.Handle.ToString();
-            if (highlightedSet.Contains(key)) return; // Đã highlight rồi
+            if (layer.Contains("WALL") || layer.Contains("TUONG"))
+                return new WallData();
+            else if (layer.Contains("COL") || layer.Contains("COT"))
+                return new ColumnData();
+            else if (layer.Contains("BEAM") || layer.Contains("DAM"))
+                return new BeamData();
+            else if (layer.Contains("SLAB") || layer.Contains("SAN"))
+                return new SlabData();
 
-            Entity parent = tr.GetObject(parentId, OpenMode.ForRead) as Entity;
-            Point2D center = AcadUtils.GetEntityCenter(parent);
+            if (ent is Line)
+                return new WallData();
 
-            // Vẽ vòng tròn tím (Màu 6)
-            AcadUtils.CreateCircle(center, 600, HIGHLIGHT_LAYER, 6, tr);
-
-            highlightedSet.Add(key);
+            return null;
         }
-
-        #endregion
     }
 }

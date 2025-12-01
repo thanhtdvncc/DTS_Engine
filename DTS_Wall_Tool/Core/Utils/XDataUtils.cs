@@ -8,169 +8,278 @@ using DTS_Wall_Tool.Core.Data;
 namespace DTS_Wall_Tool.Core.Utils
 {
     /// <summary>
-    /// Tiện ích đọc/ghi XData dạng JSON
+    /// Tiện ích đọc/ghi XData với Factory Pattern. 
+    /// Tự động nhận diện và tạo đúng loại ElementData dựa trên xType.
+    /// Tuân thủ ISO/IEC 25010: Maintainability, Modularity. 
     /// </summary>
     public static class XDataUtils
     {
+        #region Constants
+
         private const string APP_NAME = "DTS_APP";
         private const int CHUNK_SIZE = 250;
 
-        #region High-Level: WallData
+        #endregion
+
+        #region Factory Pattern - Core API
 
         /// <summary>
-        /// Đọc WallData từ entity
+        /// Đọc ElementData từ entity - Factory tự động tạo đúng loại
         /// </summary>
-        public static WallData ReadWallData(DBObject obj, Transaction tr = null)
+        /// <returns>WallData, ColumnData, BeamData...  hoặc null</returns>
+        public static ElementData ReadElementData(DBObject obj)
         {
-            var dict = GetEntityData(obj);
-            // Kiểm tra chặt chẽ hơn
+            var dict = GetRawData(obj);
+            if (dict == null || dict.Count == 0) return null;
 
-            if (dict.Count == 0) return null;
-            if (dict.ContainsKey("xType") || dict["xType"].ToString() != "WALL") return null;
+            // Lấy xType để xác định loại
+            if (!dict.TryGetValue("xType", out var xTypeObj)) return null;
+            string xType = xTypeObj?.ToString()?.ToUpperInvariant();
 
-            WallData data = new WallData();
+            // Factory: Tạo đúng instance dựa trên xType
+            ElementData element = CreateElementByType(xType);
+            if (element == null) return null;
 
-            if (dict.ContainsKey("xBaseZ")) data.BaseZ = ConvertToDouble(dict["xBaseZ"]);
-            if (dict.ContainsKey("xThickness")) data.Thickness = ConvertToDouble(dict["xThickness"]);
-            if (dict.ContainsKey("xWallType")) data.WallType = Convert.ToString(dict["xWallType"]);
-            if (dict.ContainsKey("xLoadPattern")) data.LoadPattern = Convert.ToString(dict["xLoadPattern"]);
-            if (dict.ContainsKey("xLoadValue")) data.LoadValue = ConvertToDouble(dict["xLoadValue"]);
-            if (dict.ContainsKey("xOriginHandle")) data.OriginHandle = Convert.ToString(dict["xOriginHandle"]);
-            if (dict.ContainsKey("xChildHandles")) data.ChildHandles=ConvertToStringList(dict["xChildHandles"]);
-            if (dict.ContainsKey("xMappings"))data.Mappings = ConvertToMappingList(dict["xMappings"]);
-    
-
-            return data;
+            // Đọc dữ liệu vào instance
+            element.FromDictionary(dict);
+            return element;
         }
 
         /// <summary>
-        /// [MỚI] Hàm đọc nhanh loại đối tượng từ XData mà không cần deserialize toàn bộ
+        /// Đọc ElementData và cast sang kiểu cụ thể
         /// </summary>
-        public static ElementType GetElementType(DBObject obj)
+        public static T ReadElementData<T>(DBObject obj) where T : ElementData
         {
-            var dict = GetEntityData(obj);
-            if (dict == null || !dict.ContainsKey("xType")) return ElementType.Unknown;
-
-            string typeStr = dict["xType"].ToString();
-
-            // Mapping chuỗi sang Enum
-            if (typeStr == "BEAM") return ElementType.Beam;
-            if (typeStr == "COLUMN") return ElementType.Column;
-            if (typeStr == "SLAB") return ElementType.Slab;
-            if (typeStr == "WALL") return ElementType.Wall;
-            if (typeStr == "FOUNDATION") return ElementType.Foundation;
-            if (typeStr == "STAIR") return ElementType.Stair;
-            if (typeStr == "PILE") return ElementType.Pile;
-            if (typeStr == "LINTEL") return ElementType.Lintel;
-            if (typeStr == "REBAR") return ElementType.Rebar;
-            if (typeStr == "STORY_ORIGIN") return ElementType.StoryOrigin;
-
-            return ElementType.Unknown;
-        }
-
-
-        /// <summary>
-        /// Ghi WallData vào entity (merge với dữ liệu cũ)
-        /// Trả về False nếu đối tượng đang là loại khác (vd. COLUMN, BEAM)
-        /// Chỉ cập nhật các trường có giá trị (null thì không ghi)
-        /// </summary>
-        public static bool SaveWallData(DBObject obj, WallData data, Transaction tr)
-        {
-            //1. Kiểm tra loại đối tượng hiện tại
-            ElementType currentType = GetElementType(obj);
-
-            // Nếu đã có dữ liệu khác loại, từ chối ghi
-            if (currentType != ElementType.Unknown && currentType != ElementType.Wall)
-            {
-                return false;
-            }
-
-            // 2. Chuẩn bị dữ liệu cập nhật
-            var updates = new Dictionary<string, object>();
-
-            // Định danh loại (trường hợp mới hoàn toàn)
-            updates["xType"] = "WALL";
-
-
-            // 3. Xử lý các trường dữ liệu (chỉ ghi các trường có giá trị)
-            // Nếu data.Thickess là null thì không ghi
-            // Muốn xóa trường thì dùng ClearElementData
-
-            if (data.Thickness.HasValue) updates["xThickness"] = data.Thickness.Value;
-            if (data.WallType != null) updates["xWallType"] = data.WallType;
-            if (data.LoadPattern != null) updates["xLoadPattern"] = data.LoadPattern;
-            if (data.LoadValue.HasValue) updates["xLoadValue"] = data.LoadValue.Value;
-            if (data.OriginHandle != null) updates["xOriginHandle"] = data.OriginHandle;
-            if (data.BaseZ.HasValue) updates["xBaseZ"] = data.BaseZ.Value;
-
-            if (data.ChildHandles != null && data.ChildHandles.Count > 0)
-            {
-                updates["xChildHandles"] = data.ChildHandles;
-            }
-
-            if (data.Mappings != null && data.Mappings.Count > 0)
-            {
-                updates["xMappings"] = ConvertMappingsToSerializable(data.Mappings);
-            }
-
-            // 4. Cập nhật dữ liệu
-            UpdateData(obj, updates, tr);
-            return true;
+            var element = ReadElementData(obj);
+            return element as T;
         }
 
         /// <summary>
-        /// Xóa Element Data khỏi entity
+        /// Ghi ElementData vào entity
         /// </summary>
-        public static void ClearElementData(DBObject obj, Transaction tr)
-        {   
-            ClearEntityData(obj, tr);
+        public static void WriteElementData(DBObject obj, ElementData data, Transaction tr)
+        {
+            if (data == null) return;
+
+            data.UpdateTimestamp();
+            var dict = data.ToDictionary();
+            SetRawData(obj, dict, tr);
+        }
+
+        /// <summary>
+        /// Cập nhật ElementData (merge với dữ liệu cũ)
+        /// </summary>
+        public static void UpdateElementData(DBObject obj, ElementData data, Transaction tr)
+        {
+            // Đọc dữ liệu cũ
+            var currentDict = GetRawData(obj) ?? new Dictionary<string, object>();
+
+            // Merge với dữ liệu mới
+            data.UpdateTimestamp();
+            var newDict = data.ToDictionary();
+
+            foreach (var kvp in newDict)
+            {
+                currentDict[kvp.Key] = kvp.Value;
+            }
+
+            SetRawData(obj, currentDict, tr);
+        }
+
+        /// <summary>
+        /// Factory method: Tạo instance ElementData dựa trên xType
+        /// </summary>
+        private static ElementData CreateElementByType(string xType)
+        {
+            if (string.IsNullOrEmpty(xType)) return null;
+
+            switch (xType)
+            {
+                case "WALL":
+                    return new WallData();
+                case "COLUMN":
+                    return new ColumnData();
+                case "BEAM":
+                    return new BeamData();
+                case "SLAB":
+                    return new SlabData();
+                // Thêm các loại mới ở đây...
+                default:
+                    return null;
+            }
         }
 
         #endregion
 
-        #region High-Level: StoryData
+        #region Specialized Readers (Backward Compatibility)
+
+        /// <summary>
+        /// Đọc WallData - Shortcut method (không cần Transaction)
+        /// </summary>
+        public static WallData ReadWallData(DBObject obj)
+        {
+            return ReadElementData<WallData>(obj);
+        }
+
+        /// <summary>
+        /// Ghi WallData - Shortcut method
+        /// </summary>
+        public static void SaveWallData(DBObject obj, WallData data, Transaction tr)
+        {
+            WriteElementData(obj, data, tr);
+        }
+
+        /// <summary>
+        /// Đọc ColumnData
+        /// </summary>
+        public static ColumnData ReadColumnData(DBObject obj)
+        {
+            return ReadElementData<ColumnData>(obj);
+        }
+
+        /// <summary>
+        /// Đọc BeamData
+        /// </summary>
+        public static BeamData ReadBeamData(DBObject obj)
+        {
+            return ReadElementData<BeamData>(obj);
+        }
+
+        /// <summary>
+        /// Đọc SlabData
+        /// </summary>
+        public static SlabData ReadSlabData(DBObject obj)
+        {
+            return ReadElementData<SlabData>(obj);
+        }
+
+        /// <summary>
+        /// Xóa dữ liệu entity (alias cho ClearData)
+        /// </summary>
+        public static void ClearElementData(DBObject obj, Transaction tr)
+        {
+            ClearData(obj, tr);
+        }
+
+        #endregion
+
+        #region StoryData (Special Case)
+
+        /// <summary>
+        /// Đọc StoryData từ entity (không cần Transaction)
+        /// </summary>
+        public static StoryData ReadStoryData(DBObject obj)
+        {
+            var dict = GetRawData(obj);
+            if (dict == null || dict.Count == 0) return null;
+
+            if (!dict.TryGetValue("xType", out var xTypeObj)) return null;
+            if (xTypeObj?.ToString()?.ToUpperInvariant() != "STORY_ORIGIN") return null;
+
+            var storyData = new StoryData();
+            storyData.FromDictionary(dict);
+            return storyData;
+        }
 
         /// <summary>
         /// Ghi StoryData vào entity
         /// </summary>
         public static void WriteStoryData(DBObject obj, StoryData data, Transaction tr)
         {
-            var dict = new Dictionary<string, object>();
-            dict["xType"] = "STORY_ORIGIN";
-            dict["xStoryName"] = data.StoryName;
-            dict["xElevation"] = data.Elevation;
-            dict["xStoryHeight"] = data.StoryHeight;
-            dict["xOffsetX"] = data.OffsetX;
-            dict["xOffsetY"] = data.OffsetY;
-            SetEntityData(obj, dict, tr);
-        }
-
-        /// <summary>
-        /// Đọc StoryData từ entity
-        /// </summary>
-        public static StoryData ReadStoryData(DBObject obj, Transaction tr = null)
-        {
-            var dict = GetEntityData(obj);
-            if (dict == null || !dict.ContainsKey("xType")) return null;
-            if (dict["xType"].ToString() != "STORY_ORIGIN") return null;
-
-            StoryData data = new StoryData();
-            if (dict.ContainsKey("xStoryName")) data.StoryName = dict["xStoryName"].ToString();
-            if (dict.ContainsKey("xElevation")) data.Elevation = ConvertToDouble(dict["xElevation"]) ?? 0;
-            if (dict.ContainsKey("xStoryHeight")) data.StoryHeight = ConvertToDouble(dict["xStoryHeight"]) ?? 3300;
-            if (dict.ContainsKey("xOffsetX")) data.OffsetX = ConvertToDouble(dict["xOffsetX"]) ?? 0;
-            if (dict.ContainsKey("xOffsetY")) data.OffsetY = ConvertToDouble(dict["xOffsetY"]) ?? 0;
-            return data;
+            if (data == null) return;
+            SetRawData(obj, data.ToDictionary(), tr);
         }
 
         #endregion
 
-        #region Low-Level: Generic Data Access
+        #region Link Management
 
         /// <summary>
-        /// Đọc dữ liệu JSON từ XData
+        /// Thiết lập liên kết cha-con
         /// </summary>
-        public static Dictionary<string, object> GetEntityData(DBObject obj)
+        public static void SetLink(DBObject child, DBObject parent, Transaction tr)
+        {
+            var childElement = ReadElementData(child);
+            if (childElement == null) return;
+
+            string parentHandle = parent.Handle.ToString();
+            childElement.OriginHandle = parentHandle;
+            WriteElementData(child, childElement, tr);
+
+            // Cập nhật cha
+            var parentStory = ReadStoryData(parent);
+            if (parentStory != null)
+            {
+                string childHandle = child.Handle.ToString();
+                if (!parentStory.ChildHandles.Contains(childHandle))
+                {
+                    parentStory.ChildHandles.Add(childHandle);
+                    WriteStoryData(parent, parentStory, tr);
+                }
+            }
+            else
+            {
+                var parentElement = ReadElementData(parent);
+                if (parentElement != null)
+                {
+                    string childHandle = child.Handle.ToString();
+                    if (!parentElement.ChildHandles.Contains(childHandle))
+                    {
+                        parentElement.ChildHandles.Add(childHandle);
+                        WriteElementData(parent, parentElement, tr);
+                    }
+                }
+            }
+        }
+
+        /// <summary>
+        /// Xóa liên kết cha-con
+        /// </summary>
+        public static void RemoveLink(DBObject child, Transaction tr)
+        {
+            var childElement = ReadElementData(child);
+            if (childElement == null || !childElement.IsLinked) return;
+
+            string parentHandle = childElement.OriginHandle;
+            childElement.OriginHandle = null;
+            WriteElementData(child, childElement, tr);
+
+            try
+            {
+                ObjectId parentId = AcadUtils.GetObjectIdFromHandle(parentHandle);
+                if (parentId != ObjectId.Null)
+                {
+                    DBObject parentObj = tr.GetObject(parentId, OpenMode.ForWrite);
+                    string childHandle = child.Handle.ToString();
+
+                    var parentStory = ReadStoryData(parentObj);
+                    if (parentStory != null)
+                    {
+                        parentStory.ChildHandles.Remove(childHandle);
+                        WriteStoryData(parentObj, parentStory, tr);
+                    }
+                    else
+                    {
+                        var parentElement = ReadElementData(parentObj);
+                        if (parentElement != null)
+                        {
+                            parentElement.ChildHandles.Remove(childHandle);
+                            WriteElementData(parentObj, parentElement, tr);
+                        }
+                    }
+                }
+            }
+            catch { }
+        }
+
+        #endregion // End of Link Management
+
+        #region Low-Level XData Access
+
+        /// <summary>
+        /// Đọc raw Dictionary từ XData
+        /// </summary>
+        public static Dictionary<string, object> GetRawData(DBObject obj)
         {
             var dict = new Dictionary<string, object>();
             ResultBuffer rb = obj.GetXDataForApplication(APP_NAME);
@@ -196,9 +305,9 @@ namespace DTS_Wall_Tool.Core.Utils
         }
 
         /// <summary>
-        /// Ghi dữ liệu JSON vào XData (ghi đè)
+        /// Ghi raw Dictionary vào XData
         /// </summary>
-        public static void SetEntityData(DBObject obj, Dictionary<string, object> data, Transaction tr)
+        public static void SetRawData(DBObject obj, Dictionary<string, object> data, Transaction tr)
         {
             if (data == null || data.Count == 0) return;
             EnsureRegApp(APP_NAME, tr);
@@ -218,22 +327,9 @@ namespace DTS_Wall_Tool.Core.Utils
         }
 
         /// <summary>
-        /// Cập nhật dữ liệu (merge với dữ liệu cũ)
+        /// Xóa XData khỏi entity
         /// </summary>
-        public static void UpdateData(DBObject obj, Dictionary<string, object> updates, Transaction tr)
-        {
-            var currentData = GetEntityData(obj);
-            foreach (var kvp in updates)
-            {
-                currentData[kvp.Key] = kvp.Value;
-            }
-            SetEntityData(obj, currentData, tr);
-        }
-
-        /// <summary>
-        /// Xóa XData
-        /// </summary>
-        public static void ClearEntityData(DBObject obj, Transaction tr)
+        public static void ClearData(DBObject obj, Transaction tr)
         {
             EnsureRegApp(APP_NAME, tr);
             ResultBuffer rb = new ResultBuffer();
@@ -241,68 +337,24 @@ namespace DTS_Wall_Tool.Core.Utils
             obj.XData = rb;
         }
 
-        #endregion
-
-        #region Helpers
-
-        private static double? ConvertToDouble(object val)
+        /// <summary>
+        /// Kiểm tra entity có XData DTS_APP không
+        /// </summary>
+        public static bool HasDtsData(DBObject obj)
         {
-            if (val == null) return null;
-            if (double.TryParse(val.ToString(), out double d)) return d;
+            ResultBuffer rb = obj.GetXDataForApplication(APP_NAME);
+            return rb != null;
+        }
+
+        /// <summary>
+        /// Lấy xType của entity
+        /// </summary>
+        public static string GetXType(DBObject obj)
+        {
+            var dict = GetRawData(obj);
+            if (dict.TryGetValue("xType", out var xType))
+                return xType?.ToString();
             return null;
-        }
-
-        private static List<string> ConvertToStringList(object val)
-        {
-            var list = new List<string>();
-            if (val is System.Collections.IEnumerable enumerable)
-            {
-                foreach (var item in enumerable)
-                {
-                    if (item != null) list.Add(item.ToString());
-                }
-            }
-            return list;
-        }
-
-        private static List<MappingRecord> ConvertToMappingList(object val)
-        {
-            var list = new List<MappingRecord>();
-            if (val is System.Collections.IEnumerable enumerable)
-            {
-                foreach (var item in enumerable)
-                {
-                    if (item is Dictionary<string, object> dict)
-                    {
-                        var rec = new MappingRecord();
-                        if (dict.ContainsKey("TargetFrame")) rec.TargetFrame = dict["TargetFrame"].ToString();
-                        if (dict.ContainsKey("MatchType")) rec.MatchType = dict["MatchType"].ToString();
-                        if (dict.ContainsKey("DistI")) rec.DistI = Convert.ToDouble(dict["DistI"]);
-                        if (dict.ContainsKey("DistJ")) rec.DistJ = Convert.ToDouble(dict["DistJ"]);
-                        if (dict.ContainsKey("CoveredLength")) rec.CoveredLength = Convert.ToDouble(dict["CoveredLength"]);
-                        list.Add(rec);
-                    }
-                }
-            }
-            return list;
-        }
-
-        private static List<Dictionary<string, object>> ConvertMappingsToSerializable(List<MappingRecord> mappings)
-        {
-            var list = new List<Dictionary<string, object>>();
-            foreach (var m in mappings)
-            {
-                var dict = new Dictionary<string, object>
-                {
-                    ["TargetFrame"] = m.TargetFrame,
-                    ["MatchType"] = m.MatchType,
-                    ["DistI"] = m.DistI,
-                    ["DistJ"] = m.DistJ,
-                    ["CoveredLength"] = m.CoveredLength
-                };
-                list.Add(dict);
-            }
-            return list;
         }
 
         private static void EnsureRegApp(string regAppName, Transaction tr)
@@ -317,6 +369,6 @@ namespace DTS_Wall_Tool.Core.Utils
             }
         }
 
-        #endregion
+        #endregion // End of Low-Level XData Access
     }
 }

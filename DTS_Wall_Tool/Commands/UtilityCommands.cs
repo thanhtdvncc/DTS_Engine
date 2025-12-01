@@ -16,25 +16,46 @@ namespace DTS_Wall_Tool.Commands
         [CommandMethod("DTS_HELP")]
         public void DTS_HELP()
         {
-            WriteMessage("=== DTS WALL TOOL ===");
-            WriteMessage("Version: 2.0");
-            WriteMessage("Author: DTS Engineering");
-            WriteMessage("thanhtdvncc");
-            WriteMessage("");
-            WriteMessage("Commands:");
-            WriteMessage("  DTS_SCAN      - Quét thông tin tường");
-            WriteMessage("  DTS_SET       - Gán thông tin tường");
-            WriteMessage("  DTS_CLEAR     - Xóa thông tin tường");
-            WriteMessage("  DTS_LINK      - Liên kết tường với origin");
-            WriteMessage("  DTS_SHOW_LINK - Hiển thị liên kết");
-            WriteMessage("  DTS_BREAK_LINK- Xóa liên kết");
-            WriteMessage("  DTS_SET_ORIGIN- Thiết lập origin");
-            WriteMessage("  DTS_TEST_SAP  - Kiểm tra kết nối SAP2000");
-            WriteMessage("  DTS_GET_FRAMES- Lấy danh sách frames");
-            WriteMessage("  DTS_TEST_MAP  - Test mapping tường-dầm");
-            WriteMessage("  DTS_ASSIGN_LOAD - Gán tải lên SAP2000");
-            WriteMessage("  DTS_CALC_LOAD - Tính tải trọng tường");
+            WriteMessage("╔══════════════════════════════════════════════════════════════╗");
+            WriteMessage("║           DTS TOOL - DANH SÁCH LỆNH                          ║");
+            WriteMessage("╠══════════════════════════════════════════════════════════════╣");
+            WriteMessage("║ THIẾT LẬP:                                                   ║");
+            WriteMessage("║   DTS_SET_ORIGIN  - Thiết lập Origin cho tầng                ║");
+            WriteMessage("║   DTS_LINK        - Liên kết phần tử với Origin              ║");
+            WriteMessage("║   DTS_UNLINK      - Xóa liên kết phần tử                     ║");
+            WriteMessage("║   DTS_SHOW_LINK   - Hiển thị thông tin liên kết              ║");
+            WriteMessage("╠══════════════════════════════════════════════════════════════╣");
+            WriteMessage("║ SAP2000:                                                     ║");
+            WriteMessage("║   DTS_TEST_SAP    - Kiểm tra kết nối SAP2000                 ║");
+            WriteMessage("║   DTS_GET_FRAMES  - Lấy danh sách frames từ SAP              ║");
+            WriteMessage("║   DTS_SYNC_SAP    - Đồng bộ SAP → CAD (PULL)                 ║");
+            WriteMessage("║   DTS_PUSH_LOAD   - Gán tải CAD → SAP (PUSH)                 ║");
+            WriteMessage("║   DTS_CHECK_SYNC  - Kiểm tra trạng thái đồng bộ              ║");
+            WriteMessage("╠══════════════════════════════════════════════════════════════╣");
+            WriteMessage("║ TÍNH TOÁN:                                                   ║");
+            WriteMessage("║   DTS_CALC_LOAD   - Tính tải trọng tường                     ║");
+            WriteMessage("║   DTS_SCAN_WALL   - Quét và nhận diện tường                  ║");
+            WriteMessage("╠══════════════════════════════════════════════════════════════╣");
+            WriteMessage("║ MÀU SẮC TRẠNG THÁI:                                          ║");
+            WriteMessage("║   Xanh lá (3)  - Đã đồng bộ / Full match                     ║");
+            WriteMessage("║   Vàng (2)     - CAD thay đổi / Partial match                ║");
+            WriteMessage("║   Xanh dương(5)- SAP thay đổi                                ║");
+            WriteMessage("║   Đỏ (1)       - Không map / SAP đã xóa                      ║");
+            WriteMessage("║   Magenta (6)  - Xung đột                                    ║");
+            WriteMessage("║   Cyan (4)     - Phần tử mới                                 ║");
+            WriteMessage("╚══════════════════════════════════════════════════════════════╝");
         }
+
+        [CommandMethod("DTS_VERSION")]
+        public void DTS_VERSION()
+        {
+            WriteMessage("╔══════════════════════════════════════════════════════════════╗");
+            WriteMessage("║  DTS ENGINE v2.0.0                                           ║");
+            WriteMessage("║  BY THANHTDVNCC / CTCI VIETNAM                               ║");
+            WriteMessage("║  ISO/IEC 25010 Compliant                                     ║");
+            WriteMessage("╚══════════════════════════════════════════════════════════════╝");
+        }
+    
 
         /// <summary>
         /// Hiển thị/Cập nhật nhãn cho các phần tử đã có dữ liệu
