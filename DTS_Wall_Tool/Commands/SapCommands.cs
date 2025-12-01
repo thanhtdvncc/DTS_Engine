@@ -1,6 +1,7 @@
 ﻿using System.Collections.Generic;
 using Autodesk.AutoCAD.DatabaseServices;
 using Autodesk.AutoCAD.EditorInput;
+using Autodesk.AutoCAD.Geometry;
 using Autodesk.AutoCAD.Runtime;
 using DTS_Wall_Tool.Core.Data;
 using DTS_Wall_Tool.Core.Engines;
@@ -15,6 +16,7 @@ namespace DTS_Wall_Tool.Commands
     public class SapCommands : CommandBase
     {
         private const string MAPPING_LAYER = "dts_mapping";
+        private const string VISUAL_LAYER = "dts_visual_fill";
 
         /// <summary>
         /// Kiểm tra kết nối SAP2000
@@ -91,12 +93,13 @@ namespace DTS_Wall_Tool.Commands
         }
 
         /// <summary>
-        /// Test mapping tường với dầm
+        /// Test mapping tường với dầm (Khôi phục từ VBA btnCombineWithSAP)
+        /// Chiến thuật: Hình chiếu & Chồng lấn (Projection & Overlap)
         /// </summary>
         [CommandMethod("DTS_TEST_MAP")]
         public void DTS_TEST_MAP()
         {
-            WriteMessage("=== TEST MAPPING TƯỜNG - DẦM ===");
+            WriteMessage("=== MAPPING TƯỜNG - DẦM (Projection & Overlap) ===");
 
             // Kết nối SAP
             if (!SapUtils.IsConnected)
@@ -117,6 +120,8 @@ namespace DTS_Wall_Tool.Commands
                 return;
             }
 
+            WriteMessage($"Đã chọn {lineIds.Count} tường.");
+
             // Nhập cao độ
             PromptDoubleOptions zOpt = new PromptDoubleOptions("\nNhập cao độ Z tường (mm, mặc định 0): ");
             zOpt.DefaultValue = 0;
@@ -125,7 +130,10 @@ namespace DTS_Wall_Tool.Commands
             PromptDoubleResult zRes = Ed.GetDouble(zOpt);
             double wallZ = zRes.Status == PromptStatus.OK ? zRes.Value : 0;
 
-            // Lấy frames từ SAP
+            // Nhập Insertion Point Offset (optional)
+            Point2D insertOffset = GetInsertionOffset();
+
+            // Lấy frames từ SAP (với tolerance mở rộng)
             var frames = SapUtils.GetBeamsAtElevation(wallZ, MappingEngine.TOLERANCE_Z);
             WriteMessage($"Tìm thấy {frames.Count} dầm tại cao độ {wallZ}");
 
@@ -135,15 +143,21 @@ namespace DTS_Wall_Tool.Commands
                 return;
             }
 
-            // Chuẩn bị layer
-            AcadUtils.CreateLayer(MAPPING_LAYER, 4);
-            AcadUtils.ClearLayer(MAPPING_LAYER);
+            // Chuẩn bị layers
+            AcadUtils.CreateLayer(MAPPING_LAYER, 4);  // Cyan
+            AcadUtils.CreateLayer(VISUAL_LAYER, 3);   // Green
+            AcadUtils.ClearLayer(VISUAL_LAYER);
 
             int mappedCount = 0;
             int unmappedCount = 0;
+            int partialCount = 0;
 
             UsingTransaction(tr =>
             {
+                // Lấy BlockTableRecord để thêm visual lines
+                var bt = tr.GetObject(Db.BlockTableId, OpenMode.ForRead) as BlockTable;
+                var btr = tr.GetObject(bt[BlockTableRecord.ModelSpace], OpenMode.ForWrite) as BlockTableRecord;
+
                 foreach (ObjectId lineId in lineIds)
                 {
                     Line lineEnt = tr.GetObject(lineId, OpenMode.ForWrite) as Line;
@@ -152,33 +166,74 @@ namespace DTS_Wall_Tool.Commands
                     Point2D startPt = new Point2D(lineEnt.StartPoint.X, lineEnt.StartPoint.Y);
                     Point2D endPt = new Point2D(lineEnt.EndPoint.X, lineEnt.EndPoint.Y);
 
-                    // Thực hiện mapping
-                    var result = MappingEngine.FindMappings(startPt, endPt, wallZ, frames);
+                    // Đọc thông tin tường hiện có
+                    var wData = XDataUtils.ReadWallData(lineEnt) ?? new WallData();
+                    double wallThickness = wData.Thickness ?? 200.0;
+
+                    // Thực hiện mapping với chiến thuật Projection & Overlap
+                    var result = MappingEngine.FindMappings(
+                        startPt, endPt, wallZ, frames,
+                        insertOffset, wallThickness);
 
                     string handle = lineId.Handle.ToString();
 
                     if (result.HasMapping)
                     {
-                        WriteMessage($"[{handle}]: {result.GetLabelText("", "", 0)}");
-                        lineEnt.ColorIndex = 3; // Xanh lá
+                        // Xác định loại match
+                        bool isFull = result.IsFullyCovered;
+                        string matchInfo = isFull ? "FULL" : "PARTIAL";
+
+                        // Tạo label text
+                        string wallType = wData.WallType ?? $"W{wallThickness:0}";
+                        string loadPattern = wData.LoadPattern ?? "DL";
+                        double loadValue = wData.LoadValue ?? 0;
+                        string label = result.GetLabelText(wallType, loadPattern, loadValue);
+
+                        WriteMessage($"[{handle}]: {label} ({matchInfo}, {result.CoveragePercent:0}% coverage)");
+
+                        // Set màu theo kết quả
+                        lineEnt.ColorIndex = result.GetColorIndex();
 
                         // Cập nhật WallData
-                        var wData = XDataUtils.ReadWallData(lineEnt) ?? new WallData();
                         wData.Mappings = result.Mappings;
                         XDataUtils.SaveWallData(lineEnt, wData, tr);
 
-                        mappedCount++;
+                        // Vẽ Visual Fill (đường màu xanh đè lên để nhìn rõ đoạn gán tải)
+                        DrawVisualSegments(btr, tr, result.VisualSegments, insertOffset);
+
+                        if (isFull)
+                            mappedCount++;
+                        else
+                            partialCount++;
                     }
                     else
                     {
                         WriteMessage($"[{handle}]: Không tìm thấy dầm phù hợp -> NEW");
                         lineEnt.ColorIndex = 1; // Đỏ
+
+                        // Tạo mapping NEW
+                        wData.Mappings = new List<MappingRecord>
+                        {
+                            new MappingRecord
+                            {
+                                TargetFrame = "New",
+                                MatchType = "NEW",
+                                CoveredLength = result.WallLength
+                            }
+                        };
+                        XDataUtils.SaveWallData(lineEnt, wData, tr);
+
                         unmappedCount++;
                     }
                 }
             });
 
-            WriteMessage($"\nKết quả: {mappedCount} mapped, {unmappedCount} unmapped");
+            // Thống kê kết quả
+            WriteMessage("\n=== KẾT QUẢ ===");
+            WriteMessage($"  Full Match (Xanh):    {mappedCount}");
+            WriteMessage($"  Partial Match (Vàng): {partialCount}");
+            WriteMessage($"  New (Đỏ):             {unmappedCount}");
+            WriteMessage($"  Tổng:                 {lineIds.Count}");
         }
 
         /// <summary>
@@ -222,6 +277,7 @@ namespace DTS_Wall_Tool.Commands
             }
 
             int assignedCount = 0;
+            int createdCount = 0;
             int failedCount = 0;
 
             UsingTransaction(tr =>
@@ -245,13 +301,28 @@ namespace DTS_Wall_Tool.Commands
 
                     foreach (var mapping in wData.Mappings)
                     {
-                        if (mapping.TargetFrame == "New") continue;
+                        // Xử lý frame NEW
+                        if (mapping.TargetFrame == "New")
+                        {
+                            // TODO: Tạo frame mới trong SAP2000
+                            WriteMessage($"[{lineId.Handle}]: Frame NEW - cần tạo thủ công");
+                            createdCount++;
+                            continue;
+                        }
 
-                        bool success = SapUtils.AssignLoadFromMapping(mapping, loadPattern, wData.LoadValue.Value);
+                        // Gán tải với khoảng cách tuyệt đối
+                        bool success = SapUtils.AssignDistributedLoad(
+                            mapping.TargetFrame,
+                            loadPattern,
+                            wData.LoadValue.Value,
+                            mapping.DistI,
+                            mapping.DistJ,
+                            false // Absolute distance
+                        );
 
                         if (success)
                         {
-                            WriteMessage($"[{lineId.Handle}] -> {mapping.TargetFrame}: {wData.LoadValue.Value:0. 00} kN/m");
+                            WriteMessage($"[{lineId.Handle}] -> {mapping.TargetFrame}: {wData.LoadValue.Value:0.00} kN/m [{mapping.DistI:0}-{mapping.DistJ:0}mm]");
                             assignedCount++;
                         }
                         else
@@ -264,7 +335,60 @@ namespace DTS_Wall_Tool.Commands
             });
 
             SapUtils.RefreshView();
-            WriteMessage($"\nKết quả: {assignedCount} thành công, {failedCount} thất bại");
+            WriteMessage($"\nKết quả: {assignedCount} thành công, {createdCount} cần tạo mới, {failedCount} thất bại");
         }
+
+        #region Helper Methods
+
+        /// <summary>
+        /// Lấy Insertion Point Offset từ Origin Circle hoặc user input
+        /// </summary>
+        private Point2D GetInsertionOffset()
+        {
+            // Tìm origin circle trên layer dts_origin
+            var originCircle = AcadUtils.FindOriginCircle();
+            if (originCircle != null)
+            {
+                WriteMessage(message: $"Sử dụng Origin Circle: ({originCircle.Value.X:0.0}, {originCircle.Value.Y:0.0})");
+                return originCircle.Value;
+            }
+
+            // Không tìm thấy -> hỏi user
+            PromptPointOptions ptOpt = new PromptPointOptions("\nChọn điểm gốc (hoặc Enter để dùng 0,0): ");
+            ptOpt.AllowNone = true;
+            PromptPointResult ptRes = Ed.GetPoint(ptOpt);
+
+            if (ptRes.Status == PromptStatus.OK)
+            {
+                return new Point2D(ptRes.Value.X, ptRes.Value.Y);
+            }
+
+            return new Point2D(0, 0);
+        }
+
+        /// <summary>
+        /// Vẽ Visual Segments để hiển thị vùng được gán tải
+        /// </summary>
+        private void DrawVisualSegments(BlockTableRecord btr, Transaction tr,
+            List<VisualSegment> segments, Point2D offset)
+        {
+            foreach (var seg in segments)
+            {
+                // Chuyển từ SAP coords về CAD coords
+                var startPt = new Point3d(seg.Start.X + offset.X, seg.Start.Y + offset.Y, 0);
+                var endPt = new Point3d(seg.End.X + offset.X, seg.End.Y + offset.Y, 0);
+
+                // Tạo line
+                var line = new Line(startPt, endPt);
+                line.Layer = VISUAL_LAYER;
+                line.ColorIndex = seg.ColorIndex;
+                line.LineWeight = LineWeight.LineWeight050; // Dày hơn để dễ nhìn
+
+                btr.AppendEntity(line);
+                tr.AddNewlyCreatedDBObject(line, true);
+            }
+        }
+
+        #endregion
     }
 }

@@ -394,5 +394,52 @@ namespace DTS_Wall_Tool.Core.Utils
         }
 
         #endregion
+
+        /// <summary>
+        /// Tìm Origin Circle trên layer dts_origin
+        /// </summary>
+        public static Point2D? FindOriginCircle()
+        {
+            try
+            {
+                var doc = Application.DocumentManager.MdiActiveDocument;
+                if (doc == null) return null;
+
+                using (var tr = doc.TransactionManager.StartTransaction())
+                {
+                    var bt = tr.GetObject(doc.Database.BlockTableId, OpenMode.ForRead) as BlockTable;
+                    var btr = tr.GetObject(bt[BlockTableRecord.ModelSpace], OpenMode.ForRead) as BlockTableRecord;
+
+                    foreach (ObjectId objId in btr)
+                    {
+                        var ent = tr.GetObject(objId, OpenMode.ForRead) as Entity;
+                        if (ent == null) continue;
+
+                        // Check if circle on dts_origin layer
+                        if (ent is Circle circle &&
+                            circle.Layer.Equals("dts_origin", System.StringComparison.OrdinalIgnoreCase))
+                        {
+                            return new Point2D(circle.Center.X, circle.Center.Y);
+                        }
+                    }
+                    tr.Commit();
+                }
+            }
+            catch { }
+
+            return null;
+        }
+
+
+
+
+
+
+
+
+
+
+
     }
+
 }
