@@ -12,8 +12,8 @@ namespace DTS_Wall_Tool.Commands
         /// <summary>
         /// Lệnh test cơ bản
         /// </summary>
-        [CommandMethod("DTS_HELLO")]
-        public void DTS_HELLO()
+        [CommandMethod("DTS_HELP")]
+        public void DTS_HELP()
         {
             WriteMessage("=== DTS WALL TOOL ===");
             WriteMessage("Version: 2.0");

@@ -1,123 +1,95 @@
 ﻿using Autodesk.AutoCAD.DatabaseServices;
 using Autodesk.AutoCAD.EditorInput;
 using Autodesk.AutoCAD.Runtime;
+using Autodesk.AutoCAD.Geometry; // Cần cho Point3d
 using DTS_Wall_Tool.Core.Data;
 using DTS_Wall_Tool.Core.Primitives;
 using DTS_Wall_Tool.Core.Utils;
 
 namespace DTS_Wall_Tool.Commands
 {
-    /// <summary>
-    /// Các lệnh quản lý Origin (điểm gốc tầng)
-    /// </summary>
     public class OriginCommands : CommandBase
     {
+        private const string ORIGIN_LAYER = "dts_origin";
+
         /// <summary>
-        /// Tạo/cập nhật origin marker
+        /// Tạo điểm gốc tầng mới (Pick điểm -> Vẽ)
         /// </summary>
         [CommandMethod("DTS_SET_ORIGIN")]
         public void DTS_SET_ORIGIN()
         {
-            WriteMessage("=== THIẾT LẬP ORIGIN ===");
+            WriteMessage("\n=== THIẾT LẬP GỐC TỌA ĐỘ TẦNG ===");
 
-            // Chọn Circle
-            WriteMessage("Chọn CIRCLE làm origin marker.. .");
-            var circleIds = AcadUtils.SelectObjectsOnScreen("CIRCLE");
-            if (circleIds.Count != 1)
-            {
-                WriteError("Vui lòng chọn đúng 1 Circle.");
-                return;
-            }
+            // 1. Pick điểm đặt gốc
+            PromptPointOptions ptOpt = new PromptPointOptions("\nChọn điểm đặt gốc tọa độ: ");
+            PromptPointResult ptRes = Ed.GetPoint(ptOpt);
+            if (ptRes.Status != PromptStatus.OK) return;
 
-            ObjectId circleId = circleIds[0];
-
-            // Nhập tên tầng
-            PromptStringOptions nameOpt = new PromptStringOptions("\nNhập tên tầng: ")
-            {
-                DefaultValue = "Tang1",
-                AllowSpaces = true
-            };
-
+            // 2. Nhập thông tin
+            PromptStringOptions nameOpt = new PromptStringOptions("\nNhập tên tầng (VD: Tang 1): ") { AllowSpaces = true };
             PromptResult nameRes = Ed.GetString(nameOpt);
-            if (nameRes.Status != PromptStatus.OK)
-            {
-                WriteMessage("Đã hủy.");
-                return;
-            }
-            string storyName = nameRes.StringResult;
+            if (nameRes.Status != PromptStatus.OK) return;
 
-            // Nhập cao độ
-            PromptDoubleOptions elevOpt = new PromptDoubleOptions("\nNhập cao độ (mm): ")
-            {
-                DefaultValue = 0,
-                AllowNegative = true
-            };
-
+            PromptDoubleOptions elevOpt = new PromptDoubleOptions("\nNhập cao độ Z (mm): ") { DefaultValue = 0 };
             PromptDoubleResult elevRes = Ed.GetDouble(elevOpt);
-            double elevation = elevRes.Status == PromptStatus.OK ? elevRes.Value : 0;
+            if (elevRes.Status != PromptStatus.OK) return;
 
-            // Nhập chiều cao tầng
-            PromptDoubleOptions heightOpt = new PromptDoubleOptions("\nNhập chiều cao tầng (mm): ")
-            {
-                DefaultValue = 3300,
-                AllowNegative = false,
-                AllowZero = false
-            };
-
-            PromptDoubleResult heightRes = Ed.GetDouble(heightOpt);
-            double storyHeight = heightRes.Status == PromptStatus.OK ? heightRes.Value : 3300;
-
-            // Lưu dữ liệu
+            // 3. Thực hiện Transaction
             UsingTransaction(tr =>
             {
-                DBObject circleObj = tr.GetObject(circleId, OpenMode.ForWrite);
-                Circle circle = circleObj as Circle;
+                // Đảm bảo layer tồn tại (Màu 1 = Đỏ)
+                AcadUtils.CreateLayer(ORIGIN_LAYER, 1);
 
+                // Chuyển Point3d của CAD sang Point2D của Core
+                Point2D center = new Point2D(ptRes.Value.X, ptRes.Value.Y);
+
+                // Sử dụng hàm Core để vẽ Circle
+                ObjectId circleId = AcadUtils.CreateCircle(center, 500, ORIGIN_LAYER, 1, tr);
+
+                // Chuẩn bị dữ liệu chuẩn ISO
                 StoryData storyData = new StoryData
                 {
-                    StoryName = storyName,
-                    Elevation = elevation,
-                    StoryHeight = storyHeight,
-                    OffsetX = circle.Center.X,
-                    OffsetY = circle.Center.Y
+                    StoryName = nameRes.StringResult,
+                    Elevation = elevRes.Value,
+                    // Các trường khác để mặc định hoặc tính toán sau
+                    StoryHeight = 3300,
+                    OffsetX = center.X,
+                    OffsetY = center.Y
                 };
 
+                // Ghi dữ liệu bằng hàm Core
+                DBObject circleObj = tr.GetObject(circleId, OpenMode.ForWrite);
                 XDataUtils.WriteStoryData(circleObj, storyData, tr);
-
-                // Đổi màu circle
-                circle.ColorIndex = 6; // Magenta
             });
 
-            WriteSuccess($"Đã tạo Origin [{circleId.Handle}]: {storyName}, Z={elevation}, H={storyHeight}");
+            WriteSuccess($"Đã tạo gốc '{nameRes.StringResult}' tại Z={elevRes.Value}");
         }
 
         /// <summary>
-        /// Xem thông tin origin
+        /// Xem thông tin các gốc đã tạo
         /// </summary>
         [CommandMethod("DTS_SHOW_ORIGIN")]
         public void DTS_SHOW_ORIGIN()
         {
-            WriteMessage("=== THÔNG TIN ORIGIN ===");
-
+            WriteMessage("\n=== DANH SÁCH GỐC TỌA ĐỘ ===");
             var circleIds = AcadUtils.SelectAll("CIRCLE");
-            int foundCount = 0;
+            int found = 0;
 
             UsingTransaction(tr =>
             {
-                foreach (ObjectId circleId in circleIds)
+                foreach (ObjectId id in circleIds)
                 {
-                    DBObject circleObj = tr.GetObject(circleId, OpenMode.ForRead);
-                    StoryData storyData = XDataUtils.ReadStoryData(circleObj);
-
-                    if (storyData != null)
+                    DBObject obj = tr.GetObject(id, OpenMode.ForRead);
+                    StoryData data = XDataUtils.ReadStoryData(obj, tr);
+                    if (data != null)
                     {
-                        WriteMessage($"  [{circleId.Handle}]: {storyData}");
-                        foundCount++;
+                        WriteMessage($"\n- [{id.Handle}] {data.StoryName}: Z={data.Elevation}");
+                        found++;
                     }
                 }
             });
 
-            WriteMessage($"Tìm thấy {foundCount} Origin markers.");
+            if (found == 0) WriteMessage("\nChưa có gốc tọa độ nào được tạo.");
         }
     }
 }

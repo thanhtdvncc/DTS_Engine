@@ -134,6 +134,10 @@
     <Compile Include="UI\SettingsManager.cs" />
     <Compile Include="UI\UIStyles.cs" />
   </ItemGroup>
-  <ItemGroup />
+  <ItemGroup>
+    <EmbeddedResource Include="UI\Form\WallLineGenTab.resx">
+      <DependentUpon>WallLineGenTab.cs</DependentUpon>
+    </EmbeddedResource>
+  </ItemGroup>
   <Import Project="$(MSBuildToolsPath)\Microsoft.CSharp.targets" />
 </Project>

@@ -480,5 +480,17 @@ namespace DTS_Wall_Tool.UI.Forms
         }
 
         #endregion
+
+        private void InitializeComponent()
+        {
+            this.SuspendLayout();
+            // 
+            // WallLineGenTab
+            // 
+            this.Name = "WallLineGenTab";
+            this.Size = new System.Drawing.Size(415, 515);
+            this.ResumeLayout(false);
+
+        }
     }
 }
