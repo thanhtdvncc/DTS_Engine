@@ -12,12 +12,12 @@ namespace DTS_Wall_Tool.Commands
  [CommandMethod("DTS_SET_TYPE")]
  public void DTS_SET_TYPE()
  {
- WriteMessage("Ch?n ??i t??ng ?? g�n type...");
+ WriteMessage("Chọn đối tượng để gán type...");
 
  var ids = AcadUtils.SelectObjectsOnScreen("LINE,LWPOLYLINE,POLYLINE,CIRCLE");
  if (ids.Count ==0)
  {
- WriteMessage("Kh�ng c� ??i t??ng n�o ???c ch?n.");
+ WriteMessage("Không có đối tượng nào được chọn.");
  return;
  }
 
@@ -27,13 +27,13 @@ namespace DTS_Wall_Tool.Commands
  .ToList();
 
  // Show menu
- WriteMessage("Ch?n lo?i ph?n t? ?? g�n cho c�c ??i t??ng ?� ch?n:");
+ WriteMessage("Chọn loại phần tử để gán cho các đối tượng đã chọn:");
  for (int i =0; i < allTypes.Count; i++)
  {
  WriteMessage($" {i +1}. {GetElementTypeDisplayName(allTypes[i])} ({allTypes[i]})");
  }
 
- var intOpts = new Autodesk.AutoCAD.EditorInput.PromptIntegerOptions("\nNh?p s? t??ng ?ng (0 ?? h?y): ")
+ var intOpts = new Autodesk.AutoCAD.EditorInput.PromptIntegerOptions("\nNhập số tương ứng (0 để hủy): ")
  {
  DefaultValue =0,
  AllowNone = false,
@@ -44,19 +44,19 @@ namespace DTS_Wall_Tool.Commands
  var intRes = Ed.GetInteger(intOpts);
  if (intRes.Status != Autodesk.AutoCAD.EditorInput.PromptStatus.OK)
  {
- WriteMessage("H?y thao t�c.");
+ WriteMessage("Thao tác bị hủy.");
  return;
  }
 
  int selIndex = intRes.Value;
  if (selIndex ==0)
  {
- WriteMessage("H?y thao t�c.");
+ WriteMessage("Thao tác bị hủy.");
  return;
  }
 
  ElementType chosenType = allTypes[selIndex -1];
- WriteMessage($"?ang g�n lo?i: {GetElementTypeDisplayName(chosenType)} cho {ids.Count} ??i t??ng...");
+ WriteMessage($"Đang gán loại: {GetElementTypeDisplayName(chosenType)} cho {ids.Count} đối tượng...");
 
  var assignedStats = new Dictionary<ElementType, int>();
  int skippedCountAlready =0;
@@ -108,43 +108,43 @@ namespace DTS_Wall_Tool.Commands
  .Select(kvp => $"{kvp.Value} {GetElementTypeDisplayName(kvp.Key)}")
  .ToArray();
 
- WriteSuccess($"?� g�n: {string.Join(", ", parts)}.");
+ WriteSuccess($"Đã gán: {string.Join(", ", parts)}.");
  }
 
  if (skippedCountAlready >0)
  {
- WriteMessage($"B? qua: {skippedCountAlready} ph?n t? (?� c� thu?c t�nh).");
+ WriteMessage($"Bỏ qua: {skippedCountAlready} phần tử (đã có thuộc tính).");
  }
 
  if (originProtectedCount >0)
  {
- WriteMessage($"B?o v?: {originProtectedCount} ??i t??ng Origin/Story (kh�ng th? g�n type). ");
+ WriteMessage($"Bị bỏ qua vì là Origin/Story: {originProtectedCount} đối tượng (không thể gán type). ");
  }
 
  if (undeterminedCount >0)
  {
- WriteMessage($"Kh�ng x�c ??nh lo?i cho {undeterminedCount} ph?n t?. H�y ??t th? c�ng ho?c ki?m tra layer.");
+ WriteMessage($"Không xác định loại cho {undeterminedCount} phần tử. Hãy đặt thủ công hoặc kiểm tra layer.");
  }
  }
 
  [CommandMethod("DTS_CLEAR_TYPE")]
  public void DTS_CLEAR_TYPE()
  {
- WriteMessage("Ch?n ??i t??ng ?? x�a type (h�nh ??ng n�y s? x�a to�n b? thu?c t�nh DTS c?a ph?n t?)...");
+ WriteMessage("Chọn đối tượng để xóa type (hành động này sẽ xóa toàn bộ thuộc tính DTS của phần tử)...");
 
  var ids = AcadUtils.SelectObjectsOnScreen("LINE,LWPOLYLINE,POLYLINE,CIRCLE");
  if (ids.Count ==0)
  {
- WriteMessage("Kh�ng c� ??i t??ng n�o ???c ch?n.");
+ WriteMessage("Không có đối tượng nào được chọn.");
  return;
  }
 
  // Confirm
- var pko = new Autodesk.AutoCAD.EditorInput.PromptKeywordOptions("X�c nh?n x�a t?t c? DTS data cho c�c ph?n t? ?� ch?n? [Yes/No]: ", "Yes No");
+ var pko = new Autodesk.AutoCAD.EditorInput.PromptKeywordOptions("Xác nhận xóa tất cả DTS data cho các phần tử đã chọn? [Yes/No]: ", "Yes No");
  var pres = Ed.GetKeywords(pko);
  if (pres.Status != Autodesk.AutoCAD.EditorInput.PromptStatus.OK || pres.StringResult != "Yes")
  {
- WriteMessage("H?y thao t�c x�a type.");
+ WriteMessage("Hủy thao tác xóa type.");
  return;
  }
 
@@ -173,8 +173,8 @@ namespace DTS_Wall_Tool.Commands
  }
  });
 
- WriteSuccess($"?� x�a d? li?u DTS cho {cleared} ph?n t?.");
- if (skippedOrigins >0) WriteMessage($"B? qua {skippedOrigins} Origin ???c b?o v?.");
+ WriteSuccess($"Đã xóa dữ liệu DTS cho {cleared} phần tử.");
+ if (skippedOrigins >0) WriteMessage($"Bỏ qua {skippedOrigins} Origin được bảo vệ.");
  }
 
  private ElementData CreateElementDataOfType(ElementType type)
@@ -199,19 +199,19 @@ namespace DTS_Wall_Tool.Commands
  {
  switch (type)
  {
- case ElementType.Beam: return "D?m";
- case ElementType.Column: return "C?t";
- case ElementType.Slab: return "S�n";
- case ElementType.Wall: return "T??ng";
- case ElementType.Foundation: return "M�ng";
- case ElementType.Stair: return "C?u thang";
- case ElementType.Pile: return "C?c";
- case ElementType.Lintel: return "Lanh t�";
- case ElementType.Rebar: return "C?t th�p";
- case ElementType.ShearWall: return "V�ch";
+ case ElementType.Beam: return "Dầm";
+ case ElementType.Column: return "Cột";
+ case ElementType.Slab: return "Sàn";
+ case ElementType.Wall: return "Tường";
+ case ElementType.Foundation: return "Móng";
+ case ElementType.Stair: return "Cầu thang";
+ case ElementType.Pile: return "Cọc";
+ case ElementType.Lintel: return "Lãnh tô";
+ case ElementType.Rebar: return "Cốt thép";
+ case ElementType.ShearWall: return "Vách";
  case ElementType.StoryOrigin: return "Origin";
  case ElementType.ElementOrigin: return "Element Origin";
- default: return "Kh�c/Kh�ng x�c ??nh";
+ default: return "Khác/Không xác định";
  }
  }
  }
