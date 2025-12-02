@@ -98,6 +98,66 @@ namespace DTS_Wall_Tool.Core.Utils
                     }
                     break;
 
+                case ElementType.Foundation:
+                    var foundationData = elementData as FoundationData;
+                    if (foundationData != null)
+                    {
+                        UpdateGenericLabel(entityId, ent, "Móng", foundationData.FoundationType ?? "Foundation", tr);
+                        return true;
+                    }
+                    break;
+
+                case ElementType.ShearWall:
+                    var shearWallData = elementData as ShearWallData;
+                    if (shearWallData != null)
+                    {
+                        string wallType = shearWallData.WallType ?? $"SW{shearWallData.Thickness ?? 0:0}";
+                        UpdateGenericLabel(entityId, ent, "Vách", wallType, tr);
+                        return true;
+                    }
+                    break;
+
+                case ElementType.Stair:
+                    var stairData = elementData as StairData;
+                    if (stairData != null)
+                    {
+                        string stairInfo = stairData.NumberOfSteps.HasValue ? $"{stairData.StairType} ({stairData.NumberOfSteps}b)" : stairData.StairType;
+                        UpdateGenericLabel(entityId, ent, "Cầu thang", stairInfo, tr);
+                        return true;
+                    }
+                    break;
+
+                case ElementType.Pile:
+                    var pileData = elementData as PileData;
+                    if (pileData != null)
+                    {
+                        string pileType = pileData.PileType ?? $"D{pileData.Diameter ?? 0:0}";
+                        UpdateGenericLabel(entityId, ent, "Cọc", pileType, tr);
+                        return true;
+                    }
+                    break;
+
+                case ElementType.Lintel:
+                    var lintelData = elementData as LintelData;
+                    if (lintelData != null)
+                    {
+                        string lintelType = lintelData.LintelType ?? $"L{lintelData.Width ?? 0:0}x{lintelData.Height ?? 0:0}";
+                        UpdateGenericLabel(entityId, ent, "Lanh tô", lintelType, tr);
+                        return true;
+                    }
+                    break;
+
+                case ElementType.Rebar:
+                    var rebarData = elementData as RebarData;
+                    if (rebarData != null)
+                    {
+                        string rebarMark = rebarData.RebarMark ?? $"D{rebarData.Diameter ?? 0:0}";
+                        string qtyStr = rebarData.Quantity.HasValue ? $"x{rebarData.Quantity.Value}" : "";
+                        UpdateGenericLabel(entityId, ent, "Cốt thép", $"{rebarMark}{qtyStr}", tr);
+                        return true;
+                    }
+                    break;
+
                 default:
                     // Unsupported DTS type - do not plot
                     return false;
@@ -381,6 +441,74 @@ namespace DTS_Wall_Tool.Core.Utils
         }
 
         #endregion
+
+        #region Generic Element Labels
+
+        /// <summary>
+        /// Cập nhật nhãn cho các loại phần tử generic (Foundation, Pile, Lintel, Rebar, ShearWall, Stair)
+        /// Format: [Handle] TypeName TypeDetail
+        /// </summary>
+        private static void UpdateGenericLabel(ObjectId elemId, Entity ent, string typeName, string typeDetail, Transaction tr)
+   {
+          Point2D center;
+            
+            // Xác định tâm theo loại entity
+            if (ent is Line line)
+     {
+      // Cho Line - hiển thị ở giữa line
+        var pStart = new Point2D(line.StartPoint.X, line.StartPoint.Y);
+         var pEnd = new Point2D(line.EndPoint.X, line.EndPoint.Y);
+          center = new Point2D((pStart.X + pEnd.X) / 2.0, (pStart.Y + pEnd.Y) / 2.0);
+        }
+     else if (ent is Circle circle)
+     {
+           center = new Point2D(circle.Center.X, circle.Center.Y);
+            }
+       else if (ent is Polyline pline)
+        {
+   // Tính trung điểm của polyline
+       double sumX = 0, sumY = 0;
+    int count = pline.NumberOfVertices;
+  for (int i = 0; i < count; i++)
+     {
+        var pt = pline.GetPoint2dAt(i);
+ sumX += pt.X;
+             sumY += pt.Y;
+                }
+     center = new Point2D(sumX / count, sumY / count);
+        }
+            else
+{
+     center = AcadUtils.GetEntityCenter(ent);
+            }
+
+            // Xác định màu (green nếu có mapping, red nếu không)
+   var elemData = XDataUtils.ReadElementData(ent);
+            int statusColor = (elemData != null && elemData.HasMapping) ? 3 : 1;
+
+            string handleText = FormatColor($"[{elemId.Handle}]", statusColor);
+      string content = $"{handleText} {{\\C7;{typeName} {typeDetail}}}";
+
+            // Lấy BlockTableRecord để vẽ
+   BlockTableRecord btr = (BlockTableRecord)tr.GetObject(
+         ent.Database.CurrentSpaceId, OpenMode.ForWrite);
+
+    // Vẽ label tại vị trí tâm
+    if (ent is Line)
+      {
+   // For lines, use PlotLabel for better positioning
+    var pStart = new Point2D(((Line)ent).StartPoint.X, ((Line)ent).StartPoint.Y);
+   var pEnd = new Point2D(((Line)ent).EndPoint.X, ((Line)ent).EndPoint.Y);
+      LabelPlotter.PlotLabel(btr, tr, pStart, pEnd, content,
+     LabelPosition.MiddleTop, TEXT_HEIGHT_MAIN, LABEL_LAYER);
+        }
+          else
+          {
+    LabelPlotter.PlotPointLabel(btr, tr, center, content, TEXT_HEIGHT_MAIN, LABEL_LAYER);
+            }
+   }
+
+      #endregion
 
         #region Content Formatting
 

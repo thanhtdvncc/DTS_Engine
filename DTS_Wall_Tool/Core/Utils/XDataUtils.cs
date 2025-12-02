@@ -91,22 +91,34 @@ namespace DTS_Wall_Tool.Core.Utils
         /// </summary>
         private static ElementData CreateElementByType(string xType)
         {
-            if (string.IsNullOrEmpty(xType)) return null;
+          if (string.IsNullOrEmpty(xType)) return null;
 
             switch (xType)
             {
-                case "WALL":
-                    return new WallData();
-                case "COLUMN":
-                    return new ColumnData();
-                case "BEAM":
-                    return new BeamData();
-                case "SLAB":
-                    return new SlabData();
-                // Thêm các loại mới ở đây...
-                default:
-                    return null;
-            }
+      case "WALL":
+  return new WallData();
+      case "COLUMN":
+  return new ColumnData();
+       case "BEAM":
+      return new BeamData();
+           case "SLAB":
+      return new SlabData();
+                case "FOUNDATION":
+             return new FoundationData();
+         case "SHEARWALL":
+   return new ShearWallData();
+            case "STAIR":
+       return new StairData();
+           case "PILE":
+         return new PileData();
+                case "LINTEL":
+           return new LintelData();
+        case "REBAR":
+     return new RebarData();
+           // Thêm các loại mới ở đây...
+     default:
+     return null;
+       }
         }
 
         #endregion

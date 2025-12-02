@@ -96,9 +96,15 @@
     <Compile Include="Core\Data\ColumnData.cs" />
     <Compile Include="Core\Data\ElementData.cs" />
     <Compile Include="Core\Data\ElementType.cs" />
+    <Compile Include="Core\Data\FoundationData.cs" />
+    <Compile Include="Core\Data\LintelData.cs" />
     <Compile Include="Core\Data\MappingRecord.cs" />
+    <Compile Include="Core\Data\PileData.cs" />
+    <Compile Include="Core\Data\RebarData.cs" />
     <Compile Include="Core\Data\SapFrame.cs" />
+    <Compile Include="Core\Data\ShearWallData.cs" />
     <Compile Include="Core\Data\SlabData.cs" />
+    <Compile Include="Core\Data\StairData.cs" />
     <Compile Include="Core\Data\StoryData.cs" />
     <Compile Include="Core\Data\SyncStatus.cs" />
     <Compile Include="Core\Data\WallData.cs" />

@@ -12,7 +12,7 @@ namespace DTS_Wall_Tool.Commands
  [CommandMethod("DTS_SET_TYPE")]
  public void DTS_SET_TYPE()
  {
- WriteMessage("Ch?n ??i t??ng ?? set type...");
+ WriteMessage("Ch?n ??i t??ng ?? gán type...");
 
  var ids = AcadUtils.SelectObjectsOnScreen("LINE,LWPOLYLINE,POLYLINE,CIRCLE");
  if (ids.Count ==0)
@@ -118,7 +118,7 @@ namespace DTS_Wall_Tool.Commands
 
  if (originProtectedCount >0)
  {
- WriteMessage($"B?o v?: {originProtectedCount} ??i t??ng Origin/Story (không th? gán type).");
+ WriteMessage($"B?o v?: {originProtectedCount} ??i t??ng Origin/Story (không th? gán type). ");
  }
 
  if (undeterminedCount >0)
@@ -185,12 +185,12 @@ namespace DTS_Wall_Tool.Commands
  case ElementType.Column: return new ColumnData();
  case ElementType.Slab: return new SlabData();
  case ElementType.Wall: return new WallData();
- case ElementType.Foundation: return new WallData();
- case ElementType.Stair: return new WallData();
- case ElementType.Pile: return new WallData();
- case ElementType.Lintel: return new WallData();
- case ElementType.Rebar: return new WallData();
- case ElementType.ShearWall: return new WallData();
+ case ElementType.Foundation: return new FoundationData();
+ case ElementType.Stair: return new StairData();
+ case ElementType.Pile: return new PileData();
+ case ElementType.Lintel: return new LintelData();
+ case ElementType.Rebar: return new RebarData();
+ case ElementType.ShearWall: return new ShearWallData();
  default: return null;
  }
  }
