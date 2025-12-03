@@ -5,6 +5,7 @@ using DTS_Wall_Tool.Core.Data;
 using DTS_Wall_Tool.Core.Engines;
 using DTS_Wall_Tool.Core.Primitives;
 using DTS_Wall_Tool.Core.Utils;
+using System;
 using System.Collections.Generic;
 using System.Linq;
 
@@ -221,144 +222,162 @@ namespace DTS_Wall_Tool.Commands
             // Lấy tất cả frames từ SAP
             var allFrames = SapUtils.GetAllFramesGeometry();
 
-            // Xóa label cũ
+            // FIX: Không xóa layer, chỉ xóa label của phần tử được chọn
             AcadUtils.CreateLayer(LABEL_LAYER, 254);
-            AcadUtils.ClearLayer(LABEL_LAYER);
+            // AcadUtils.ClearLayer(LABEL_LAYER); // BỎ dòng này - không xóa toàn bộ
 
             int syncedCount = 0, modifiedCount = 0, errorCount = 0;
+            var sapChangedElements = new List<(ObjectId id, double oldLoad, double newLoad)>();
 
             UsingTransaction(tr =>
-                       {
-                           var bt = tr.GetObject(Db.BlockTableId, OpenMode.ForRead) as BlockTable;
-                           var btr = tr.GetObject(bt[BlockTableRecord.ModelSpace], OpenMode.ForWrite) as BlockTableRecord;
+                {
+                    var bt = tr.GetObject(Db.BlockTableId, OpenMode.ForRead) as BlockTable;
+                    var btr = tr.GetObject(bt[BlockTableRecord.ModelSpace], OpenMode.ForWrite) as BlockTableRecord;
 
-                           foreach (ObjectId lineId in validIds)
-                           {
-                               var result = SyncSingleElement(lineId, allFrames, btr, tr);
+                    // FIX: Xóa label cũ của phần tử được chọn trước
+                    foreach (ObjectId lineId in validIds)
+                    {
+                        DeleteEntityLabels(lineId, tr);
+                    }
 
-                               if (result.Success)
-                               {
-                                   if (result.State == SyncState.SapModified)
-                                       modifiedCount++;
-                                   else
-                                       syncedCount++;
-                               }
-                               else
-                               {
-                                   errorCount++;
-                                   WriteError($"  [{result.Handle}]: {result.Message}");
-                               }
-                           }
-                       });
+                    foreach (ObjectId lineId in validIds)
+                    {
+                        var result = SyncSingleElement(lineId, allFrames, btr, tr);
+
+                        if (result.Success)
+                        {
+                            if (result.State == SyncState.SapModified)
+                            {
+                                modifiedCount++;
+                                // Lưu lại phần tử có thay đổi để prompt sau
+                                if (result.OldLoadValue.HasValue && result.NewLoadValue.HasValue)
+                                {
+                                    sapChangedElements.Add((lineId, result.OldLoadValue.Value, result.NewLoadValue.Value));
+                                }
+                            }
+                            else
+                            {
+                                syncedCount++;
+                            }
+                        }
+                        else
+                        {
+                            errorCount++;
+                            WriteError($"  [{result.Handle}]: {result.Message}");
+                        }
+                    }
+                });
 
             WriteMessage($"\nĐồng bộ OK: {syncedCount}");
             WriteMessage($"SAP thay đổi: {modifiedCount}");
             if (errorCount > 0)
                 WriteMessage($"Lỗi: {errorCount}");
+
+            // FIX: Hỏi có muốn apply tải từ SAP vào CAD không
+            if (sapChangedElements.Count > 0)
+            {
+                WriteMessage($"\nPhát hiện {sapChangedElements.Count} phần tử có tải trong SAP khác với CAD:");
+
+                // Hiển thị một vài ví dụ
+                int showCount = Math.Min(5, sapChangedElements.Count);
+                for (int i = 0; i < showCount; i++)
+                {
+                    var elem = sapChangedElements[i];
+                    WriteMessage($"  - Handle [{elem.id.Handle}]: CAD={elem.oldLoad:0.00} → SAP={elem.newLoad:0.00} kN/m");
+                }
+
+                if (sapChangedElements.Count > showCount)
+                {
+                    WriteMessage($"  ... và {sapChangedElements.Count - showCount} phần tử khác");
+                }
+
+                // Prompt Yes/No
+                PromptKeywordOptions opts = new PromptKeywordOptions("\nCó muốn cập nhật tải từ SAP vào CAD? [Yes/No]");
+                opts.Keywords.Add("Yes");
+                opts.Keywords.Add("No");
+                opts.Keywords.Default = "No";
+                opts.AllowNone = true;
+
+                PromptResult promptRes = Ed.GetKeywords(opts);
+
+                if (promptRes.Status == PromptStatus.OK && promptRes.StringResult == "Yes")
+                {
+                    // Apply tải từ SAP vào CAD
+                    int appliedCount = ApplyLoadFromSap(sapChangedElements);
+                    WriteSuccess($"Đã cập nhật {appliedCount} phần tử với tải từ SAP.");
+                }
+                else
+                {
+                    WriteMessage("Bỏ qua cập nhật tải. Chỉ hiển thị để so sánh.");
+                }
+            }
         }
 
         /// <summary>
-        /// Gán tải từ CAD vào SAP2000 (PUSH)
+        /// Xóa tất cả label thuộc một entity
         /// </summary>
-        [CommandMethod("DTS_PUSH_LOAD")]
-        public void DTS_PUSH_LOAD()
+        private void DeleteEntityLabels(ObjectId entityId, Transaction tr)
         {
-            WriteMessage("GÁN TẢI TỪ CAD → SAP2000");
-
-            if (!EnsureSapConnection()) return;
-
-            var lineIds = AcadUtils.SelectObjectsOnScreen("LINE");
-            if (lineIds.Count == 0)
+            try
             {
-                WriteMessage("Không có phần tử nào được chọn.");
-                return;
+                // Tìm tất cả MText trên LABEL_LAYER có chứa handle của entity
+                string targetHandle = entityId.Handle.ToString();
+
+                TypedValue[] filter = new TypedValue[]
+                {
+                    new TypedValue((int)DxfCode.Start, "MTEXT"),
+                    new TypedValue((int)DxfCode.LayerName, LABEL_LAYER)
+                };
+
+                SelectionFilter selFilter = new SelectionFilter(filter);
+                PromptSelectionResult selRes = Ed.SelectAll(selFilter);
+
+                if (selRes.Status == PromptStatus.OK)
+                {
+                    foreach (ObjectId id in selRes.Value.GetObjectIds())
+                    {
+                        MText mtext = tr.GetObject(id, OpenMode.ForRead) as MText;
+                        if (mtext != null && mtext.Contents.Contains(targetHandle))
+                        {
+                            mtext.UpgradeOpen();
+                            mtext.Erase();
+                        }
+                    }
+                }
             }
-
-            // Nhập load pattern
-            PromptStringOptions patternOpt = new PromptStringOptions("\nLoad Pattern (mặc định DL): ");
-            patternOpt.DefaultValue = "DL";
-            var patternRes = Ed.GetString(patternOpt);
-            string loadPattern = string.IsNullOrEmpty(patternRes.StringResult) ? "DL" : patternRes.StringResult;
-
-            if (!SapUtils.LoadPatternExists(loadPattern))
-            {
-                WriteError($"Load pattern '{loadPattern}' không tồn tại trong SAP!");
-                return;
-            }
-
-            UsingTransaction(tr =>
-      {
-          var results = SyncEngine.PushToSap(lineIds, loadPattern, tr);
-
-          int success = results.Count(r => r.Success);
-          int failed = results.Count(r => !r.Success);
-
-          foreach (var r in results)
-          {
-              if (!r.Success)
-                  WriteError($"  [{r.Handle}]: {r.Message}");
-          }
-
-          WriteMessage($"\nThành công: {success}");
-          if (failed > 0)
-              WriteMessage($"Thất bại: {failed}");
-      });
-
-            SapUtils.RefreshView();
+            catch { }
         }
 
         /// <summary>
-        /// Phát hiện thay đổi và xung đột
+        /// Cập nhật LoadValue từ SAP vào CAD
         /// </summary>
-        [CommandMethod("DTS_CHECK_SYNC")]
-        public void DTS_CHECK_SYNC()
+        private int ApplyLoadFromSap(List<(ObjectId id, double oldLoad, double newLoad)> changes)
         {
-            WriteMessage("KIỂM TRA TRẠNG THÁI ĐỒNG BỘ");
-
-            if (!EnsureSapConnection()) return;
-
-            var lineIds = AcadUtils.SelectObjectsOnScreen("LINE");
-            if (lineIds.Count == 0)
-            {
-                WriteMessage("Không có phần tử nào được chọn.");
-                return;
-            }
-
-            var stats = new Dictionary<SyncState, int>();
+            int count = 0;
 
             UsingTransaction(tr =>
-                  {
-                      var changes = SyncEngine.DetectAllChanges(lineIds, tr);
+            {
+                foreach (var change in changes)
+                {
+                    try
+                    {
+                        Line lineEnt = tr.GetObject(change.id, OpenMode.ForWrite) as Line;
+                        if (lineEnt == null) continue;
 
-                      foreach (var kvp in changes)
-                      {
-                          var state = kvp.Value;
-                          if (!stats.ContainsKey(state)) stats[state] = 0;
-                          stats[state]++;
+                        var wallData = XDataUtils.ReadWallData(lineEnt);
+                        if (wallData == null) continue;
 
-                          // Cập nhật màu theo trạng thái
-                          int color = SyncEngine.GetSyncStateColor(state);
-                          Entity ent = tr.GetObject(kvp.Key, OpenMode.ForWrite) as Entity;
-                          if (ent != null) ent.ColorIndex = color;
-                      }
-                  });
+                        // Set default pattern value from cached totals
+                        wallData.LoadValue = change.newLoad;
+                        XDataUtils.WriteElementData(lineEnt, wallData, tr);
 
-            // Dictionary<TKey,TValue>.GetValueOrDefault is not available on .NET Framework 4.8,
-            // use TryGetValue to remain compatible.
-            int synced = stats.TryGetValue(SyncState.Synced, out var tmp) ? tmp : 0;
-            int cadModified = stats.TryGetValue(SyncState.CadModified, out tmp) ? tmp : 0;
-            int sapModified = stats.TryGetValue(SyncState.SapModified, out tmp) ? tmp : 0;
-            int conflict = stats.TryGetValue(SyncState.Conflict, out tmp) ? tmp : 0;
-            int sapDeleted = stats.TryGetValue(SyncState.SapDeleted, out tmp) ? tmp : 0;
-            int newElement = stats.TryGetValue(SyncState.NewElement, out tmp) ? tmp : 0;
+                        count++;
+                    }
+                    catch { }
+                }
+            });
 
-            WriteMessage("\nThống kê:");
-            if (synced > 0) WriteMessage($"  Đã đồng bộ (Xanh lá): {synced}");
-            if (cadModified > 0) WriteMessage($"  CAD thay đổi (Vàng): {cadModified}");
-            if (sapModified > 0) WriteMessage($"  SAP thay đổi (Xanh): {sapModified}");
-            if (conflict > 0) WriteMessage($"  Xung đột (Magenta): {conflict}");
-            if (sapDeleted > 0) WriteMessage($"  Frame bị xóa (Đỏ): {sapDeleted}");
-            if (newElement > 0) WriteMessage($"  Phần tử mới (Cyan): {newElement}");
+            return count;
         }
 
         #endregion
@@ -400,147 +419,281 @@ namespace DTS_Wall_Tool.Commands
         }
 
         private SyncResult SyncSingleElement(ObjectId lineId, List<SapFrame> allFrames,
-     BlockTableRecord btr, Transaction tr)
-  {
-         var result = new SyncResult
-            {
-         Handle = lineId.Handle.ToString(),
-            Success = true
-            };
+            BlockTableRecord btr, Transaction tr)
+      {
+     var result = new SyncResult
+          {
+   Handle = lineId.Handle.ToString(),
+          Success = true
+};
 
          Line lineEnt = tr.GetObject(lineId, OpenMode.ForWrite) as Line;
        if (lineEnt == null)
-            {
-                result.Success = false;
-result.Message = "Không phải Line";
-    return result;
-      }
-
-            // Đọc WallData
-   var wallData = XDataUtils.ReadWallData(lineEnt);
-            if (wallData == null)
-            {
-         result.Success = false;
-  result.Message = "Không có dữ liệu WallData";
- return result;
-      }
-
-   // Lấy thông tin từ Origin
- if (!wallData.IsLinked)
-            {
-     result.Success = false;
-     result.Message = "Chưa Link với Origin";
-                return result;
-     }
-
- ObjectId originId = AcadUtils.GetObjectIdFromHandle(wallData.OriginHandle);
-     if (originId == ObjectId.Null)
-            {
-   result.Success = false;
- result.Message = "Origin không tồn tại";
-    return result;
+    {
+          result.Success = false;
+       result.Message = "Không phải Line";
+      return result;
     }
 
-          DBObject originObj = tr.GetObject(originId, OpenMode.ForRead);
-  StoryData storyData = XDataUtils.ReadStoryData(originObj);
-            if (storyData == null)
-   {
-     result.Success = false;
-              result.Message = "Origin không có StoryData";
-                return result;
-      }
-
-        // Lấy thông tin geometry
-            double wallZ = storyData.Elevation;
-          Point2D insertOffset = new Point2D(storyData.OffsetX, storyData.OffsetY);
-
- // Nếu Origin là Circle, lấy tâm làm offset
-            if (originObj is Circle circle)
-      {
-    insertOffset = new Point2D(circle.Center.X, circle.Center.Y);
+            // Đọc WallData
+            var wallData = XDataUtils.ReadWallData(lineEnt);
+            if (wallData == null)
+            {
+ result.Success = false;
+        result.Message = "Không có dữ liệu WallData";
+     return result;
        }
 
-       Point2D startPt = new Point2D(lineEnt.StartPoint.X, lineEnt.StartPoint.Y);
-            Point2D endPt = new Point2D(lineEnt.EndPoint.X, lineEnt.EndPoint.Y);
-
- // Lọc dầm theo cao độ
-            var beamsAtZ = allFrames
-        .Where(f => f.IsBeam && System.Math.Abs(f.AverageZ - wallZ) <= MappingEngine.TOLERANCE_Z)
-.ToList();
-
-     // Thực hiện mapping
-            double wallThickness = wallData.Thickness ?? 200.0;
-            var mapResult = MappingEngine.FindMappings(
-  startPt, endPt, wallZ, beamsAtZ,
-                insertOffset, wallThickness);
-
-     mapResult.WallHandle = lineId.Handle.ToString();
-
-    // Kiểm tra thay đổi từ SAP
-         bool sapChanged = false;
- foreach (var mapping in mapResult.Mappings)
-          {
-         if (mapping.TargetFrame == "New") continue;
-
-    // Đọc tải trọng hiện có trong SAP
-   var sapLoads = SapUtils.GetFrameDistributedLoads(mapping.TargetFrame, wallData.LoadPattern ?? "DL");
- if (sapLoads.Count > 0)
-              {
-         double sapLoadValue = sapLoads.Sum(l => l.LoadValue);
-
-            // So sánh với CAD
-         if (wallData.LoadValue.HasValue &&
-     System.Math.Abs(wallData.LoadValue.Value - sapLoadValue) > 0.01)
-              {
-      sapChanged = true;
-      result.OldLoadValue = wallData.LoadValue;
-            result.NewLoadValue = sapLoadValue;
-          }
+// Lấy thông tin từ Origin
+    if (!wallData.IsLinked)
+     {
+       result.Success = false;
+        result.Message = "Chưa Link với Origin";
+    return result;
 }
+
+            ObjectId originId = AcadUtils.GetObjectIdFromHandle(wallData.OriginHandle);
+   if (originId == ObjectId.Null)
+   {
+   result.Success = false;
+           result.Message = "Origin không tồn tại";
+        return result;
             }
 
-       // Cập nhật WallData
-            wallData.Mappings = mapResult.Mappings;
-    wallData.BaseZ = wallZ;
-      wallData.Height = storyData.StoryHeight;
-XDataUtils.WriteElementData(lineEnt, wallData, tr);
-
-     // Cập nhật màu line
-  int colorIndex = mapResult.GetColorIndex();
-  if (sapChanged)
+        DBObject originObj = tr.GetObject(originId, OpenMode.ForRead);
+    StoryData storyData = XDataUtils.ReadStoryData(originObj);
+            if (storyData == null)
             {
-       colorIndex = SyncEngine.GetSyncStateColor(SyncState.SapModified);
-    result.State = SyncState.SapModified;
-   }
- else
-            {
-    result.State = mapResult.HasMapping ? SyncState.Synced : SyncState.NewElement;
-       }
- lineEnt.ColorIndex = colorIndex;
+  result.Success = false;
+         result.Message = "Origin không có StoryData";
+        return result;
+        }
 
-      // Vẽ Label
-      LabelUtils.UpdateWallLabels(lineId, wallData, mapResult, tr);
+       // Lấy thông tin geometry
+  double wallZ = storyData.Elevation;
+    Point2D insertOffset = new Point2D(storyData.OffsetX, storyData.OffsetY);
+
+            // Nếu Origin là Circle, lấy tâm làm offset
+            if (originObj is Circle circle)
+            {
+         insertOffset = new Point2D(circle.Center.X, circle.Center.Y);
+            }
+
+            Point2D startPt = new Point2D(lineEnt.StartPoint.X, lineEnt.StartPoint.Y);
+ Point2D endPt = new Point2D(lineEnt.EndPoint.X, lineEnt.EndPoint.Y);
+
+            // Lọc dầm theo cao độ
+            var beamsAtZ = allFrames
+           .Where(f => f.IsBeam && System.Math.Abs(f.AverageZ - wallZ) <= MappingEngine.TOLERANCE_Z)
+      .ToList();
+
+       // Thực hiện mapping
+   double wallThickness = wallData.Thickness ?? 200.0;
+ var mapResult = MappingEngine.FindMappings(
+             startPt, endPt, wallZ, beamsAtZ,
+          insertOffset, wallThickness);
+
+ mapResult.WallHandle = lineId.Handle.ToString();
+
+    // FIX: Chỉ đọc tải trọng từ LoadPattern được khai báo trong XData
+      string targetLoadPattern = wallData.LoadPattern ?? "DL";
+    
+        // NEW: Cache TẤT CẢ loadcase từ SAP vào WallData (quản lý linh hoạt)
+      // Đồng thời kiểm tra thay đổi trên loadPattern mặc định
+    // Cache detailed entries and totals; do not overwrite LoadValue unless user approves later
+      wallData.ClearLoadEntries();
+      wallData.LoadCases = new Dictionary<string, double>();
+      foreach (var m in mapResult.Mappings)
+      {
+     if (m.TargetFrame == "New") continue;
+ var detailed = SapUtils.GetFrameDistributedLoadsDetailed(m.TargetFrame);
+ foreach (var kv in detailed)
+ {
+ string pattern = kv.Key;
+ var entries = kv.Value;
+ // Cache totals (do not overwrite current LoadValue)
+ double total = entries.Sum(e => e.Value);
+ wallData.CacheLoadCase(pattern, total);
+ // Cache entries
+ wallData.LoadEntries.AddRange(entries);
+ }
+ }
+
+ // Do not set wallData.LoadValue here
+ wallData.BaseZ = wallZ;
+ wallData.Height = storyData.StoryHeight;
+ XDataUtils.UpdateElementData(lineEnt, wallData, tr);
+
+ // Detect change only on default pattern
+ bool sapChanged = false;
+ double? sapTotal = null;
+ if (wallData.LoadCases != null)
+ {
+ var defPat = wallData.LoadPattern ?? "DL";
+ if (wallData.LoadCases.ContainsKey(defPat)) sapTotal = wallData.LoadCases[defPat];
+ }
+
+ if (sapTotal.HasValue && wallData.LoadValue.HasValue && System.Math.Abs(wallData.LoadValue.Value - sapTotal.Value) >0.01)
+ {
+ sapChanged = true;
+ result.OldLoadValue = wallData.LoadValue;
+ result.NewLoadValue = sapTotal.Value;
+ }
+
+ // Cập nhật màu line
+            int colorIndex = mapResult.GetColorIndex();
+       if (sapChanged)
+ {
+   colorIndex = SyncEngine.GetSyncStateColor(SyncState.SapModified);
+     result.State = SyncState.SapModified;
+            }
+            else
+          {
+ result.State = mapResult.HasMapping ? SyncState.Synced : SyncState.NewElement;
+  }
+      lineEnt.ColorIndex = colorIndex;
+
+            // Vẽ Label với LoadPattern đúng
+   LabelUtils.UpdateWallLabels(lineId, wallData, mapResult, tr);
 
      // Tạo message
-         if (mapResult.HasMapping)
-            {
-                var firstMap = mapResult.Mappings.First();
-                if (sapChanged)
-      {
-        result.Message = $"-> {firstMap.TargetFrame} (SAP load: {result.NewLoadValue:0.00} kN/m)";
-       }
+     if (mapResult.HasMapping)
+    {
+       var firstMap = mapResult.Mappings.First();
+      if (sapChanged)
+  {
+    result.Message = $"-> {firstMap.TargetFrame} [{targetLoadPattern}] (changed)";
+    }
       else
-            {
-             result.Message = $"-> {firstMap.TargetFrame} ({firstMap.MatchType})";
-                }
+ {
+ result.Message = $"-> {firstMap.TargetFrame} ({firstMap.MatchType})";
+             }
             }
  else
-            {
-                result.Message = "-> NEW";
+        {
+           result.Message = "-> NEW";
             }
 
-            return result;
-        }
+  return result;
+   }
+
+      /// <summary>
+        /// Gán tải từ CAD vào SAP2000 (PUSH)
+        /// </summary>
+        [CommandMethod("DTS_PUSH_LOAD")]
+        public void DTS_PUSH_LOAD()
+    {
+      WriteMessage("GÁN TẢI TỪ CAD → SAP2000");
+
+            if (!EnsureSapConnection()) return;
+
+            var lineIds = AcadUtils.SelectObjectsOnScreen("LINE");
+            if (lineIds.Count == 0)
+   {
+     WriteMessage("Không có phần tử nào được chọn.");
+            return;
+            }
+
+            // Nhập load pattern
+  PromptStringOptions patternOpt = new PromptStringOptions("\nLoad Pattern (mặc định DL): ");
+   patternOpt.DefaultValue = "DL";
+var patternRes = Ed.GetString(patternOpt);
+     string loadPattern = string.IsNullOrEmpty(patternRes.StringResult) ? "DL" : patternRes.StringResult;
+
+  if (!SapUtils.LoadPatternExists(loadPattern))
+            {
+   WriteError($"Load pattern '{loadPattern}' không tồn tại trong SAP!");
+   return;
+            }
+
+       UsingTransaction(tr =>
+      {
+          var results = SyncEngine.PushToSap(lineIds, loadPattern, tr);
+
+          int success = results.Count(r => r.Success);
+          int failed = results.Count(r => !r.Success);
+
+          foreach (var r in results)
+          {
+              if (!r.Success)
+WriteError($"  [{r.Handle}]: {r.Message}");
+       }
+
+          WriteMessage($"\nThành công: {success}");
+ if (failed > 0)
+  WriteMessage($"Thất bại: {failed}");
+      });
+
+   SapUtils.RefreshView();
+  }
+
+        /// <summary>
+ /// Phát hiện thay đổi và xung đột
+ /// </summary>
+ [CommandMethod("DTS_CHECK_SYNC")]
+ public void DTS_CHECK_SYNC()
+ {
+ WriteMessage("KIỂM TRA TRẠNG THÁI ĐỒNG BỘ");
+
+ if (!EnsureSapConnection()) return;
+
+ var lineIds = AcadUtils.SelectObjectsOnScreen("LINE");
+ if (lineIds.Count ==0)
+ {
+ WriteMessage("Không có phần tử nào được chọn.");
+ return;
+ }
+
+ var stats = new Dictionary<SyncState, int>();
+
+ UsingTransaction(tr =>
+ {
+ var changes = SyncEngine.DetectAllChanges(lineIds, tr);
+
+ foreach (var kvp in changes)
+ {
+ // Only handle objects that belong to DTS ecosystem (have DTS_APP XData)
+ try
+ {
+ DBObject obj = tr.GetObject(kvp.Key, OpenMode.ForRead);
+ if (obj == null) continue;
+
+ if (!XDataUtils.HasDtsData(obj))
+ {
+ // Skip non-DTS objects
+ continue;
+ }
+
+ var state = kvp.Value;
+ if (!stats.ContainsKey(state)) stats[state] =0;
+ stats[state]++;
+
+ // Cập nhật màu theo trạng thái
+ int color = SyncEngine.GetSyncStateColor(state);
+ Entity ent = tr.GetObject(kvp.Key, OpenMode.ForWrite) as Entity;
+ if (ent != null) ent.ColorIndex = color;
+ }
+ catch { }
+ }
+ });
+
+ // Dictionary<TKey,TValue>.GetValueOrDefault is not available on .NET Framework4.8,
+ // use TryGetValue to remain compatible.
+ int synced = stats.TryGetValue(SyncState.Synced, out var tmp) ? tmp :0;
+ int cadModified = stats.TryGetValue(SyncState.CadModified, out tmp) ? tmp :0;
+ int sapModified = stats.TryGetValue(SyncState.SapModified, out tmp) ? tmp :0;
+ int conflict = stats.TryGetValue(SyncState.Conflict, out tmp) ? tmp :0;
+ int sapDeleted = stats.TryGetValue(SyncState.SapDeleted, out tmp) ? tmp :0;
+ int newElement = stats.TryGetValue(SyncState.NewElement, out tmp) ? tmp :0;
+
+ WriteMessage("\n[DONE] Trạng thái đồng bộ:");
+ if (synced >0) WriteMessage($" Đã đồng bộ (Xanh lá): {synced}");
+ if (cadModified >0) WriteMessage($" CAD thay đổi (Cyan): {cadModified}");
+ if (sapModified >0) WriteMessage($" SAP thay đổi (Xanh): {sapModified}");
+ if (conflict >0) WriteMessage($" Xung đột (Magenta): {conflict}");
+ if (sapDeleted >0) WriteMessage($" Frame bị xóa (Đỏ): {sapDeleted}");
+ if (newElement >0) WriteMessage($" Phần tử mới (Vàng): {newElement}");
+ }
 
         #endregion
     }

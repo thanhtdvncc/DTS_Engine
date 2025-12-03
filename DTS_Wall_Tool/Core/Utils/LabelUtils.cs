@@ -2,6 +2,7 @@
 using DTS_Wall_Tool.Core.Data;
 using DTS_Wall_Tool.Core.Engines;
 using DTS_Wall_Tool.Core.Primitives;
+using System;
 using System.Collections.Generic;
 using System.Linq;
 
@@ -290,19 +291,53 @@ namespace DTS_Wall_Tool.Core.Utils
 
             string topContent = $"{handleText} {{\\C7;{loadText}}}";
 
-            // === DÒNG DƯỚI: to B15 I=0.0to3.5 ===
+            // === DÒNG DƯỚI: to B15 I=0.0to3.5 + [SAP:...] ===
             string botContent = GetMappingText(mapResult, wData.LoadPattern ?? "DL");
+
+            // NEW: DÒNG THỨ 3 (tùy chọn): Hiển thị các loadcase khác nếu có
+            string thirdContent = null;
+            if (wData.LoadCases != null && wData.LoadCases.Count > 1)
+            {
+                // Lọc bỏ loadcase mặc định (đã hiển thị ở dòng trên)
+                var otherLoadCases = wData.LoadCases.Where(kvp => kvp.Key != wData.LoadPattern).ToList();
+                if (otherLoadCases.Count > 0)
+                {
+                    // Hiển thị tối đa 3 loadcase khác
+                    var displayCases = otherLoadCases.Take(3)
+                        .Select(kvp => $"{kvp.Key}={kvp.Value:0.00}");
+
+                    string moreText = otherLoadCases.Count > 3 ? $" +{otherLoadCases.Count - 3}" : "";
+                    thirdContent = FormatColor($"[{string.Join(", ", displayCases)}{moreText}]", 8); // Gray
+                }
+            }
 
             // Lấy BlockTableRecord để vẽ
             BlockTableRecord btr = (BlockTableRecord)tr.GetObject(
-           ent.Database.CurrentSpaceId, OpenMode.ForWrite);
+                ent.Database.CurrentSpaceId, OpenMode.ForWrite);
 
             // Vẽ labels
             LabelPlotter.PlotLabel(btr, tr, pStart, pEnd, topContent,
-           LabelPosition.MiddleTop, TEXT_HEIGHT_MAIN, LABEL_LAYER);
+                LabelPosition.MiddleTop, TEXT_HEIGHT_MAIN, LABEL_LAYER);
 
             LabelPlotter.PlotLabel(btr, tr, pStart, pEnd, botContent,
-                            LabelPosition.MiddleBottom, TEXT_HEIGHT_SUB, LABEL_LAYER);
+                LabelPosition.MiddleBottom, TEXT_HEIGHT_SUB, LABEL_LAYER);
+
+            // NEW: Vẽ dòng thứ 3 nếu có nhiều loadcase
+            if (!string.IsNullOrEmpty(thirdContent))
+            {
+                // Tính offset xuống thêm một chút so với dòng 2
+                var midPt = new Point2D((pStart.X + pEnd.X) / 2.0, (pStart.Y + pEnd.Y) / 2.0);
+                var perpDir = new Point2D(-(pEnd.Y - pStart.Y), pEnd.X - pStart.X);
+                perpDir = perpDir.Normalized;
+
+                // Offset xuống dưới thêm 150mm so với dòng 2
+                var thirdPos = new Point2D(
+                    midPt.X + perpDir.X * (TEXT_HEIGHT_SUB + 150),
+                    midPt.Y + perpDir.Y * (TEXT_HEIGHT_SUB + 150)
+                );
+
+                LabelPlotter.PlotPointLabel(btr, tr, thirdPos, thirdContent, TEXT_HEIGHT_SUB * 0.8, LABEL_LAYER);
+            }
         }
 
         #endregion
@@ -449,66 +484,68 @@ namespace DTS_Wall_Tool.Core.Utils
         /// Format: [Handle] TypeName TypeDetail
         /// </summary>
         private static void UpdateGenericLabel(ObjectId elemId, Entity ent, string typeName, string typeDetail, Transaction tr)
-   {
-          Point2D center;
-            
+        {
+            Point2D center;
+
             // Xác định tâm theo loại entity
             if (ent is Line line)
-     {
-      // Cho Line - hiển thị ở giữa line
-        var pStart = new Point2D(line.StartPoint.X, line.StartPoint.Y);
-         var pEnd = new Point2D(line.EndPoint.X, line.EndPoint.Y);
-          center = new Point2D((pStart.X + pEnd.X) / 2.0, (pStart.Y + pEnd.Y) / 2.0);
-        }
-     else if (ent is Circle circle)
-     {
-           center = new Point2D(circle.Center.X, circle.Center.Y);
+            {
+                // Cho Line - hiển thị ở giữa line
+                var pStart = new Point2D(line.StartPoint.X, line.StartPoint.Y);
+                var pEnd = new Point2D(line.EndPoint.X, line.EndPoint.Y);
+                center = new Point2D((pStart.X + pEnd.X) / 2.0, (pStart.Y + pEnd.Y) / 2.0);
             }
-       else if (ent is Polyline pline)
-        {
-   // Tính trung điểm của polyline
-       double sumX = 0, sumY = 0;
-    int count = pline.NumberOfVertices;
-  for (int i = 0; i < count; i++)
-     {
-        var pt = pline.GetPoint2dAt(i);
- sumX += pt.X;
-             sumY += pt.Y;
+            else if (ent is Circle circle)
+            {
+                center = new Point2D(circle.Center.X, circle.Center.Y);
+            }
+            else if (ent is Polyline pline)
+            {
+                // Tính trung điểm của polyline
+                double sumX = 0, sumY = 0;
+                int count = pline.NumberOfVertices;
+                for (int i = 0; i < count; i++)
+                {
+                    var pt = pline.GetPoint2dAt(i);
+                    sumX += pt.X;
+                    sumY += pt.Y;
                 }
-     center = new Point2D(sumX / count, sumY / count);
-        }
+                center = new Point2D(sumX / count, sumY / count);
+            }
             else
-{
-     center = AcadUtils.GetEntityCenter(ent);
+            {
+                center = AcadUtils.GetEntityCenter(ent);
             }
 
             // Xác định màu (green nếu có mapping, red nếu không)
-   var elemData = XDataUtils.ReadElementData(ent);
+            var elemData = XDataUtils.ReadElementData(ent);
             int statusColor = (elemData != null && elemData.HasMapping) ? 3 : 1;
 
             string handleText = FormatColor($"[{elemId.Handle}]", statusColor);
-      string content = $"{handleText} {{\\C7;{typeName} {typeDetail}}}";
+            string content = $"{handleText} {{\\C7;{typeName} {typeDetail}}}";
 
             // Lấy BlockTableRecord để vẽ
-   BlockTableRecord btr = (BlockTableRecord)tr.GetObject(
+            BlockTableRecord btr = (BlockTableRecord)tr.GetObject(
          ent.Database.CurrentSpaceId, OpenMode.ForWrite);
 
-    // Vẽ label tại vị trí tâm
-    if (ent is Line)
-      {
-   // For lines, use PlotLabel for better positioning
-    var pStart = new Point2D(((Line)ent).StartPoint.X, ((Line)ent).StartPoint.Y);
-   var pEnd = new Point2D(((Line)ent).EndPoint.X, ((Line)ent).EndPoint.Y);
-      LabelPlotter.PlotLabel(btr, tr, pStart, pEnd, content,
-     LabelPosition.MiddleTop, TEXT_HEIGHT_MAIN, LABEL_LAYER);
-        }
-          else
-          {
-    LabelPlotter.PlotPointLabel(btr, tr, center, content, TEXT_HEIGHT_MAIN, LABEL_LAYER);
+            // Vẽ label tại vị trí tâm
+            if (ent is Line)
+            {
+                {
+                    // For lines, use PlotLabel for better positioning
+                    var pStart = new Point2D(((Line)ent).StartPoint.X, ((Line)ent).StartPoint.Y);
+                    var pEnd = new Point2D(((Line)ent).EndPoint.X, ((Line)ent).EndPoint.Y);
+                    LabelPlotter.PlotLabel(btr, tr, pStart, pEnd, content,
+                 LabelPosition.MiddleTop, TEXT_HEIGHT_MAIN, LABEL_LAYER);
+                }
             }
-   }
+            else
+            {
+                LabelPlotter.PlotPointLabel(btr, tr, center, content, TEXT_HEIGHT_MAIN, LABEL_LAYER);
+            }
+        }
 
-      #endregion
+        #endregion
 
         #region Content Formatting
 
@@ -526,132 +563,65 @@ namespace DTS_Wall_Tool.Core.Utils
         /// </summary>
         public static string GetMappingText(MappingResult res, string loadPattern = "DL")
         {
-            // Nếu chưa map
             if (!res.HasMapping)
-                return FormatColor("to New", 1);
+                return FormatColor("to New",1);
 
-            // Nếu map nhiều dầm
-            if (res.Mappings.Count > 1)
-            {
-                var names = res.Mappings.Select(m => m.TargetFrame).Distinct();
-                return FormatColor("to " + string.Join(",", names), 3);
-            }
-
-            // Map 1 dầm
-            var map = res.Mappings[0];
+            var map = res.Mappings.First();
             if (map.TargetFrame == "New")
-                return FormatColor("to New", 1);
+                return FormatColor("to New",1);
 
-            string result = $"to {map.TargetFrame}";
+            // Read detailed loads from SAP for this frame
+            var detailed = SapUtils.GetFrameDistributedLoadsDetailed(map.TargetFrame);
 
-            if (map.MatchType == "FULL" || map.MatchType == "EXACT")
+            var lines = new List<string>();
+
+            bool hasAnyLoad = detailed != null && detailed.Count >0 && detailed.Values.Any(v => v != null && v.Count >0);
+            if (!hasAnyLoad)
             {
-                result += $" (full {map.CoveredLength / 1000.0:0.#}m)";
+                // No loads -> show mapping header only
+                string header = $"to {map.TargetFrame}";
+                if (map.MatchType == "FULL" || map.MatchType == "EXACT")
+                    header += $" (full {map.CoveredLength /1000.0:0.#}m)";
+                else
+                    header += $" I={map.DistI /1000.0:0.0}to{map.DistJ /1000.0:0.0}";
+                lines.Add(header);
             }
             else
             {
-                double i = map.DistI / 1000.0;
-                double j = map.DistJ / 1000.0;
-                result += $" I={i:0. 0}to{j:0.0}";
-            }
-
-            // Thêm thông tin tải từ SAP nếu có
-            if (SapUtils.IsConnected && map.TargetFrame != "New")
-            {
-                var sapLoads = SapUtils.GetFrameDistributedLoads(map.TargetFrame, loadPattern);
-                if (sapLoads.Count > 0)
+                // Has loads -> show only load lines (no redundant 'to ...')
+                int maxPatterns =5;
+                int count =0;
+                foreach (var kv in detailed)
                 {
-                    double sapLoad = sapLoads.Sum(l => l.LoadValue);
-                    result += $" [SAP:{sapLoad:0. 00}]";
+                    if (count++ >= maxPatterns) { lines.Add("+more"); break; }
+
+                    string pattern = kv.Key;
+                    var entries = kv.Value;
+                    double total = entries.Sum(e => e.Value);
+
+                    // Merge segments text
+                    var segs = new List<string>();
+                    foreach (var e in entries)
+                    {
+                        foreach (var s in e.Segments)
+                        {
+                            double i = s.I /1000.0;
+                            double j = s.J /1000.0;
+                            if (Math.Abs(i -0) <0.001 && Math.Abs(j - (map.FrameLength /1000.0)) <0.001)
+                                segs.Add($"full {map.FrameLength /1000.0:0.#}m");
+                            else
+                                segs.Add($"{i:0.0}to{j:0.0}");
+                        }
+                    }
+
+                    string segText = segs.Count >0 ? $" ({string.Join(",", segs)})" : "";
+                    lines.Add($"{map.TargetFrame}: {pattern}={total:0.00}kN/m{segText}");
                 }
             }
 
             int color = res.GetColorIndex();
-            return FormatColor(result, color);
-        }
-
-        /// <summary>
-        /// Tạo label text với thông tin đầy đủ từ SAP
-        /// </summary>
-        public static string GetDetailedLabel(WallData wData, MappingResult mapResult)
-        {
-            var lines = new List<string>();
-
-            // Line 1: Wall info
-            string wallType = wData.WallType ?? $"W{wData.Thickness ?? 200:0}";
-            lines.Add($"{wallType} T={wData.Thickness:0}mm H={wData.Height:0}mm");
-
-            // Line 2: Load info
-            if (wData.LoadValue.HasValue)
-            {
-                lines.Add($"{wData.LoadPattern}={wData.LoadValue:0.00} kN/m");
-            }
-
-            // Line 3: Mapping info
-            if (mapResult.HasMapping)
-            {
-                var map = mapResult.Mappings.First();
-                lines.Add($"-> {map.TargetFrame} ({map.MatchType})");
-            }
-            else
-            {
-                lines.Add("-> NEW");
-            }
-
-            return string.Join("\\P", lines); // \P = newline in MText
-        }
-
-        #endregion
-
-        #region Sync Status Labels
-
-        /// <summary>
-        /// Tạo label hiển thị trạng thái đồng bộ
-        /// </summary>
-        public static string GetSyncStatusLabel(SyncState state, string details = null)
-        {
-            string statusText;
-            int color;
-
-            switch (state)
-            {
-                case SyncState.Synced:
-                    statusText = "Synced";
-                    color = 3;
-                    break;
-                case SyncState.CadModified:
-                    statusText = "CAD Changed";
-                    color = 2;
-                    break;
-                case SyncState.SapModified:
-                    statusText = "SAP Changed";
-                    color = 5;
-                    break;
-                case SyncState.Conflict:
-                    statusText = "Conflict";
-                    color = 6;
-                    break;
-                case SyncState.SapDeleted:
-                    statusText = "SAP Deleted";
-                    color = 1;
-                    break;
-                case SyncState.NewElement:
-                    statusText = "New";
-                    color = 4;
-                    break;
-                default:
-                    statusText = "?Unknown";
-                    color = 7;
-                    break;
-            }
-
-            string result = FormatColor(statusText, color);
-            if (!string.IsNullOrEmpty(details))
-            {
-                result += $" {details}";
-            }
-
-            return result;
+            string content = string.Join("\\P", lines.Select(l => FormatColor(l, color)));
+            return content;
         }
 
         #endregion

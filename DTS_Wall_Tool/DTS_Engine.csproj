@@ -81,6 +81,7 @@
     <Compile Include="Commands\CommandBase.cs" />
     <Compile Include="Commands\LinkCommands.cs" />
     <Compile Include="Commands\OriginCommands.cs" />
+    <Compile Include="Commands\PlotCommands.cs" />
     <Compile Include="Commands\ProcessCommands.cs" />
     <Compile Include="Commands\SapCommands.cs" />
     <Compile Include="Commands\ScanCommands.cs" />

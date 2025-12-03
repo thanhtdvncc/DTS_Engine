@@ -242,6 +242,72 @@ namespace DTS_Wall_Tool.Core.Utils
         }
 
         /// <summary>
+        /// Đọc chi tiết các tải phân bố trên frame, nhóm theo pattern và kèm segments
+        /// </summary>
+        public static Dictionary<string, List<DTS_Wall_Tool.Core.Data.LoadEntry>> GetFrameDistributedLoadsDetailed(string frameName)
+        {
+            var result = new Dictionary<string, List<DTS_Wall_Tool.Core.Data.LoadEntry>>();
+            var model = GetModel();
+            if (model == null) return result;
+
+            try
+            {
+                int numberItems =0;
+                string[] frameNames = null;
+                string[] loadPatterns = null;
+                int[] myTypes = null;
+                string[] csys = null;
+                int[] dirs = null;
+                double[] rd1 = null, rd2 = null;
+                double[] dist1 = null, dist2 = null;
+                double[] val1 = null, val2 = null;
+
+                int ret = model.FrameObj.GetLoadDistributed(
+                    frameName,
+                    ref numberItems,
+                    ref frameNames,
+                    ref loadPatterns,
+                    ref myTypes,
+                    ref csys,
+                    ref dirs,
+                    ref rd1, ref rd2,
+                    ref dist1, ref dist2,
+                    ref val1, ref val2,
+                    eItemType.Objects
+                );
+
+                if (ret !=0 || numberItems ==0) return result;
+
+                for (int i =0; i < numberItems; i++)
+                {
+                    string pattern = loadPatterns[i];
+                    double value = (val1[i] *1000.0); // kN/mm -> kN/m
+                    double iPos = dist1[i];
+                    double jPos = dist2[i];
+                    string dirStr = GetDirectionName(dirs[i]);
+
+                    var entry = new DTS_Wall_Tool.Core.Data.LoadEntry
+                    {
+                        Pattern = pattern,
+                        Value = value,
+                        Direction = dirStr,
+                        LoadType = "Distributed",
+                        Segments = new List<DTS_Wall_Tool.Core.Data.LoadSegment>
+                        {
+                            new DTS_Wall_Tool.Core.Data.LoadSegment { I = iPos, J = jPos }
+                        }
+                    };
+
+                    if (!result.ContainsKey(pattern)) result[pattern] = new List<DTS_Wall_Tool.Core.Data.LoadEntry>();
+                    result[pattern].Add(entry);
+                }
+            }
+            catch { }
+
+            return result;
+        }
+
+        /// <summary>
         /// Đọc tổng tải trọng trên frame theo pattern
         /// </summary>
         public static double GetFrameTotalLoad(string frameName, string loadPattern)

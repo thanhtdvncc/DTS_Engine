@@ -345,22 +345,35 @@ namespace DTS_Wall_Tool.Core.Engines
                         return SyncState.SapDeleted;
 
                     // So sánh tải trọng
-                    if (elemData is WallData wallData && wallData.LoadValue.HasValue)
+                    if (elemData is WallData wallData)
                     {
-                        var sapLoads = SapUtils.GetFrameDistributedLoads(mapping.TargetFrame, DefaultLoadPattern);
+                        // choose pattern: prefer wallData.LoadPattern if set
+                        string pattern = !string.IsNullOrEmpty(wallData.LoadPattern) ? wallData.LoadPattern : DefaultLoadPattern;
 
-                        if (sapLoads.Count == 0)
+                        var sapLoads = SapUtils.GetFrameDistributedLoads(mapping.TargetFrame, pattern);
+                        double sapTotal = sapLoads.Sum(l => l.LoadValue);
+                        bool sapHas = sapLoads.Count >0;
+                        bool cadHas = wallData.LoadValue.HasValue;
+
+                        if (!sapHas && cadHas)
                         {
-                            // SAP chưa có tải, CAD đã có
+                            // CAD has load but SAP has none
                             return SyncState.CadModified;
                         }
 
-                        double sapLoad = sapLoads.Sum(l => l.LoadValue);
-                        if (Math.Abs(wallData.LoadValue.Value - sapLoad) > 0.01)
+                        if (sapHas && !cadHas)
                         {
-                            // Tải khác nhau - cần xác định ai thay đổi
-                            // TODO: So sánh timestamp
-                            return SyncState.Conflict;
+                            // SAP has load but CAD empty
+                            return SyncState.SapModified;
+                        }
+
+                        if (sapHas && cadHas)
+                        {
+                            if (Math.Abs(wallData.LoadValue.Value - sapTotal) >0.01)
+                            {
+                                // Values differ -> conflict
+                                return SyncState.Conflict;
+                            }
                         }
                     }
                 }
@@ -404,7 +417,7 @@ namespace DTS_Wall_Tool.Core.Engines
                 case SyncState.SapModified: return 5; // Xanh dương
                 case SyncState.Conflict: return 6;    // Magenta
                 case SyncState.SapDeleted: return 1;  // Đỏ
-                case SyncState.NewElement: return 4;  // Cyan
+                case SyncState.NewElement: return 2;  // Yellow (change from Cyan)
                 default: return 7;                     // Trắng
             }
         }

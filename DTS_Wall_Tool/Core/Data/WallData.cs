@@ -2,6 +2,16 @@
 
 namespace DTS_Wall_Tool.Core.Data
 {
+    public class LoadSegment { public double I { get; set; } public double J { get; set; } }
+    public class LoadEntry
+    {
+        public string Pattern { get; set; }
+        public double Value { get; set; }
+        public List<LoadSegment> Segments { get; set; } = new List<LoadSegment>();
+        public string Direction { get; set; } = "Gravity";
+        public string LoadType { get; set; } = "Distributed";
+    }
+
     /// <summary>
     /// Dữ liệu Tường - Kế thừa từ ElementData. 
     /// Chỉ chứa các thuộc tính đặc thù của Tường.
@@ -36,24 +46,17 @@ namespace DTS_Wall_Tool.Core.Data
         /// </summary>
         public double? UnitWeight { get; set; } = 18.0;
 
-        #endregion
-
-        #region Load Properties
-
-        /// <summary>
-        /// Load pattern trong SAP2000
-        /// </summary>
+        // Default pattern being displayed in label
         public string LoadPattern { get; set; } = "DL";
-
-        /// <summary>
-        /// Giá trị tải tính toán (kN/m)
-        /// </summary>
         public double? LoadValue { get; set; } = null;
-
-        /// <summary>
-        /// Hệ số điều chỉnh tải (mặc định 1. 0)
-        /// </summary>
         public double LoadFactor { get; set; } = 1.0;
+
+        // Cache totals by pattern
+        public Dictionary<string, double> LoadCases { get; set; } = new Dictionary<string, double>();
+        public string LoadCasesLastSync { get; set; } = null;
+
+        // NEW: Detailed entries with segments (per pattern)
+        public List<LoadEntry> LoadEntries { get; set; } = new List<LoadEntry>();
 
         #endregion
 
@@ -111,6 +114,23 @@ namespace DTS_Wall_Tool.Core.Data
 
             dict["xLoadFactor"] = LoadFactor;
 
+            // Serialize totals
+            if (LoadCases != null && LoadCases.Count > 0)
+            {
+                var serializer = new System.Web.Script.Serialization.JavaScriptSerializer();
+                dict["xLoadCases"] = serializer.Serialize(LoadCases);
+            }
+
+            if (!string.IsNullOrEmpty(LoadCasesLastSync))
+                dict["xLoadCasesLastSync"] = LoadCasesLastSync;
+
+            // NEW: Serialize detailed entries
+            if (LoadEntries != null && LoadEntries.Count > 0)
+            {
+                var serializer = new System.Web.Script.Serialization.JavaScriptSerializer();
+                dict["xLoadEntries"] = serializer.Serialize(LoadEntries);
+            }
+
             return dict;
         }
 
@@ -140,6 +160,36 @@ namespace DTS_Wall_Tool.Core.Data
 
             if (dict.TryGetValue("xLoadFactor", out var loadFactor))
                 LoadFactor = ConvertToDouble(loadFactor) ?? 1.0;
+
+            if (dict.TryGetValue("xLoadCases", out var loadCasesJson))
+            {
+                try
+                {
+                    var serializer = new System.Web.Script.Serialization.JavaScriptSerializer();
+                    LoadCases = serializer.Deserialize<Dictionary<string, double>>(loadCasesJson.ToString());
+                }
+                catch
+                {
+                    LoadCases = new Dictionary<string, double>();
+                }
+            }
+
+            if (dict.TryGetValue("xLoadCasesLastSync", out var lastSync))
+                LoadCasesLastSync = lastSync?.ToString();
+
+            // NEW: Deserialize detailed entries
+            if (dict.TryGetValue("xLoadEntries", out var loadEntriesJson))
+            {
+                try
+                {
+                    var serializer = new System.Web.Script.Serialization.JavaScriptSerializer();
+                    LoadEntries = serializer.Deserialize<List<LoadEntry>>(loadEntriesJson.ToString());
+                }
+                catch
+                {
+                    LoadEntries = new List<LoadEntry>();
+                }
+            }
         }
 
         #endregion
@@ -174,10 +224,45 @@ namespace DTS_Wall_Tool.Core.Data
         public override string ToString()
         {
             string thkStr = Thickness.HasValue ? $"{Thickness.Value:0}mm" : "[N/A]";
-            string loadStr = LoadValue.HasValue ? $"{LoadValue.Value:0. 00}kN/m" : "[N/A]";
+            string loadStr = LoadValue.HasValue ? $"{LoadValue.Value:0.00}kN/m" : "[N/A]";  // FIX: Loại bỏ dấu cách
             string linkStatus = IsLinked ? $"Linked:{OriginHandle}" : "Unlinked";
 
             return $"Wall[{WallType ?? "N/A"}] T={thkStr}, Load={loadStr}, {linkStatus}";
+        }
+
+        // Update cache total per pattern
+        public void UpdateLoadCase(string pattern, double value)
+        {
+            if (LoadCases == null) LoadCases = new Dictionary<string, double>();
+
+            LoadCases[pattern] = value;
+            LoadCasesLastSync = System.DateTime.UtcNow.ToString("yyyy-MM-dd HH:mm:ss");
+
+            // Nếu pattern là pattern mặc định hiện tại thì cập nhật LoadValue luôn
+            if (pattern == LoadPattern) LoadValue = value;
+        }
+
+        // NEW: Cache load case without overwriting current LoadValue
+        public void CacheLoadCase(string pattern, double value)
+        {
+            if (LoadCases == null) LoadCases = new Dictionary<string, double>();
+            LoadCases[pattern] = value;
+            LoadCasesLastSync = System.DateTime.UtcNow.ToString("yyyy-MM-dd HH:mm:ss");
+        }
+
+        // Keep existing GetLoadCase/GetAllLoadCaseNames/ClearLoadCases definitions elsewhere in file; do not redefine here
+        public void ClearLoadEntries() { LoadEntries?.Clear(); }
+
+        public string GetLoadCasesDisplay()
+        {
+            if (LoadCases == null || LoadCases.Count ==0) return "No loadcases";
+            var lines = new List<string>();
+            foreach (var kvp in LoadCases)
+            {
+                string marker = (kvp.Key == LoadPattern) ? "*" : " ";
+                lines.Add($"{marker}{kvp.Key}={kvp.Value:0.00}");
+            }
+            return string.Join(", ", lines);
         }
 
         #endregion
