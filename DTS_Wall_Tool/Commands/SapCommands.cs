@@ -34,11 +34,132 @@ namespace DTS_Wall_Tool.Commands
                 WriteMessage($"Số Frame: {SapUtils.CountFrames()}");
                 WriteMessage($"Load Patterns: {string.Join(", ", SapUtils.GetLoadPatterns())}");
 
-                var stories = SapUtils.GetStories();
-                WriteMessage($"Số tầng: {stories.Count}");
-                foreach (var story in stories)
+                // Read unified grid/story items
+                var items = SapUtils.GetStories();
+                WriteMessage($"Grid items total: {items.Count}");
+
+                var xItems = items.Where(i => !string.IsNullOrEmpty(i.AxisDir) && i.AxisDir.Trim().Equals("X", System.StringComparison.OrdinalIgnoreCase)).OrderBy(i => i.Coordinate).ToList();
+                var yItems = items.Where(i => !string.IsNullOrEmpty(i.AxisDir) && i.AxisDir.Trim().Equals("Y", System.StringComparison.OrdinalIgnoreCase)).OrderBy(i => i.Coordinate).ToList();
+                var zItems = items.Where(i => !string.IsNullOrEmpty(i.AxisDir) && i.AxisDir.Trim().StartsWith("Z", System.StringComparison.OrdinalIgnoreCase)).OrderBy(i => i.Coordinate).ToList();
+
+                WriteMessage($"X axes: {xItems.Count}, Y axes: {yItems.Count}, Z (stories): {zItems.Count}");
+
+                if (zItems.Count > 0)
                 {
-                    WriteMessage($"  - {story}");
+                    WriteMessage("Stories (Z):");
+                    foreach (var z in zItems)
+                    {
+                        WriteMessage($" - {z.Name} : Z={z.Coordinate}");
+                    }
+                }
+                else
+                {
+                    WriteMessage("Không tìm thấy Z (stories) trong Grid Lines.");
+                }
+
+                if (xItems.Count > 0)
+                {
+                    WriteMessage("X axes:");
+                    int maxPrint = 200;
+                    int printed = 0;
+                    foreach (var xi in xItems)
+                    {
+                        if (printed++ >= maxPrint) { WriteMessage($" ... ({xItems.Count - maxPrint} more)"); break; }
+                        WriteMessage($" - {xi.Name} : X={xi.Coordinate}");
+                    }
+                }
+                else
+                {
+                    WriteMessage("Không tìm thấy trục X trong Grid Lines.");
+                }
+
+                if (yItems.Count > 0)
+                {
+                    WriteMessage("Y axes:");
+                    int maxPrintY = 200;
+                    int printedY = 0;
+                    foreach (var yi in yItems)
+                    {
+                        if (printedY++ >= maxPrintY) { WriteMessage($" ... ({yItems.Count - maxPrintY} more)"); break; }
+                        WriteMessage($" - {yi.Name} : Y={yi.Coordinate}");
+                    }
+                }
+                else
+                {
+                    WriteMessage("Không tìm thấy trục Y trong Grid Lines.");
+                }
+
+                // If GetStories returned nothing try to read Grid Lines and extract Z entries
+                if (zItems.Count == 0)
+                {
+                    WriteMessage("GetStories trả về 0, thử đọc Grid Lines để tìm Z (floor) entries...");
+                    var grids = SapUtils.GetGridLines();
+                    WriteMessage($"Grid lines read: {grids.Count}");
+
+                    var zGrids = grids.Where(g => !string.IsNullOrEmpty(g.Orientation) && g.Orientation.StartsWith("Z", System.StringComparison.OrdinalIgnoreCase)).ToList();
+                    WriteMessage($"Grid Z entries: {zGrids.Count}");
+
+                    var derived = new List<DTS_Wall_Tool.Core.Data.StoryData>();
+                    foreach (var g in zGrids)
+                    {
+                        var sd = new DTS_Wall_Tool.Core.Data.StoryData
+                        {
+                            StoryName = g.Name,
+                            Elevation = g.Coordinate,
+                            StoryHeight = 3300
+                        };
+                        derived.Add(sd);
+                        WriteMessage($" - Derived story from grid: {sd.StoryName} Z={sd.Elevation}");
+                    }
+
+                    if (derived.Count == 0)
+                        WriteMessage("Không tìm thấy bản ghi Z trong Grid Lines.");
+
+                    // Extra diagnostics: call DatabaseTables.GetAllFieldsInTable and GetTableForDisplayArray directly to inspect metadata
+                    try
+                    {
+                        var model = SapUtils.GetModel();
+                        if (model != null)
+                        {
+                            WriteMessage("--- Diagnostic: GetAllFieldsInTable for 'Grid Lines' ---");
+                            int metaVer = 0;
+                            int metaNum = 0;
+                            string[] fk = null; string[] fn = null; string[] desc = null; string[] units = null; bool[] imp = null;
+                            int mret = model.DatabaseTables.GetAllFieldsInTable("Grid Lines", ref metaVer, ref metaNum, ref fk, ref fn, ref desc, ref units, ref imp);
+                            WriteMessage($"GetAllFieldsInTable ret={mret}, metaNum={metaNum}");
+                            if (fk != null)
+                            {
+                                WriteMessage($"FieldKeys: {string.Join(", ", fk)}");
+                            }
+                            if (fn != null)
+                            {
+                                WriteMessage($"FieldNames: {string.Join(", ", fn)}");
+                            }
+
+                            WriteMessage("--- Diagnostic: GetTableForDisplayArray for 'Grid Lines' ---");
+                            string[] fieldKeyListInput = new[] { "" };
+                            int tv = 0; string[] fieldsIncluded = null; int numberRecords = 0; string[] tableData = null;
+                            int tret = model.DatabaseTables.GetTableForDisplayArray("Grid Lines", ref fieldKeyListInput, "All", ref tv, ref fieldsIncluded, ref numberRecords, ref tableData);
+                            WriteMessage($"GetTableForDisplayArray ret={tret}, records={numberRecords}, tv={tv}");
+                            if (fieldsIncluded != null) WriteMessage($"FieldsIncluded: {string.Join(",", fieldsIncluded)}");
+                            if (tableData != null && tableData.Length > 0)
+                            {
+                                int cols = (fieldsIncluded != null) ? fieldsIncluded.Length : 0;
+                                WriteMessage($"Sample tableData length={tableData.Length}, cols={cols}");
+                                // print first row
+                                if (numberRecords > 0 && cols > 0)
+                                {
+                                    var first = new List<string>();
+                                    for (int c = 0; c < cols; c++) first.Add(tableData[c] ?? "");
+                                    WriteMessage("First row: " + string.Join(" | ", first));
+                                }
+                            }
+                        }
+                    }
+                    catch (System.Exception ex)
+                    {
+                        WriteMessage("Diagnostics error: " + ex.Message);
+                    }
                 }
             }
         }

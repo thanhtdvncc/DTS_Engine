@@ -160,7 +160,7 @@ namespace DTS_Wall_Tool.Commands
             }
             else
             {
-                WriteMessage($"Đã link: {linkedCount} phần tử{(skippedCount >0 ? $" (bỏ qua {skippedCount} đã link trước đó)" : "")}");
+                WriteMessage($"Đã link: {linkedCount} phần tử{(skippedCount >0 ? $" (bỏ qua {skippedCount} đã link trước đó)" : "")} ");
             }
 
             if (skippedCount >0)
@@ -438,7 +438,7 @@ namespace DTS_Wall_Tool.Commands
 
             // Thống kê theo loại và đếm phần tử không có thuộc tính
             var typeStats = new Dictionary<ElementType, int>();
-            int unknownLinked =0;
+            var unknownLinkedIds = new List<ObjectId>();
 
             UsingTransaction(tr =>
             {
@@ -475,7 +475,8 @@ namespace DTS_Wall_Tool.Commands
                                     var childData = XDataUtils.ReadElementData(childObj);
                                     if (childData == null)
                                     {
-                                        unknownLinked++;
+                                        // collect unknown linked objects for later action
+                                        unknownLinkedIds.Add(c);
                                     }
                                     else
                                     {
@@ -502,7 +503,7 @@ namespace DTS_Wall_Tool.Commands
                             // count type
                             if (elemData.ElementType == ElementType.Unknown)
                             {
-                                unknownLinked++;
+                                unknownLinkedIds.Add(objId);
                             }
                             else
                             {
@@ -516,6 +517,7 @@ namespace DTS_Wall_Tool.Commands
                 }
             });
 
+
             // Vẽ tất cả nhóm
             foreach (var kvp in groups)
             {
@@ -524,17 +526,119 @@ namespace DTS_Wall_Tool.Commands
                 DrawLinkLines(kvp.Key, uniqueList);
             }
 
-            // Báo cáo tổng hợp
+            // Nếu không có link
             if (linkedCount ==0)
             {
                 WriteMessage("Không có link nào giữa các đối tượng đã chọn và bất kỳ Origin nào.");
                 return;
             }
 
-            // Nếu có các phần tử không có thuộc tính
-            if (unknownLinked >0)
+            // Nếu có các phần tử không có thuộc tính -> highlight and ask
+            if (unknownLinkedIds.Count >0)
             {
-                WriteMessage($"Đã tìm thấy {unknownLinked} phần tử không có thuộc tính đang được link. Vui lòng chạy DTS_SET_TYPE cho phần tử để phân loại.");
+                // Highlight them in red on a special layer
+                AcadUtils.CreateLayer("dts_highlight_no_type",1); // red
+                UsingTransaction(tr =>
+                {
+                    foreach (var id in unknownLinkedIds.Distinct())
+                    {
+                        try
+                        {
+                            var ent = tr.GetObject(id, OpenMode.ForWrite) as Entity;
+                            if (ent == null) continue;
+                            ent.ColorIndex =1; // red
+                            ent.Layer = "dts_highlight_no_type";
+                        }
+                        catch { }
+                    }
+                });
+
+                WriteMessage($"Phát hiện {unknownLinkedIds.Distinct().Count()} phần tử đang được link KHÔNG có type.");
+
+                // Ask user whether to break links
+                var pko = new Autodesk.AutoCAD.EditorInput.PromptKeywordOptions("Bạn muốn break link cho chúng? [Yes/No]: ", "Yes No");
+                var pres = Ed.GetKeywords(pko);
+                if (pres.Status == Autodesk.AutoCAD.EditorInput.PromptStatus.OK && pres.StringResult == "Yes")
+                {
+                    // Break links: remove child handles from parents (StoryData or ElementData)
+                    int broken =0;
+
+                    UsingTransaction(tr =>
+                    {
+                        // Build quick map of origin -> its story/element object for faster updates
+                        var originsToUpdate = new Dictionary<ObjectId, StoryData>();
+
+                        // For each origin group we built earlier, remove children that match
+                        foreach (var kv in groups)
+                        {
+                            var originId = kv.Key;
+                            var childList = kv.Value.Select(x => x.Handle.ToString()).ToList();
+
+                            // Only proceed if any of the unknown ids belong to this origin
+                            var intersect = kv.Value.Intersect(unknownLinkedIds).ToList();
+                            if (intersect.Count ==0) continue;
+
+                            try
+                            {
+                                var originObj = tr.GetObject(originId, OpenMode.ForWrite);
+                                var story = XDataUtils.ReadStoryData(originObj);
+                                if (story != null)
+                                {
+                                    bool changed = false;
+                                    foreach (var childId in intersect)
+                                    {
+                                        string ch = childId.Handle.ToString();
+                                        if (story.ChildHandles.Contains(ch))
+                                        {
+                                            story.ChildHandles.Remove(ch);
+                                            broken++;
+                                            changed = true;
+                                        }
+                                    }
+
+                                    if (changed)
+                                    {
+                                        XDataUtils.WriteStoryData(originObj, story, tr);
+                                    }
+                                }
+                                else
+                                {
+                                    // maybe origin is an ElementData (element origin)
+                                    var parentElem = XDataUtils.ReadElementData(originObj);
+                                    if (parentElem != null)
+                                    {
+                                        bool changed = false;
+                                        foreach (var childId in intersect)
+                                        {
+                                            string ch = childId.Handle.ToString();
+                                            if (parentElem.ChildHandles.Contains(ch))
+                                            {
+                                                parentElem.ChildHandles.Remove(ch);
+                                                broken++;
+                                                changed = true;
+                                            }
+                                        }
+
+                                        if (changed)
+                                        {
+                                            XDataUtils.WriteElementData(originObj, parentElem, tr);
+                                        }
+                                    }
+                                }
+                            }
+                            catch { }
+                        }
+
+                        // Remove visual link lines related to these elements
+                        RemoveLinkLinesForElements(unknownLinkedIds);
+                    });
+
+                    WriteSuccess($"[OK] Đã break link cho {broken} phần tử.");
+                }
+                else
+                {
+                    WriteMessage("Keep link. Vui lòng set type cho các phần tử này bằng lệnh DTS_SET_TYPE.");
+                }
             }
 
             if (typeStats.Count >0)
@@ -545,7 +649,7 @@ namespace DTS_Wall_Tool.Commands
 
                 WriteMessage($"Đã tìm thấy {string.Join(", ", parts)} đang được link.");
             }
-            else if (unknownLinked >0)
+            else if (unknownLinkedIds.Count >0)
             {
                 // already reported unknowns above
             }

@@ -4,6 +4,7 @@ using SAP2000v1;
 using System;
 using System.Collections.Generic;
 using System.Linq;
+using System.Globalization;
 
 namespace DTS_Wall_Tool.Core.Utils
 {
@@ -133,15 +134,15 @@ namespace DTS_Wall_Tool.Core.Utils
 
             string p1Name = "", p2Name = "";
             int ret = model.FrameObj.GetPoints(frameName, ref p1Name, ref p2Name);
-            if (ret != 0) return null;
+            if (ret !=0) return null;
 
-            double x1 = 0, y1 = 0, z1 = 0;
-            ret = model.PointObj.GetCoordCartesian(p1Name, ref x1, ref y1, ref z1);
-            if (ret != 0) return null;
+            double x1 =0, y1 =0, z1 =0;
+            ret = model.PointObj.GetCoordCartesian(p1Name, ref x1, ref y1, ref z1, "Global");
+            if (ret !=0) return null;
 
-            double x2 = 0, y2 = 0, z2 = 0;
-            ret = model.PointObj.GetCoordCartesian(p2Name, ref x2, ref y2, ref z2);
-            if (ret != 0) return null;
+            double x2 =0, y2 =0, z2 =0;
+            ret = model.PointObj.GetCoordCartesian(p2Name, ref x2, ref y2, ref z2, "Global");
+            if (ret !=0) return null;
 
             return new SapFrame
             {
@@ -524,44 +525,102 @@ namespace DTS_Wall_Tool.Core.Utils
             return patterns;
         }
 
-        public static List<StoryData> GetStories()
+        /// <summary>
+        /// Read grid lines from SAP2000 DatabaseTables (table key: "Grid Lines")
+        /// Returns simple records with Name, Orientation and Coordinate
+        /// </summary>
+        public class GridLineRecord
         {
-            var stories = new List<StoryData>();
+            public string Name { get; set; }
+            public string Orientation { get; set; } // e.g., "X" or "Y"
+            public double Coordinate { get; set; }
+            public override string ToString() => $"{Name}: {Orientation}={Coordinate}";
+        }
+
+        public static List<GridLineRecord> GetGridLines()
+        {
+            var result = new List<GridLineRecord>();
             var model = GetModel();
-            if (model == null) return stories;
+            if (model == null) return result;
 
-            int tableVersion = 0;
-            string[] fieldNames = null;
-            string[] tableData = null;
-            int numberRecords = 0;
-            string[] fieldsKeysIncluded = null;
+            string[] candidateTableKeys = new[] { "Grid Lines" };
 
-            int ret = model.DatabaseTables.GetTableForDisplayArray(
-                "Story Definitions",
-                ref fieldNames, "", ref tableVersion, ref fieldsKeysIncluded,
-                ref numberRecords, ref tableData
-            );
-
-            if (ret == 0 && tableData != null && fieldNames != null)
+            foreach (var tableKey in candidateTableKeys)
             {
-                int colCount = fieldNames.Length;
-                int storyNameIdx = Array.IndexOf(fieldNames, "Story");
-                int elevationIdx = Array.IndexOf(fieldNames, "Elevation");
-                int heightIdx = Array.IndexOf(fieldNames, "Height");
-
-                for (int i = 0; i < numberRecords; i++)
+                try
                 {
-                    var storyData = new StoryData();
-                    if (storyNameIdx >= 0) storyData.StoryName = tableData[i * colCount + storyNameIdx];
-                    if (elevationIdx >= 0 && double.TryParse(tableData[i * colCount + elevationIdx], out double elev))
-                        storyData.Elevation = elev;
-                    if (heightIdx >= 0 && double.TryParse(tableData[i * colCount + heightIdx], out double h))
-                        storyData.StoryHeight = h;
+                    int tableVersion = 0;
+                    string[] fieldNames = null;
+                    string[] tableData = null;
+                    int numberRecords = 0;
+                    string[] fieldsKeysIncluded = null;
 
-                    stories.Add(storyData);
+                    // Use FieldKeyListInput = [""] to request all fields (matches VBA GetTableForDisplayArray usage)
+                    string[] fieldKeyListInput = new string[] { "" };
+                    int ret = model.DatabaseTables.GetTableForDisplayArray(
+                        tableKey,
+                        ref fieldKeyListInput, "All", ref tableVersion, ref fieldsKeysIncluded,
+                        ref numberRecords, ref tableData
+                    );
+
+                    if (ret != 0 || tableData == null || fieldsKeysIncluded == null || numberRecords == 0)
+                        continue;
+
+                    int colCount = fieldsKeysIncluded.Length;
+                    if (colCount == 0) continue;
+
+                    // Determine indices from field keys
+                    int axisDirIdx = Array.IndexOf(fieldsKeysIncluded, "AxisDir");
+                    if (axisDirIdx < 0) axisDirIdx = Array.FindIndex(fieldsKeysIncluded, f => f != null && f.ToLowerInvariant().Contains("axis"));
+
+                    int gridIdIdx = Array.IndexOf(fieldsKeysIncluded, "GridID");
+                    if (gridIdIdx < 0) gridIdIdx = Array.FindIndex(fieldsKeysIncluded, f => f != null && (f.ToLowerInvariant().Contains("gridid") || f.ToLowerInvariant().Contains("grid")));
+
+                    int coordIdx = Array.IndexOf(fieldsKeysIncluded, "XRYZCoord");
+                    if (coordIdx < 0) coordIdx = Array.FindIndex(fieldsKeysIncluded, f => f != null && f.ToLowerInvariant().Contains("coord"));
+
+                    for (int r = 0; r < numberRecords; r++)
+                    {
+                        try
+                        {
+                            string axisDir = axisDirIdx >= 0 ? tableData[r * colCount + axisDirIdx]?.Trim() : null;
+                            string gridId = gridIdIdx >= 0 ? tableData[r * colCount + gridIdIdx]?.Trim() : null;
+                            string coordStr = coordIdx >= 0 ? tableData[r * colCount + coordIdx]?.Trim() : null;
+
+                            double coord = 0;
+                            if (!string.IsNullOrEmpty(coordStr))
+                            {
+                                // XRYZCoord may be like "0" or "5000"; take numeric value
+                                var parts = coordStr.Split(new[] { ' ', ',' }, StringSplitOptions.RemoveEmptyEntries);
+                                if (parts.Length > 0)
+                                {
+                                    var tryS = parts[0];
+                                    if (!double.TryParse(tryS, NumberStyles.Any, CultureInfo.InvariantCulture, out coord))
+                                    {
+                                        double.TryParse(tryS, out coord);
+                                    }
+                                }
+                            }
+
+                            if (!string.IsNullOrEmpty(axisDir))
+                                axisDir = axisDir.Split(new[] { ' ', '_' }, StringSplitOptions.RemoveEmptyEntries)[0];
+
+                            result.Add(new GridLineRecord
+                            {
+                                Name = gridId ?? string.Empty,
+                                Orientation = axisDir ?? string.Empty,
+                                Coordinate = coord
+                            });
+                        }
+                        catch { }
+                    }
+
+                    if (result.Count > 0) return result;
                 }
+                catch { }
             }
-            return stories;
+
+            return result;
         }
 
         public static void RefreshView()
@@ -570,5 +629,64 @@ namespace DTS_Wall_Tool.Core.Utils
         }
 
         #endregion
+
+        public class GridStoryItem
+        {
+            public string AxisDir { get; set; } // X/Y/Z
+            public string Name { get; set; }
+            public double Coordinate { get; set; }
+            public bool IsElevation => !string.IsNullOrEmpty(AxisDir) && AxisDir.Trim().StartsWith("Z", StringComparison.OrdinalIgnoreCase);
+            // Backward-compatibility with earlier StoryData callers
+            public string StoryName
+            {
+                get => Name;
+                set => Name = value;
+            }
+
+            public double Elevation
+            {
+                get => Coordinate;
+                set => Coordinate = value;
+            }
+
+            public DTS_Wall_Tool.Core.Data.StoryData ToStoryData()
+            {
+                return new DTS_Wall_Tool.Core.Data.StoryData
+                {
+                    StoryName = this.StoryName,
+                    Elevation = this.Elevation,
+                    StoryHeight =3300
+                };
+            }
+            public override string ToString() => $"{AxisDir}\t{Name}\t{Coordinate}";
+        }
+
+        /// <summary>
+        /// Unified reader: read Grid Lines and return all grid/story entries as GridStoryItem.
+        /// Use AxisDir to distinguish X/Y (grid axes) and Z (story elevations).
+        /// </summary>
+        public static List<GridStoryItem> GetStories()
+        {
+            var result = new List<GridStoryItem>();
+            try
+            {
+                var grids = GetGridLines();
+                foreach (var g in grids)
+                {
+                    result.Add(new GridStoryItem
+                    {
+                        AxisDir = g.Orientation ?? string.Empty,
+                        Name = g.Name ?? string.Empty,
+                        Coordinate = g.Coordinate
+                    });
+                }
+
+                // Sort: first by AxisDir (Z last or group by Z?), but keep original order; provide sorted views as needed by caller
+                // For convenience, return sorted by AxisDir then coordinate
+                result = result.OrderBy(r => r.AxisDir).ThenBy(r => r.Coordinate).ToList();
+            }
+            catch { }
+            return result;
+        }
     }
 }
