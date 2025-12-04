@@ -26,7 +26,7 @@ namespace DTS_Wall_Tool.Core.Utils
 
     /// <summary>
     /// Module vẽ MText Label thông minh cho Frame và Area
-    /// Hỗ trợ 6 vị trí: Đầu/Giữa/Cuối × Trên/Dưới
+    /// Hỗ trợ6 vị trí: Đầu/Giữa/Cuối × Trên/Dưới
     /// Text căn chỉnh tự động để không lẹm sang frame khác
     /// </summary>
     public static class LabelPlotter
@@ -50,52 +50,7 @@ namespace DTS_Wall_Tool.Core.Utils
         #region Main API
 
         /// <summary>
-        /// Vẽ MText Label trên Frame với vị trí và căn chỉnh thông minh
-        /// </summary>
-        /// <param name="btr">BlockTableRecord để thêm entity</param>
-        /// <param name="tr">Transaction hiện tại</param>
-        /// <param name="startPt">Điểm đầu của frame (CAD coordinates)</param>
-        /// <param name="endPt">Điểm cuối của frame (CAD coordinates)</param>
-        /// <param name="content">Nội dung MText (có thể chứa format codes như {\C1;text})</param>
-        /// <param name="position">Vị trí chèn (6 vị trí)</param>
-        /// <param name="textHeight">Chiều cao text (mm)</param>
-        /// <param name="layer">Tên layer</param>
-        /// <returns>ObjectId của MText đã tạo</returns>
-        public static ObjectId PlotLabel(
-            BlockTableRecord btr,
-            Transaction tr,
-            Point2D startPt,
-            Point2D endPt,
-            string content,
-            LabelPosition position,
-            double textHeight = DEFAULT_TEXT_HEIGHT,
-            string layer = DEFAULT_LAYER)
-        {
-            if (btr == null || tr == null) return ObjectId.Null;
-            if (string.IsNullOrWhiteSpace(content)) return ObjectId.Null;
-
-            // Tính toán geometry
-            var geo = CalculateLabelGeometry(startPt, endPt, position, textHeight);
-
-            // Tạo MText
-            MText mtext = new MText();
-            mtext.Contents = content;
-            mtext.Location = new Point3d(geo.InsertPoint.X, geo.InsertPoint.Y, 0);
-            mtext.TextHeight = textHeight;
-            mtext.Rotation = geo.Rotation;
-            mtext.Attachment = geo.Attachment;
-            mtext.Layer = layer;
-            mtext.ColorIndex = DEFAULT_COLOR;
-
-            // Thêm vào drawing
-            ObjectId id = btr.AppendEntity(mtext);
-            tr.AddNewlyCreatedDBObject(mtext, true);
-
-            return id;
-        }
-
-        /// <summary>
-        /// Vẽ MText Label với Point3d input (Hỗ trợ Z)
+        /// Vẽ MText Label hỗ trợ3D đầy đủ (Vertical/Inclined)
         /// </summary>
         public static ObjectId PlotLabel(
             BlockTableRecord btr,
@@ -107,63 +62,76 @@ namespace DTS_Wall_Tool.Core.Utils
             double textHeight = DEFAULT_TEXT_HEIGHT,
             string layer = DEFAULT_LAYER)
         {
-            if (btr == null || tr == null) return ObjectId.Null;
-            if (string.IsNullOrWhiteSpace(content)) return ObjectId.Null;
+            if (btr == null || tr == null || string.IsNullOrWhiteSpace(content)) return ObjectId.Null;
 
-            // Tính toán geometry dựa trên mặt phẳng XY nhưng giữ Z trung bình
-            Point2D s2 = new Point2D(startPt.X, startPt.Y);
-            Point2D e2 = new Point2D(endPt.X, endPt.Y);
-            var geo = CalculateLabelGeometry(s2, e2, position, textHeight);
-            double avgZ = (startPt.Z + endPt.Z) / 2.0;
+            // Tính toán Vector hướng3D
+            Vector3d delta = endPt - startPt;
+            double length3d = delta.Length;
+            double length2d = Math.Sqrt(delta.X * delta.X + delta.Y * delta.Y);
+
+            Point3d insertPoint;
+            double rotation = 0;
+            AttachmentPoint attachment = AttachmentPoint.MiddleCenter;
+
+            // CASE1: Phần tử thẳng đứng (Cột) - Vertical
+            // Điều kiện: Độ dài2D gần bằng0 nhưng độ dài3D lớn
+            if (length2d < GeometryConstants.EPSILON && length3d > GeometryConstants.EPSILON)
+            {
+                // Lấy trung điểm theo chiều cao Z
+                Point3d midPt = new Point3d(
+                    startPt.X,
+                    startPt.Y,
+                    (startPt.Z + endPt.Z) / 2.0
+                );
+
+                // Offset sang phải một chút (trục X) để không đè vào cột
+                double offset = (textHeight / 2.0) + TEXT_GAP + 100.0; // +100 cho cột to
+                insertPoint = new Point3d(midPt.X + offset, midPt.Y, midPt.Z);
+
+                rotation = 0; // Text vẫn nằm ngang cho dễ đọc
+                attachment = AttachmentPoint.MiddleLeft;
+            }
+            // CASE2: Phần tử xiên hoặc nằm ngang (Dầm/Giằng)
+            else
+            {
+                // Tính toán vị trí trên mặt phẳng2D (XY) nhưng giữ cao độ Z
+                Point2D s2 = new Point2D(startPt.X, startPt.Y);
+                Point2D e2 = new Point2D(endPt.X, endPt.Y);
+
+                var geo = CalculateLabelGeometry(s2, e2, position, textHeight);
+
+                // Nội suy cao độ Z tại điểm chèn
+                // Nếu là Middle thì lấy Average Z
+                // Nếu là Start/End thì lấy Z tương ứng
+                double z = 0;
+                if (position == LabelPosition.StartTop || position == LabelPosition.StartBottom)
+                    z = startPt.Z;
+                else if (position == LabelPosition.EndTop || position == LabelPosition.EndBottom)
+                    z = endPt.Z;
+                else
+                    z = (startPt.Z + endPt.Z) / 2.0;
+
+                insertPoint = new Point3d(geo.InsertPoint.X, geo.InsertPoint.Y, z);
+                rotation = geo.Rotation;
+                attachment = geo.Attachment;
+            }
 
             // Tạo MText
             MText mtext = new MText();
             mtext.Contents = content;
-            mtext.Location = new Point3d(geo.InsertPoint.X, geo.InsertPoint.Y, avgZ);
+            mtext.Location = insertPoint;
             mtext.TextHeight = textHeight;
-            mtext.Rotation = geo.Rotation;
-            mtext.Attachment = geo.Attachment;
+            mtext.Rotation = rotation;
+            mtext.Attachment = attachment;
             mtext.Layer = layer;
             mtext.ColorIndex = DEFAULT_COLOR;
 
-            // Thêm vào drawing
             ObjectId id = btr.AppendEntity(mtext);
             tr.AddNewlyCreatedDBObject(mtext, true);
+
             return id;
         }
 
-        /// <summary>
-        /// Cập nhật nội dung MText hiện có
-        /// </summary>
-        public static void UpdateLabel(
-            MText mtext,
-            Point2D startPt,
-            Point2D endPt,
-            string content,
-            LabelPosition position,
-            double textHeight = DEFAULT_TEXT_HEIGHT)
-        {
-            if (mtext == null) return;
-
-            var geo = CalculateLabelGeometry(startPt, endPt, position, textHeight);
-
-            mtext.Contents = content;
-            mtext.Location = new Point3d(geo.InsertPoint.X, geo.InsertPoint.Y, 0);
-            mtext.TextHeight = textHeight;
-            mtext.Rotation = geo.Rotation;
-            mtext.Attachment = geo.Attachment;
-        }
-
-        /// <summary>
-        /// Vẽ MText Label tại một điểm cụ thể (cho Column, Point objects)
-        /// </summary>
-        /// <param name="btr">BlockTableRecord để thêm entity</param>
-        /// <param name="tr">Transaction hiện tại</param>
-        /// <param name="center">Điểm trung tâm để đặt label</param>
-        /// <param name="content">Nội dung MText</param>
-        /// <param name="textHeight">Chiều cao text (mm)</param>
-        /// <param name="layer">Tên layer</param>
-        /// <returns>ObjectId của MText đã tạo</returns>
         public static ObjectId PlotPointLabel(
             BlockTableRecord btr,
             Transaction tr,
@@ -172,33 +140,22 @@ namespace DTS_Wall_Tool.Core.Utils
             double textHeight = DEFAULT_TEXT_HEIGHT,
             string layer = DEFAULT_LAYER)
         {
+            // Giữ nguyên logic Point cũ cho2D
             if (btr == null || tr == null) return ObjectId.Null;
-            if (string.IsNullOrWhiteSpace(content)) return ObjectId.Null;
 
-            // Tạo MText
             MText mtext = new MText();
             mtext.Contents = content;
             mtext.Location = new Point3d(center.X, center.Y + TEXT_GAP, 0);
             mtext.TextHeight = textHeight;
-            mtext.Rotation = 0;
-            mtext.Attachment = AttachmentPoint.BottomCenter; // Text nằm trên điểm
+            mtext.Attachment = AttachmentPoint.BottomCenter;
             mtext.Layer = layer;
             mtext.ColorIndex = DEFAULT_COLOR;
 
-            // Thêm vào drawing
             ObjectId id = btr.AppendEntity(mtext);
             tr.AddNewlyCreatedDBObject(mtext, true);
-
             return id;
         }
 
-        #endregion
-
-        #region Geometry Calculation
-
-        /// <summary>
-        /// Kết quả tính toán geometry cho label
-        /// </summary>
         private struct LabelGeometry
         {
             public Point2D InsertPoint;
@@ -206,21 +163,15 @@ namespace DTS_Wall_Tool.Core.Utils
             public AttachmentPoint Attachment;
         }
 
-        /// <summary>
-        /// Tính toán vị trí, góc xoay và attachment point cho label
-        /// </summary>
         private static LabelGeometry CalculateLabelGeometry(
-                    Point2D startPt, Point2D endPt,
-                    LabelPosition position, double textHeight)
+            Point2D startPt, Point2D endPt,
+            LabelPosition position, double textHeight)
         {
             var result = new LabelGeometry();
-
-            // 1. Vector hướng của đoạn tường
             double dx = endPt.X - startPt.X;
             double dy = endPt.Y - startPt.Y;
             double length = Math.Sqrt(dx * dx + dy * dy);
 
-            // Xử lý cột đứng hoặc điểm: Mặc định xoay 0, offset sang phải
             if (length < GeometryConstants.EPSILON)
             {
                 result.InsertPoint = new Point2D(startPt.X + TEXT_GAP, startPt.Y);
@@ -229,26 +180,17 @@ namespace DTS_Wall_Tool.Core.Utils
                 return result;
             }
 
-            // Vector đơn vị
             double ux = dx / length;
             double uy = dy / length;
-
-            // 2. Tính góc cơ sở (0 đến 2PI)
             double angle = Math.Atan2(dy, dx);
             if (angle < 0) angle += 2 * Math.PI;
 
-            // 3. Logic Readability (Text luôn đọc được)
-            // AutoCAD tự lật text nếu góc > 90 và <= 270.
-            // Ta cần mô phỏng logic đó để tính toán điểm chèn.
             bool isFlipped = (angle > Math.PI / 2 && angle <= 3 * Math.PI / 2);
             double readableAngle = isFlipped ? angle + Math.PI : angle;
 
-            // 4. Vector vuông góc ("Hướng lên" so với text)
-            // Nếu text bị lật, vector "lên" cũng bị lật ngược lại so với hệ tọa độ
             double perpX = -uy;
             double perpY = ux;
 
-            // 5. Xác định điểm neo cơ sở (Base Point trên đường line)
             Point2D basePoint;
             switch (position)
             {
@@ -259,24 +201,8 @@ namespace DTS_Wall_Tool.Core.Utils
                 default: basePoint = new Point2D((startPt.X + endPt.X) / 2, (startPt.Y + endPt.Y) / 2); break;
             }
 
-            // 6. Tính toán Offset và Attachment Point
-            // Quy ước: "Top" là phía trên dòng chữ, "Bottom" là phía dưới dòng chữ.
-
             bool isTopPos = (position == LabelPosition.StartTop || position == LabelPosition.MiddleTop || position == LabelPosition.EndTop);
-
-            // Khoảng cách dịch chuyển từ tim tường ra
             double offsetDist = (textHeight / 2.0) + TEXT_GAP;
-
-            // Logic quan trọng:
-            // Nếu vị trí là Top -> Text nằm trên Line -> Attachment phải là BottomCenter -> Dịch chuyển +Perp
-            // Nếu vị trí là Bot -> Text nằm dưới Line -> Attachment phải là TopCenter -> Dịch chuyển -Perp
-
-            // Tuy nhiên, nếu Line bị Flip (vẽ ngược chiều), thì +Perp lại trở thành hướng xuống.
-            // Do đó cần kết hợp isTopPos và isFlipped.
-
-            // Hướng dịch chuyển thực tế so với vector pháp tuyến (perp)
-            // Nếu chưa flip: Top -> +Perp, Bot -> -Perp
-            // Nếu đã flip: Top -> -Perp, Bot -> +Perp (Vì hệ trục text đã xoay 180)
             double directionMultiplier = isTopPos ? 1.0 : -1.0;
             if (isFlipped) directionMultiplier *= -1.0;
 
@@ -287,60 +213,11 @@ namespace DTS_Wall_Tool.Core.Utils
 
             result.Rotation = readableAngle;
 
-            // 7. Xác định Attachment Point
-            // Luôn neo vào cạnh gần đường Line nhất để Text "mọc" ra xa đường Line
-            if (isTopPos)
-            {
-                // Vị trí trên -> Neo đáy text (Bottom)
-                result.Attachment = AttachmentPoint.BottomCenter;
-            }
-            else
-            {
-                // Vị trí dưới -> Neo đỉnh text (Top)
-                result.Attachment = AttachmentPoint.TopCenter;
-            }
+            if (isTopPos) result.Attachment = AttachmentPoint.BottomCenter;
+            else result.Attachment = AttachmentPoint.TopCenter;
 
             return result;
         }
-
-        /// <summary>
-        /// Xác định AttachmentPoint dựa trên vị trí
-        /// </summary>
-        private static AttachmentPoint GetAttachmentPoint(LabelPosition position, bool isFlipped)
-        {
-            // Logic:
-            // - Đầu (Start): căn LEFT để text mở rộng về phía giữa
-            // - Giữa (Middle): căn CENTER
-            // - Cuối (End): căn RIGHT để text mở rộng về phía giữa
-            // - Trên: căn BOTTOM (chân text nằm gần frame)
-            // - Dưới: căn TOP (đỉnh text nằm gần frame)
-
-            bool isTop = (position == LabelPosition.StartTop ||
-                          position == LabelPosition.MiddleTop ||
-                          position == LabelPosition.EndTop);
-
-            // Nếu đã flip, đảo logic top/bottom
-            if (isFlipped) isTop = !isTop;
-
-            switch (position)
-            {
-                case LabelPosition.StartTop:
-                case LabelPosition.StartBottom:
-                    return isTop ? AttachmentPoint.BottomLeft : AttachmentPoint.TopLeft;
-
-                case LabelPosition.MiddleTop:
-                case LabelPosition.MiddleBottom:
-                    return isTop ? AttachmentPoint.BottomCenter : AttachmentPoint.TopCenter;
-
-                case LabelPosition.EndTop:
-                case LabelPosition.EndBottom:
-                    return isTop ? AttachmentPoint.BottomRight : AttachmentPoint.TopRight;
-
-                default:
-                    return AttachmentPoint.MiddleCenter;
-            }
-        }
-
         #endregion
 
         #region Utility Methods

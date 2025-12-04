@@ -160,18 +160,24 @@ namespace DTS_Wall_Tool.Commands
  /// </summary>
  private List<SapFrame> FilterFramesForStory(List<SapFrame> allFrames, double storyZ)
  {
+ // Increase tolerance and include frames where either endpoint matches the story elevation.
+ // This handles sloped beams and avoids missing elements due to small numeric differences.
+ double tolerance =200.0; //0.2m default tolerance (was200)
+
  return allFrames.Where(f =>
  {
- // Dầm: Nằm ngang và Z xấp xỉ storyZ
+ // Dầm: Nằm ngang - accept if average Z OR either endpoint is close to storyZ
  if (!f.IsVertical)
  {
- return Math.Abs(f.AverageZ - storyZ) <=200;
+ bool avgMatch = Math.Abs(f.AverageZ - storyZ) <= tolerance;
+ bool endMatch = Math.Abs(f.Z1 - storyZ) <= tolerance || Math.Abs(f.Z2 - storyZ) <= tolerance;
+ return avgMatch || endMatch;
  }
  // Cột: Đỉnh cột xấp xỉ storyZ (Cột đỡ sàn này)
  else
  {
  double topZ = Math.Max(f.Z1, f.Z2);
- return Math.Abs(topZ - storyZ) <=200;
+ return Math.Abs(topZ - storyZ) <= tolerance;
  }
  }).ToList();
  }
@@ -185,8 +191,9 @@ namespace DTS_Wall_Tool.Commands
  out double minX, out double maxX, out double minY, out double maxY,
  out double textHeight)
  {
- var xGrids = grids.Where(g => g.Orientation == "X").ToList();
- var yGrids = grids.Where(g => g.Orientation == "Y").ToList();
+ // Use case-insensitive checks for orientations
+ var xGrids = grids.Where(g => string.Equals(g.Orientation, "X", StringComparison.OrdinalIgnoreCase)).ToList();
+ var yGrids = grids.Where(g => string.Equals(g.Orientation, "Y", StringComparison.OrdinalIgnoreCase)).ToList();
 
  minX = xGrids.Any() ? xGrids.Min(g => g.Coordinate) :0;
  maxX = xGrids.Any() ? xGrids.Max(g => g.Coordinate) :0;
@@ -265,7 +272,7 @@ namespace DTS_Wall_Tool.Commands
  {
  var allGrids = SapUtils.GetGridLines();
  var allFrames = SapUtils.GetAllFramesGeometry();
- var yGrids = allGrids.Where(g => g.Orientation == "Y").ToList();
+ var yGrids = allGrids.Where(g => string.Equals(g.Orientation, "Y", StringComparison.OrdinalIgnoreCase)).ToList();
  if (yGrids.Count ==0) { WriteError("Không có trục Y"); return; }
 
  // Tính khoảng cách
@@ -274,7 +281,7 @@ namespace DTS_Wall_Tool.Commands
  double rangeY = maxY - minY;
  double spacing = Math.Max(20000.0, rangeY *2.5);
 
- WriteMessage($"\nChọn điểm gốc để vẽ bố cục {stories.Count} mặt bằng (All2D). Spacing = {spacing:0}");
+ WriteMessage($"\nChọn điểm gốc để vẽ {stories.Count} mặt bằng");
  PromptPointOptions ptOpt = new PromptPointOptions("Chọn điểm gốc: ");
  PromptPointResult ptRes = Ed.GetPoint(ptOpt);
  if (ptRes.Status != PromptStatus.OK) return;
@@ -362,8 +369,8 @@ namespace DTS_Wall_Tool.Commands
 
  CalculateGridParams(grids, out double minX, out double maxX, out double minY, out double maxY, out double textH);
 
- var xGrids = grids.Where(g => g.Orientation == "X").ToList();
- var yGrids = grids.Where(g => g.Orientation == "Y").ToList();
+ var xGrids = grids.Where(g => string.Equals(g.Orientation, "X", StringComparison.OrdinalIgnoreCase)).ToList();
+ var yGrids = grids.Where(g => string.Equals(g.Orientation, "Y", StringComparison.OrdinalIgnoreCase)).ToList();
 
  // Vẽ trục X (Dọc)
  foreach (var x in xGrids)
@@ -433,21 +440,14 @@ namespace DTS_Wall_Tool.Commands
  // Nếu là cột trong chế độ2D, vẽ điểm hoặc skip
  if (f.IsVertical && !is3D)
  {
- // Vẽ cột dạng Point/Circle trên mặt bằng
- // TODO: Có thể vẽ hình chữ nhật nếu biết tiết diện
- Circle col = new Circle { Center = p1, Radius =100, Layer = POINT_LAYER, ColorIndex =5 };
+ // Vẽ cột dạng Point/Circle trên mặt bằng (chỉ hiển thị, không gán XData)
+ Circle col = new Circle { Center = p1, Radius =100, Layer = POINT_LAYER, ColorIndex =3 };
  ObjectId colId = btr.AppendEntity(col);
  tr.AddNewlyCreatedDBObject(col, true);
- 
- // Gán data cột
- var colData = new ColumnData { SectionName = f.Section, Material = "Concrete" };
- colData.BaseZ = Math.Min(f.Z1, f.Z2);
- colData.OriginHandle = originHandle;
- XDataUtils.WriteElementData(col, colData, tr);
- 
- if (!string.IsNullOrEmpty(originHandle)) AddChildToOrigin(originHandle, colId.Handle.ToString(), tr);
- 
- continue; 
+
+ // Không gán XData cho marker point (chỉ dùng để hiển thị)
+ // Nếu cần liên kết, liên kết sẽ thực hiện trên Line/Frame chính
+ continue;
  }
  
  // Vẽ Line cho Dầm (hoặc Cột3D)
@@ -470,7 +470,7 @@ namespace DTS_Wall_Tool.Commands
 
  elemData.BaseZ = Math.Min(f.Z1, f.Z2);
  elemData.Height = Math.Abs(f.Z2 - f.Z1);
- 
+
  // Link Origin
  if (!string.IsNullOrEmpty(originHandle)) elemData.OriginHandle = originHandle;
 

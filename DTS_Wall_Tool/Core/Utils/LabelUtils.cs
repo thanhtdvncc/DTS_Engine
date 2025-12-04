@@ -58,7 +58,7 @@ namespace DTS_Wall_Tool.Core.Utils
                 return false;
             }
 
-            // Call type-specific label updater. We intentionally call updater even if HasValidData is false
+            // Call type-specific label updater. We intentionally call updater even if HasValidData == false
             // because some operations (e.g. mapping results written by sync) may populate mapping lists
             // but not other properties; UpdateWallLabels can still render mapping information.
             switch (elementData.ElementType)
@@ -353,33 +353,34 @@ namespace DTS_Wall_Tool.Core.Utils
             Entity ent = tr.GetObject(columnId, OpenMode.ForRead) as Entity;
             if (ent == null) return;
 
-            Point2D center2;
-            Point3d center3 = new Point3d(0, 0, 0);
-            if (ent is Circle circle)
+            Point3d startPt, endPt;
+
+            if (ent is Line line)
             {
-                center3 = circle.Center;
-                center2 = new Point2D(center3.X, center3.Y);
+                startPt = line.StartPoint;
+                endPt = line.EndPoint;
             }
-            else if (ent is DBPoint point)
+            else
             {
-                center3 = point.Position;
-                center2 = new Point2D(center3.X, center3.Y);
+                // Với Circle/Block/Point (2D column), giả lập chiều cao để Plotter xử lý
+                // Nếu đối tượng2D không có chiều cao, nó sẽ dùng logic Vertical của LabelPlotter
+                Point3d center = AcadUtils.GetEntityCenter3d(ent);
+                startPt = center;
+                endPt = new Point3d(center.X, center.Y, center.Z +1.0); // Dummy Z vector
             }
-            else return;
 
             // Xác định màu theo trạng thái mapping
-            int statusColor = cData.HasMapping ? 3 : 1; // Green if mapped, red if not
+            int statusColor = cData.HasMapping ?3 :1; 
 
             string handleText = FormatColor($"[{columnId.Handle}]", statusColor);
-            string columnType = cData.ColumnType ?? $"C{cData.Width ?? 400:0}x{cData.Depth ?? 400:0}";
+            string columnType = cData.ColumnType ?? $"C{cData.Width ??400:0}x{cData.Depth ??400:0}";
             string content = $"{handleText} {{\\C7;{columnType}}}";
 
-            // Lấy BlockTableRecord để vẽ
             BlockTableRecord btr = (BlockTableRecord)tr.GetObject(
                  ent.Database.CurrentSpaceId, OpenMode.ForWrite);
 
-            // Use PointLabel (2D) but ensure Z is considered for plotting elsewhere if needed
-            LabelPlotter.PlotPointLabel(btr, tr, center2, content, TEXT_HEIGHT_MAIN, LABEL_LAYER);
+            // Dùng hàm PlotLabel (bản3D)
+            LabelPlotter.PlotLabel(btr, tr, startPt, endPt, content, LabelPosition.MiddleTop, TEXT_HEIGHT_MAIN, LABEL_LAYER);
         }
 
         #endregion
@@ -535,9 +536,8 @@ namespace DTS_Wall_Tool.Core.Utils
             {
                 {
                     // For lines, use PlotLabel for better positioning
-                    var pStart = new Point2D(((Line)ent).StartPoint.X, ((Line)ent).StartPoint.Y);
-                    var pEnd = new Point2D(((Line)ent).EndPoint.X, ((Line)ent).EndPoint.Y);
-                    LabelPlotter.PlotLabel(btr, tr, pStart, pEnd, content,
+                    var lineEnt = (Line)ent;
+                    LabelPlotter.PlotLabel(btr, tr, lineEnt.StartPoint, lineEnt.EndPoint, content,
                  LabelPosition.MiddleTop, TEXT_HEIGHT_MAIN, LABEL_LAYER);
                 }
             }
