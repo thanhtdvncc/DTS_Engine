@@ -12,359 +12,486 @@ using System.Linq;
 
 namespace DTS_Wall_Tool.Commands
 {
-    /// <summary>
-    /// Các lệnh vẽ mô hình từ SAP2000 vào AutoCAD
-    /// </summary>
-    public class PlotCommands : CommandBase
-    {
-        private const string AXIS_LAYER = "dts_axis";
-        private const string FRAME_LAYER = "dts_frame";
-        private const string POINT_LAYER = "dts_point";
-        private const string ORIGIN_LAYER = "dts_origin";
-        private const string LABEL_LAYER = "dts_frame_label";
-
-        /// <summary>
-        /// Vẽ mặt bằng từ SAP2000 (2D/3D)
-        /// </summary>
-        [CommandMethod("DTS_PLOT_FROM_SAP")]
-        public void DTS_PLOT_FROM_SAP()
-        {
-            WriteMessage("=== VẼ MặT BẰNG TỪ SAP2000 ===");
-
-            if (!EnsureSapConnection()) return;
-
-            // Bước1: Lấy danh sách tầng từ SAP
-            var stories = SapUtils.GetStories();
-            if (stories.Count ==0)
-            {
-                WriteError("Không tìm thấy tầng trong SAP2000");
-                return;
-            }
-
-            WriteMessage($"Tìm thấy {stories.Count} tầng");
-
-            // Bước2: Hiển thị menu chọn tầng
-            var selectedStories = SelectStories(stories);
-            if (selectedStories.Count ==0)
-            {
-                WriteMessage("Không chọn tầng nào.");
-                return;
-            }
-
-            // Bước3: Nếu chọn "All", hỏi chế độ2D/3D
-            bool is3D = false;
-            if (selectedStories.Count >1)
-            {
-                is3D = PromptFor3DMode();
-            }
-
-            // Bước4: Plot mặt bằng
-            if (is3D)
-            {
-                PlotAll3D(selectedStories);
-            }
-            else
-            {
-                if (selectedStories.Count ==1)
-                {
-                    // Single2D: pick location
-                    PlotSingleStory2D(selectedStories[0]);
-                }
-                else
-                {
-                    // All2D: auto layout
-                    PlotAllStories2D(selectedStories);
-                }
-            }
-
-            WriteSuccess("Hoàn thành!");
-        }
-
-        #region Helper Methods
-
-        private bool EnsureSapConnection()
-        {
-            if (!SapUtils.IsConnected)
-            {
-                if (!SapUtils.Connect(out string msg))
-                {
-                    WriteError(msg);
-                    return false;
-                }
-            }
-            return true;
-        }
-
-        /// <summary>
-        /// Hiển thị menu chọn tầng
-        /// </summary>
-        private List<SapUtils.GridStoryItem> SelectStories(List<SapUtils.GridStoryItem> stories)
-        {
-            var zStories = stories.Where(s => s.IsElevation).OrderBy(s => s.Coordinate).ToList();
-
-            if (zStories.Count ==0)
-            {
-                WriteError("Không tìm thấy tầng (Z) trong danh sách");
-                return new List<SapUtils.GridStoryItem>();
-            }
-
-            WriteMessage("\nChọn tầng để vẽ:");
-            for (int i =0; i < zStories.Count; i++)
-            {
-                WriteMessage($" {i +1}. {zStories[i].Name} (Z={zStories[i].Coordinate})");
-            }
-            WriteMessage($" {zStories.Count +1}. All (tất cả)");
-            WriteMessage($"0. Cancel");
-
-            PromptIntegerOptions opt = new PromptIntegerOptions("\nChọn số: ");
-            opt.LowerLimit =0;
-            opt.UpperLimit = zStories.Count +1;
-            opt.DefaultValue =0;
-
-            PromptIntegerResult res = Ed.GetInteger(opt);
-            if (res.Status != PromptStatus.OK) return new List<SapUtils.GridStoryItem>();
-
-            if (res.Value ==0) return new List<SapUtils.GridStoryItem>();
-
-            var result = new List<SapUtils.GridStoryItem>();
-            if (res.Value == zStories.Count +1)
-            {
-                result.AddRange(zStories); // All
-            }
-            else
-            {
-                result.Add(zStories[res.Value -1]); // Single
-            }
-
-            return result;
-        }
-
-        /// <summary>
-        /// Hỏi chế độ2D hay3D
-        /// </summary>
-        private bool PromptFor3DMode()
-        {
-            PromptKeywordOptions opt = new PromptKeywordOptions("\nChế độ [2D/3D] <2D>: ");
-            opt.Keywords.Add("2D");
-            opt.Keywords.Add("3D");
-            opt.Keywords.Default = "2D";
-
-            PromptResult res = Ed.GetKeywords(opt);
-            if (res.Status != PromptStatus.OK) return false;
-
-            return res.StringResult == "3D";
-        }
-
-        /// <summary>
-        /// Vẽ mặt bằng2D đơn
-        /// </summary>
-        private void PlotSingleStory2D(SapUtils.GridStoryItem story)
-        {
-            WriteMessage($"\nVẽ mặt bằng {story.Name} (Z={story.Coordinate})...");
-
-            // Bước1: Pick điểm đặt gốc trong CAD
-            PromptPointOptions ptOpt = new PromptPointOptions($"\nChọn vị trí đặt mặt bằng {story.Name}: ");
-            PromptPointResult ptRes = Ed.GetPoint(ptOpt);
-            if (ptRes.Status != PromptStatus.OK) return;
-
-            Point2D insertPoint = new Point2D(ptRes.Value.X, ptRes.Value.Y);
-
-            // Bước2: Lấy dữ liệu grid và frame từ SAP
-            var allGrids = SapUtils.GetGridLines();
-            var allFrames = SapUtils.GetAllFramesGeometry();
-
-            // Lọc frame cùng tầng
-            double storyElev = story.Coordinate;
-            var framesAtStory = allFrames
- .Where(f => Math.Abs(f.AverageZ - storyElev) <=200)
-                .ToList();
-
-            // Bước3: Tạo layer
-            AcadUtils.CreateLayer(AXIS_LAYER,5); // Cyan/Blue
-            AcadUtils.CreateLayer(FRAME_LAYER,2); // Yellow
-            AcadUtils.CreateLayer(POINT_LAYER,3); // Green
-            AcadUtils.CreateLayer(ORIGIN_LAYER,1);
-            AcadUtils.CreateLayer(LABEL_LAYER,254);
-
-            // Bước4: Vẽ
-            UsingTransaction(tr =>
+ /// <summary>
+ /// Các lệnh vẽ mô hình từ SAP2000 vào AutoCAD
+ /// </summary>
+ public class PlotCommands : CommandBase
  {
-                var bt = tr.GetObject(Db.BlockTableId, OpenMode.ForRead) as BlockTable;
-                var btr = tr.GetObject(bt[BlockTableRecord.ModelSpace], OpenMode.ForWrite) as BlockTableRecord;
+ private const string AXIS_LAYER = "dts_axis";
+ private const string FRAME_LAYER = "dts_frame";
+ private const string POINT_LAYER = "dts_point";
+ private const string ORIGIN_LAYER = "dts_origin";
+ private const string LABEL_LAYER = "dts_frame_label";
 
-                // Tạo Origin trước -> lấy handle
-                string originHandle = CreateOriginForStory(btr, tr, insertPoint, story);
-
-                // Vẽ grid
-                PlotGridLines(btr, tr, allGrids, insertPoint);
-
-                // Vẽ frame (và auto link vào origin)
-                PlotFramesAt(btr, tr, framesAtStory, insertPoint, story.Coordinate, originHandle);
-
-                // Origin đã tạo trước đó
- });
-
-            WriteSuccess($"Vẽ xong {story.Name}");
-        }
-
-        /// <summary>
-        /// Vẽ tất cả mặt bằng3D
-        /// </summary>
-        private void PlotAll3D(List<SapUtils.GridStoryItem> stories)
-        {
-            WriteMessage("\nChế độ3D - Vẽ toàn bộ mô hình3D");
-
-            // Hỏi user chọn vị trí plot
-            PromptPointOptions ptOpt = new PromptPointOptions("\nChọn vị trí đặt mô hình3D: ");
-            PromptPointResult ptRes = Ed.GetPoint(ptOpt);
-            if (ptRes.Status != PromptStatus.OK) return;
-
-            Point2D baseInsertPoint = new Point2D(ptRes.Value.X, ptRes.Value.Y);
-
-            var allGrids = SapUtils.GetGridLines();
-            var allFrames = SapUtils.GetAllFramesGeometry();
-
-            var sortedStories = stories.OrderBy(s => s.Coordinate).ToList();
-
-            // Ensure layers created BEFORE drawing to avoid KeyNotFound
-            AcadUtils.CreateLayer(AXIS_LAYER,5);
-            AcadUtils.CreateLayer(FRAME_LAYER,2);
-            AcadUtils.CreateLayer(POINT_LAYER,3);
-            AcadUtils.CreateLayer(ORIGIN_LAYER,1);
-            AcadUtils.CreateLayer(LABEL_LAYER,254);
-
-            UsingTransaction(tr =>
+ /// <summary>
+ /// Vẽ mặt bằng từ SAP2000 (2D/3D)
+ /// </summary>
+ [CommandMethod("DTS_PLOT_FROM_SAP")]
+ public void DTS_PLOT_FROM_SAP()
  {
-                var bt = tr.GetObject(Db.BlockTableId, OpenMode.ForRead) as BlockTable;
-                var btr = tr.GetObject(bt[BlockTableRecord.ModelSpace], OpenMode.ForWrite) as BlockTableRecord;
+ WriteMessage("=== VẼ MẶT BẰNG TỪ SAP2000 ===");
 
-                for (int i =0; i < sortedStories.Count; i++)
+ if (!EnsureSapConnection()) return;
+
+ // Bước1: Lấy danh sách tầng từ SAP
+ var stories = SapUtils.GetStories();
+ if (stories.Count ==0)
  {
-                    var story = sortedStories[i];
-
-                    // Vị trí XY của mặt bằng tại vị trí pick
-                    Point2D insertPoint = baseInsertPoint;
-
-                    // Lấy frame tại tầng này
-                    var framesAtStory = allFrames
- .Where(f => Math.Abs(f.AverageZ - story.Coordinate) <=200)
-                .ToList();
-
-                    WriteMessage($" Vẽ {story.Name} tại Z={story.Coordinate}...");
-
-                    // TẠO ORIGIN TRƯỚC để lấy Handle
-                    string originHandle = CreateOriginForStory3D(btr, tr, insertPoint, story);
-
-                    // Vẽ frame với tọa độ Z đúng (3D) và auto link
-                    PlotFramesAt3D(btr, tr, framesAtStory, insertPoint, story.Coordinate, originHandle);
-
-                    if (framesAtStory.Count ==0)
- {
-                        WriteMessage($" - Chú ý: Không có frame nào ở tầng {story.Name} (Z={story.Coordinate}).");
+ WriteError("Không tìm thấy tầng trong SAP2000");
+ return;
  }
-                }
 
-                // Vẽ lưới trục chỉ ở mặt bằng đầu tiên (tầng thấp nhất) với extent thống nhất
-                var firstStory = sortedStories.First();
-                PlotGridLines3D(btr, tr, allGrids, baseInsertPoint, firstStory.Coordinate);
+ WriteMessage($"Tìm thấy {stories.Count} tầng");
+
+ // Bước2: Hiển thị menu chọn tầng
+ var selectedStories = SelectStories(stories);
+ if (selectedStories.Count ==0)
+ {
+ WriteMessage("Không chọn tầng nào.");
+ return;
+ }
+
+ // Bước3: Nếu chọn "All", hỏi chế độ2D/3D
+ bool is3D = false;
+ if (selectedStories.Count >1)
+ {
+ is3D = PromptFor3DMode();
+ }
+
+ // Bước4: Plot mặt bằng
+ if (is3D)
+ {
+ PlotAll3D(selectedStories);
+ }
+ else
+ {
+ if (selectedStories.Count ==1)
+ {
+ // Single2D: pick location
+ PlotSingleStory2D(selectedStories[0]);
+ }
+ else
+ {
+ // All2D: auto layout
+ PlotAllStories2D(selectedStories);
+ }
+ }
+
+ WriteSuccess("Hoàn thành!");
+ }
+
+ #region Helper Methods
+
+ private bool EnsureSapConnection()
+ {
+ if (!SapUtils.IsConnected)
+ {
+ if (!SapUtils.Connect(out string msg))
+ {
+ WriteError(msg);
+ return false;
+ }
+ }
+ return true;
+ }
+
+ /// <summary>
+ /// Hiển thị menu chọn tầng
+ /// </summary>
+ private List<SapUtils.GridStoryItem> SelectStories(List<SapUtils.GridStoryItem> stories)
+ {
+ var zStories = stories.Where(s => s.IsElevation).OrderBy(s => s.Coordinate).ToList();
+
+ if (zStories.Count ==0)
+ {
+ WriteError("Không tìm thấy tầng (Z) trong danh sách");
+ return new List<SapUtils.GridStoryItem>();
+ }
+
+ WriteMessage("\nChọn tầng để vẽ:");
+ for (int i =0; i < zStories.Count; i++)
+ {
+ WriteMessage($" {i +1}. {zStories[i].Name} (Z={zStories[i].Coordinate})");
+ }
+ WriteMessage($" {zStories.Count +1}. All (tất cả)");
+ WriteMessage($"0. Cancel");
+
+ PromptIntegerOptions opt = new PromptIntegerOptions("\nChọn số: ");
+ opt.LowerLimit =0;
+ opt.UpperLimit = zStories.Count +1;
+ opt.DefaultValue =0;
+
+ PromptIntegerResult res = Ed.GetInteger(opt);
+ if (res.Status != PromptStatus.OK) return new List<SapUtils.GridStoryItem>();
+
+ if (res.Value ==0) return new List<SapUtils.GridStoryItem>();
+
+ var result = new List<SapUtils.GridStoryItem>();
+ if (res.Value == zStories.Count +1)
+ {
+ result.AddRange(zStories); // All
+ }
+ else
+ {
+ result.Add(zStories[res.Value -1]); // Single
+ }
+
+ return result;
+ }
+
+ /// <summary>
+ /// Hỏi chế độ2D hay3D
+ /// </summary>
+ private bool PromptFor3DMode()
+ {
+ PromptKeywordOptions opt = new PromptKeywordOptions("\nChế độ [2D/3D] <2D>: ");
+ opt.Keywords.Add("2D");
+ opt.Keywords.Add("3D");
+ opt.Keywords.Default = "2D";
+
+ PromptResult res = Ed.GetKeywords(opt);
+ if (res.Status != PromptStatus.OK) return false;
+
+ return res.StringResult == "3D";
+ }
+
+ /// <summary>
+ /// Lọc Frame thuộc tầng (Dầm ở cao độ Z, Cột có đỉnh ở cao độ Z)
+ /// </summary>
+ private List<SapFrame> FilterFramesForStory(List<SapFrame> allFrames, double storyZ)
+ {
+ return allFrames.Where(f =>
+ {
+ // Dầm: Nằm ngang và Z xấp xỉ storyZ
+ if (!f.IsVertical)
+ {
+ return Math.Abs(f.AverageZ - storyZ) <=200;
+ }
+ // Cột: Đỉnh cột xấp xỉ storyZ (Cột đỡ sàn này)
+ else
+ {
+ double topZ = Math.Max(f.Z1, f.Z2);
+ return Math.Abs(topZ - storyZ) <=200;
+ }
+ }).ToList();
+ }
+
+ // ======================= PLOTTING LOGIC =======================
+
+ /// <summary>
+ /// Tính toán Extent của Grid và Text Scale
+ /// </summary>
+ private void CalculateGridParams(List<SapUtils.GridLineRecord> grids,
+ out double minX, out double maxX, out double minY, out double maxY,
+ out double textHeight)
+ {
+ var xGrids = grids.Where(g => g.Orientation == "X").ToList();
+ var yGrids = grids.Where(g => g.Orientation == "Y").ToList();
+
+ minX = xGrids.Any() ? xGrids.Min(g => g.Coordinate) :0;
+ maxX = xGrids.Any() ? xGrids.Max(g => g.Coordinate) :0;
+ minY = yGrids.Any() ? yGrids.Min(g => g.Coordinate) :0;
+ maxY = yGrids.Any() ? yGrids.Max(g => g.Coordinate) :0;
+
+ double rangeX = maxX - minX;
+ double rangeY = maxY - minY;
+ double maxRange = Math.Max(rangeX, rangeY);
+ if (maxRange <1000) maxRange =5000;
+
+ // FIX1: Giảm khoảng extend xuống còn7.5% (1 nửa so với cũ)
+ double extend = maxRange *0.075;
+
+ minX -= extend;
+ maxX += extend;
+ minY -= extend;
+ maxY += extend;
+
+ // FIX2: Dynamic Text Scale
+ // Quy tắc:100m (100,000mm) -> Scale1/200 -> Text500mm
+ // Formula: Height = maxRange *0.01
+ textHeight = Math.Max(250.0, maxRange *0.01);
+ }
+
+ private void SetupLayers()
+ {
+ AcadUtils.CreateLayer(AXIS_LAYER,5); // Blue/Cyan
+ AcadUtils.CreateLayer(FRAME_LAYER,3); // Green
+ AcadUtils.CreateLayer(POINT_LAYER,3); // Green
+ AcadUtils.CreateLayer(ORIGIN_LAYER,1); // Red
+ AcadUtils.CreateLayer(LABEL_LAYER,254); // Gray
+ }
+
+ /// <summary>
+ /// Vẽ mặt bằng2D đơn
+ /// </summary>
+ private void PlotSingleStory2D(SapUtils.GridStoryItem story)
+ {
+ WriteMessage($"\nVẽ mặt bằng {story.Name} (Z={story.Coordinate})...");
+
+ PromptPointOptions ptOpt = new PromptPointOptions($"\nChọn vị trí đặt mặt bằng {story.Name}: ");
+ PromptPointResult ptRes = Ed.GetPoint(ptOpt);
+ if (ptRes.Status != PromptStatus.OK) return;
+
+ Point2D insertPoint = new Point2D(ptRes.Value.X, ptRes.Value.Y);
+
+ var allGrids = SapUtils.GetGridLines();
+ var allFrames = SapUtils.GetAllFramesGeometry();
+ var framesAtStory = FilterFramesForStory(allFrames, story.Coordinate);
+
+ SetupLayers();
+
+ UsingTransaction(tr =>
+ {
+ var bt = tr.GetObject(Db.BlockTableId, OpenMode.ForRead) as BlockTable;
+ var btr = tr.GetObject(bt[BlockTableRecord.ModelSpace], OpenMode.ForWrite) as BlockTableRecord;
+
+ // Tạo Origin trước -> lấy handle
+ string originHandle = CreateOriginForStory(btr, tr, insertPoint, story);
+
+ // Vẽ grid
+ PlotGridLines(btr, tr, allGrids, insertPoint,0);
+
+ // Vẽ frame (và auto link vào origin)
+ PlotFramesAt(btr, tr, framesAtStory, insertPoint, story.Coordinate, originHandle, is3D: false);
  });
 
-            WriteSuccess("Vẽ mô hình3D hoàn thành");
-        }
+ WriteSuccess($"Vẽ xong {story.Name}");
+ }
 
-        /// <summary>
-        /// Vẽ grid tại một cao độ Z cụ thể (3D)
-        /// </summary>
-        private void PlotGridLines3D(BlockTableRecord btr, Transaction tr,
- List<SapUtils.GridLineRecord> grids, Point2D offset, double elevation)
+ /// <summary>
+ /// Vẽ tất cả mặt bằng2D
+ /// </summary>
+ private void PlotAllStories2D(List<SapUtils.GridStoryItem> stories)
+ {
+ var allGrids = SapUtils.GetGridLines();
+ var allFrames = SapUtils.GetAllFramesGeometry();
+ var yGrids = allGrids.Where(g => g.Orientation == "Y").ToList();
+ if (yGrids.Count ==0) { WriteError("Không có trục Y"); return; }
+
+ // Tính khoảng cách
+ double maxY = yGrids.Max(g => g.Coordinate);
+ double minY = yGrids.Min(g => g.Coordinate);
+ double rangeY = maxY - minY;
+ double spacing = Math.Max(20000.0, rangeY *2.5);
+
+ WriteMessage($"\nChọn điểm gốc để vẽ bố cục {stories.Count} mặt bằng (All2D). Spacing = {spacing:0}");
+ PromptPointOptions ptOpt = new PromptPointOptions("Chọn điểm gốc: ");
+ PromptPointResult ptRes = Ed.GetPoint(ptOpt);
+ if (ptRes.Status != PromptStatus.OK) return;
+
+ Point2D baseInsert = new Point2D(ptRes.Value.X, ptRes.Value.Y);
+
+ SetupLayers();
+
+ var sorted = stories.OrderBy(s => s.Coordinate).ToList();
+ UsingTransaction(tr =>
+ {
+ var bt = tr.GetObject(Db.BlockTableId, OpenMode.ForRead) as BlockTable;
+ var btr = tr.GetObject(bt[BlockTableRecord.ModelSpace], OpenMode.ForWrite) as BlockTableRecord;
+
+ for (int i =0; i < sorted.Count; i++)
+ {
+ var st = sorted[i];
+ Point2D insert = new Point2D(baseInsert.X, baseInsert.Y + i * spacing);
+
+ // Tạo origin
+ string originHandle = CreateOriginForStory(btr, tr, insert, st);
+
+ // Vẽ grid & frame
+ PlotGridLines(btr, tr, allGrids, insert,0);
+ var framesAt = FilterFramesForStory(allFrames, st.Coordinate);
+ PlotFramesAt(btr, tr, framesAt, insert, st.Coordinate, originHandle, is3D: false);
+ }
+ });
+ WriteSuccess("Vẽ tất cả mặt bằng2D hoàn thành");
+ }
+
+ /// <summary>
+ /// Vẽ tất cả mặt bằng3D
+ /// </summary>
+ private void PlotAll3D(List<SapUtils.GridStoryItem> stories)
+ {
+ WriteMessage("\nChế độ3D - Vẽ toàn bộ mô hình3D");
+
+ PromptPointOptions ptOpt = new PromptPointOptions("\nChọn vị trí đặt mô hình3D: ");
+ PromptPointResult ptRes = Ed.GetPoint(ptOpt);
+ if (ptRes.Status != PromptStatus.OK) return;
+
+ Point2D baseInsertPoint = new Point2D(ptRes.Value.X, ptRes.Value.Y);
+
+ var allGrids = SapUtils.GetGridLines();
+ var allFrames = SapUtils.GetAllFramesGeometry();
+ var sortedStories = stories.OrderBy(s => s.Coordinate).ToList();
+
+ SetupLayers();
+
+ UsingTransaction(tr =>
+ {
+ var bt = tr.GetObject(Db.BlockTableId, OpenMode.ForRead) as BlockTable;
+ var btr = tr.GetObject(bt[BlockTableRecord.ModelSpace], OpenMode.ForWrite) as BlockTableRecord;
+
+ //1. Vẽ Grid ở tầng thấp nhất
+ var firstStory = sortedStories.First();
+ PlotGridLines(btr, tr, allGrids, baseInsertPoint, firstStory.Coordinate);
+
+ //2. Vẽ Frames theo tầng
+ for (int i =0; i < sortedStories.Count; i++)
+ {
+ var story = sortedStories[i];
+ WriteMessage($" Vẽ {story.Name} tại Z={story.Coordinate}...");
+
+ // Tạo Origin tại cao độ Z thật
+ string originHandle = CreateOriginForStory3D(btr, tr, baseInsertPoint, story);
+
+ // Lọc frame thuộc tầng (bao gồm cột đỡ tầng này)
+ var framesAtStory = FilterFramesForStory(allFrames, story.Coordinate);
+
+ // Vẽ frame3D
+ PlotFramesAt(btr, tr, framesAtStory, baseInsertPoint, story.Coordinate, originHandle, is3D: true);
+ }
+ });
+
+ WriteSuccess("Vẽ mô hình3D hoàn thành");
+ }
+
+ // ======================= LOW LEVEL PLOTTING =======================
+
+ private void PlotGridLines(BlockTableRecord btr, Transaction tr, List<SapUtils.GridLineRecord> grids, Point2D offset, double z)
  {
  if (grids == null || grids.Count ==0) return;
 
- var xGrids = grids.Where(g => g.Orientation == "X").OrderBy(g => g.Coordinate).ToList();
- var yGrids = grids.Where(g => g.Orientation == "Y").OrderBy(g => g.Coordinate).ToList();
+ CalculateGridParams(grids, out double minX, out double maxX, out double minY, out double maxY, out double textH);
 
- if (xGrids.Count ==0 || yGrids.Count ==0) return;
+ var xGrids = grids.Where(g => g.Orientation == "X").ToList();
+ var yGrids = grids.Where(g => g.Orientation == "Y").ToList();
 
- // Use unified extents
- CalculateGridExtents(grids, out double extMinX, out double extMaxX, out double extMinY, out double extMaxY);
-
- // Vẽ X-axis
- foreach (var xGrid in xGrids)
+ // Vẽ trục X (Dọc)
+ foreach (var x in xGrids)
  {
- Point3d pt1 = new Point3d(xGrid.Coordinate + offset.X, extMinY + offset.Y, elevation);
- Point3d pt2 = new Point3d(xGrid.Coordinate + offset.X, extMaxY + offset.Y, elevation);
+ Point3d p1 = new Point3d(x.Coordinate + offset.X, minY + offset.Y, z);
+ Point3d p2 = new Point3d(x.Coordinate + offset.X, maxY + offset.Y, z);
+ 
+ var line = new Line(p1, p2) { Layer = AXIS_LAYER, ColorIndex =5 };
+ btr.AppendEntity(line); tr.AddNewlyCreatedDBObject(line, true);
 
- Line line = new Line(pt1, pt2) { Layer = AXIS_LAYER, ColorIndex =5 };
- btr.AppendEntity(line);
- tr.AddNewlyCreatedDBObject(line, true);
-
- // Vẽ tên trục ở cả2 đầu (trên và dưới)
- PlotAxisLabel(btr, tr, xGrid.Name, new Point3d(pt1.X, extMaxY + offset.Y +100, elevation));
- PlotAxisLabel(btr, tr, xGrid.Name, new Point3d(pt1.X, extMinY + offset.Y -100, elevation));
+ // FIX2: Text to hơn và màu7
+ PlotAxisLabel(btr, tr, x.Name, new Point3d(p1.X, maxY + offset.Y + textH *0.5, z), textH);
+ PlotAxisLabel(btr, tr, x.Name, new Point3d(p1.X, minY + offset.Y - textH *0.5, z), textH);
  }
 
- // Vẽ Y-axis
- foreach (var yGrid in yGrids)
+ // Vẽ trục Y (Ngang)
+ foreach (var y in yGrids)
  {
- Point3d pt1 = new Point3d(extMinX + offset.X, yGrid.Coordinate + offset.Y, elevation);
- Point3d pt2 = new Point3d(extMaxX + offset.X, yGrid.Coordinate + offset.Y, elevation);
+ Point3d p1 = new Point3d(minX + offset.X, y.Coordinate + offset.Y, z);
+ Point3d p2 = new Point3d(maxX + offset.X, y.Coordinate + offset.Y, z);
 
- Line line = new Line(pt1, pt2) { Layer = AXIS_LAYER, ColorIndex =5 };
- btr.AppendEntity(line);
- tr.AddNewlyCreatedDBObject(line, true);
+ var line = new Line(p1, p2) { Layer = AXIS_LAYER, ColorIndex =5 };
+ btr.AppendEntity(line); tr.AddNewlyCreatedDBObject(line, true);
 
- // Vẽ tên trục ở cả2 đầu (trái và phải)
- PlotAxisLabel(btr, tr, yGrid.Name, new Point3d(extMinX + offset.X -200, pt1.Y, elevation));
- PlotAxisLabel(btr, tr, yGrid.Name, new Point3d(extMaxX + offset.X +100, pt1.Y, elevation));
+ PlotAxisLabel(btr, tr, y.Name, new Point3d(minX + offset.X - textH, p1.Y, z), textH);
+ PlotAxisLabel(btr, tr, y.Name, new Point3d(maxX + offset.X + textH, p1.Y, z), textH);
  }
  }
 
- /// <summary>
- /// Vẽ frame với tọa độ3D (Z từ frame chính)
- /// </summary>
- private void PlotFramesAt3D(BlockTableRecord btr, Transaction tr, List<SapFrame> frames, Point2D offset, double elevation, string originHandle)
+ private void PlotAxisLabel(BlockTableRecord btr, Transaction tr, string name, Point3d position, double height)
  {
- foreach (var frame in frames)
- {
- // Vẽ frame từ Z1 tới Z2 (3D)
- Point3d pt1 = new Point3d(frame.StartPt.X + offset.X, frame.StartPt.Y + offset.Y, frame.Z1);
- Point3d pt2 = new Point3d(frame.EndPt.X + offset.X, frame.EndPt.Y + offset.Y, frame.Z2);
-
- Line line = new Line(pt1, pt2);
- line.Layer = FRAME_LAYER;
- line.ColorIndex = frame.IsBeam ?2 :5; // Yellow beam, Cyan column
-
- ObjectId lineId = btr.AppendEntity(line);
- tr.AddNewlyCreatedDBObject(line, true);
-
- var frameData = new BeamData
- {
- SectionName = frame.Section,
- Length = frame.Length2D,
- BeamType = frame.IsBeam ? "Main" : "Column"
+ if (string.IsNullOrWhiteSpace(name)) return;
+ MText m = new MText 
+ { 
+ Contents = name, 
+ Location = position, 
+ TextHeight = height, 
+ Layer = AXIS_LAYER, 
+ ColorIndex =7, // FIX2: White/Black
+ Attachment = AttachmentPoint.MiddleCenter
  };
- frameData.BaseZ = frame.Z1;
- frameData.Height = Math.Abs(frame.Z2 - frame.Z1);
-
- // Auto link into origin if provided
- if (!string.IsNullOrEmpty(originHandle)) frameData.OriginHandle = originHandle;
-
- XDataUtils.WriteElementData(tr.GetObject(lineId, OpenMode.ForRead), frameData, tr);
-
- // Try to label (LabelUtils updated to use3D overload)
- try { LabelUtils.RefreshEntityLabel(lineId, tr); } catch { }
-
- // Add child handle to origin
- if (!string.IsNullOrEmpty(originHandle)) AddChildToOrigin(originHandle, lineId.Handle.ToString(), tr);
-
- PlotPoint3D(btr, tr, pt1);
- PlotPoint3D(btr, tr, pt2);
- }
+ btr.AppendEntity(m); tr.AddNewlyCreatedDBObject(m, true);
  }
 
- /// <summary>
- /// Vẽ point3D (Circle nhỏ)
- /// </summary>
+ private void PlotFramesAt(BlockTableRecord btr, Transaction tr, List<SapFrame> frames, 
+ Point2D offset, double storyZ, string originHandle, bool is3D)
+ {
+ if (frames == null) return;
+
+ foreach (var f in frames)
+ {
+ Point3d p1, p2;
+
+ if (is3D)
+ {
+ // Tọa độ3D thật
+ p1 = new Point3d(f.StartPt.X + offset.X, f.StartPt.Y + offset.Y, f.Z1);
+ p2 = new Point3d(f.EndPt.X + offset.X, f.EndPt.Y + offset.Y, f.Z2);
+ }
+ else
+ {
+ // Chiếu xuống mặt bằng2D
+ p1 = new Point3d(f.StartPt.X + offset.X, f.StartPt.Y + offset.Y,0);
+ p2 = new Point3d(f.EndPt.X + offset.X, f.EndPt.Y + offset.Y,0);
+ }
+
+ // Nếu là cột trong chế độ2D, vẽ điểm hoặc skip
+ if (f.IsVertical && !is3D)
+ {
+ // Vẽ cột dạng Point/Circle trên mặt bằng
+ // TODO: Có thể vẽ hình chữ nhật nếu biết tiết diện
+ Circle col = new Circle { Center = p1, Radius =100, Layer = POINT_LAYER, ColorIndex =5 };
+ ObjectId colId = btr.AppendEntity(col);
+ tr.AddNewlyCreatedDBObject(col, true);
+ 
+ // Gán data cột
+ var colData = new ColumnData { SectionName = f.Section, Material = "Concrete" };
+ colData.BaseZ = Math.Min(f.Z1, f.Z2);
+ colData.OriginHandle = originHandle;
+ XDataUtils.WriteElementData(col, colData, tr);
+ 
+ if (!string.IsNullOrEmpty(originHandle)) AddChildToOrigin(originHandle, colId.Handle.ToString(), tr);
+ 
+ continue; 
+ }
+ 
+ // Vẽ Line cho Dầm (hoặc Cột3D)
+ // Set column color to green only in3D mode; keep previous color in2D
+ int colorIndexForColumn = is3D ?3 :5;
+ var line = new Line(p1, p2) { Layer = FRAME_LAYER, ColorIndex = f.IsBeam ?2 : colorIndexForColumn };
+ ObjectId id = btr.AppendEntity(line); 
+ tr.AddNewlyCreatedDBObject(line, true);
+
+ // FIX4: Phân loại Data
+ ElementData elemData;
+ if (f.IsBeam)
+ {
+ elemData = new BeamData { SectionName = f.Section, Length = f.Length2D, BeamType = "Main" };
+ }
+ else
+ {
+ elemData = new ColumnData { SectionName = f.Section, Material = "Concrete" };
+ }
+
+ elemData.BaseZ = Math.Min(f.Z1, f.Z2);
+ elemData.Height = Math.Abs(f.Z2 - f.Z1);
+ 
+ // Link Origin
+ if (!string.IsNullOrEmpty(originHandle)) elemData.OriginHandle = originHandle;
+
+ XDataUtils.WriteElementData(line, elemData, tr);
+
+ try { LabelUtils.RefreshEntityLabel(id, tr); } catch { }
+
+ if (!string.IsNullOrEmpty(originHandle))
+ {
+ AddChildToOrigin(originHandle, id.Handle.ToString(), tr);
+ }
+
+ // Vẽ điểm node (3D only)
+ if (is3D)
+ {
+ PlotPoint3D(btr, tr, p1);
+ PlotPoint3D(btr, tr, p2);
+ }
+ }
+ }
+
  private void PlotPoint3D(BlockTableRecord btr, Transaction tr, Point3d pt)
  {
  Circle circle = new Circle
@@ -372,147 +499,51 @@ namespace DTS_Wall_Tool.Commands
  Center = pt,
  Radius =50,
  Layer = POINT_LAYER,
- ColorIndex =3 // Green
+ ColorIndex =3,
+ Normal = new Vector3d(0,0,1) // Luôn nằm ngang
  };
-
  btr.AppendEntity(circle);
  tr.AddNewlyCreatedDBObject(circle, true);
  }
 
- /// <summary>
- /// Tạo Origin tại3D (với cao độ Z) và trả về Handle
- /// </summary>
- private string CreateOriginForStory3D(BlockTableRecord btr, Transaction tr,
- Point2D insertPoint, SapUtils.GridStoryItem story)
+ private string CreateOriginForStory(BlockTableRecord btr, Transaction tr, Point2D insertPoint, SapUtils.GridStoryItem story)
  {
- AcadUtils.CreateLayer(ORIGIN_LAYER,1);
+ return CreateOriginCommon(btr, tr, new Point3d(insertPoint.X, insertPoint.Y,0), story);
+ }
 
- Circle circle = new Circle
+ private string CreateOriginForStory3D(BlockTableRecord btr, Transaction tr, Point2D insertPoint, SapUtils.GridStoryItem story)
  {
- Center = new Point3d(insertPoint.X, insertPoint.Y, story.Coordinate),
- Radius =500,
+ return CreateOriginCommon(btr, tr, new Point3d(insertPoint.X, insertPoint.Y, story.Coordinate), story);
+ }
+
+ private string CreateOriginCommon(BlockTableRecord btr, Transaction tr, Point3d center, SapUtils.GridStoryItem story)
+ {
+ //1. Vẽ vòng tròn
+ Circle c = new Circle { Center = center, Radius =500, Layer = ORIGIN_LAYER, ColorIndex =1 };
+ ObjectId id = btr.AppendEntity(c); 
+ tr.AddNewlyCreatedDBObject(c, true);
+
+ //2. Gán XData
+ var sd = new StoryData { StoryName = story.Name, Elevation = story.Coordinate, StoryHeight =3300, OffsetX = center.X, OffsetY = center.Y };
+ DBObject obj = tr.GetObject(id, OpenMode.ForRead);
+ XDataUtils.WriteStoryData(obj, sd, tr);
+
+ // FIX3: Thêm Label text dưới Origin
+ MText lbl = new MText
+ {
+ Contents = $"{story.Name}\nZ={story.Coordinate}",
+ Location = new Point3d(center.X, center.Y -600, center.Z), // Offset xuống dưới600mm
+ TextHeight =250,
  Layer = ORIGIN_LAYER,
- ColorIndex =1 // Red
+ ColorIndex =0,
+ Attachment = AttachmentPoint.TopCenter
  };
+ btr.AppendEntity(lbl);
+ tr.AddNewlyCreatedDBObject(lbl, true);
 
- ObjectId circleId = btr.AppendEntity(circle);
- tr.AddNewlyCreatedDBObject(circle, true);
-
- var storyData = new StoryData
- {
- StoryName = story.Name,
- Elevation = story.Coordinate,
- StoryHeight =3300,
- OffsetX = insertPoint.X,
- OffsetY = insertPoint.Y
- };
-
- DBObject circleObj = tr.GetObject(circleId, OpenMode.ForRead);
- XDataUtils.WriteStoryData(circleObj, storyData, tr);
- return circleId.Handle.ToString();
+ return id.Handle.ToString();
  }
 
- /// <summary>
- /// Vẽ point (Circle nhỏ) -2D mode
- /// </summary>
- private void PlotPoint(BlockTableRecord btr, Transaction tr, Point3d pt)
- {
- Circle circle = new Circle
- {
- Center = pt,
- Radius =50, //50mm circle
- Layer = POINT_LAYER,
- ColorIndex =3 // Green
- };
-
- btr.AppendEntity(circle);
- tr.AddNewlyCreatedDBObject(circle, true);
- }
-
- /// <summary>
- /// Vẽ grid2D tại offset (dùng extent lớn nhất và nhãn ở hai đầu)
- /// </summary>
- private void PlotGridLines(BlockTableRecord btr, Transaction tr, List<SapUtils.GridLineRecord> grids, Point2D offset)
- {
- if (grids == null || grids.Count ==0) return;
-
- var xGrids = grids.Where(g => g.Orientation == "X").OrderBy(g => g.Coordinate).ToList();
- var yGrids = grids.Where(g => g.Orientation == "Y").OrderBy(g => g.Coordinate).ToList();
- if (xGrids.Count ==0 || yGrids.Count ==0) return;
-
- // Use unified extents
- CalculateGridExtents(grids, out double extMinX, out double extMaxX, out double extMinY, out double extMaxY);
-
- // X axes (vertical grid lines in plan)
- foreach (var x in xGrids)
- {
- Point3d p1 = new Point3d(x.Coordinate + offset.X, extMinY + offset.Y,0);
- Point3d p2 = new Point3d(x.Coordinate + offset.X, extMaxY + offset.Y,0);
- var line = new Line(p1, p2) { Layer = AXIS_LAYER, ColorIndex =5 };
- btr.AppendEntity(line); tr.AddNewlyCreatedDBObject(line, true);
-
- // labels both ends
- PlotAxisLabel(btr, tr, x.Name, new Point3d(p1.X, extMaxY + offset.Y +100,0));
- PlotAxisLabel(btr, tr, x.Name, new Point3d(p1.X, extMinY + offset.Y -100,0));
- }
-
- // Y axes (horizontal grid lines in plan)
- foreach (var y in yGrids)
- {
- Point3d p1 = new Point3d(extMinX + offset.X, y.Coordinate + offset.Y,0);
- Point3d p2 = new Point3d(extMaxX + offset.X, y.Coordinate + offset.Y,0);
- var line = new Line(p1, p2) { Layer = AXIS_LAYER, ColorIndex =5 };
- btr.AppendEntity(line); tr.AddNewlyCreatedDBObject(line, true);
-
- PlotAxisLabel(btr, tr, y.Name, new Point3d(extMinX + offset.X -200, p1.Y,0));
- PlotAxisLabel(btr, tr, y.Name, new Point3d(extMaxX + offset.X +100, p1.Y,0));
- }
- }
-
- /// <summary>
- /// Vẽ tên trục (MText)
- /// </summary>
- private void PlotAxisLabel(BlockTableRecord btr, Transaction tr, string name, Point3d position)
- {
- if (string.IsNullOrWhiteSpace(name)) return;
- MText m = new MText { Contents = name, Location = position, TextHeight =120, Layer = AXIS_LAYER, ColorIndex =5 };
- btr.AppendEntity(m); tr.AddNewlyCreatedDBObject(m, true);
- }
-
- /// <summary>
- /// Vẽ frame2D (plan) ở offset
- /// </summary>
- private void PlotFramesAt(BlockTableRecord btr, Transaction tr, List<SapFrame> frames, Point2D offset, double elevation, string originHandle)
- {
- if (frames == null) return;
- foreach (var f in frames)
- {
- Point3d p1 = new Point3d(f.StartPt.X + offset.X, f.StartPt.Y + offset.Y,0);
- Point3d p2 = new Point3d(f.EndPt.X + offset.X, f.EndPt.Y + offset.Y,0);
- var line = new Line(p1, p2) { Layer = FRAME_LAYER, ColorIndex = f.IsBeam ?2 :5 };
- ObjectId id = btr.AppendEntity(line); tr.AddNewlyCreatedDBObject(line, true);
-
- var fd = new BeamData { SectionName = f.Section, Length = f.Length2D, BeamType = f.IsBeam ? "Main" : "Column" };
- fd.BaseZ = elevation; fd.Height = f.IsBeam ? null : (double?)3300;
- if (!string.IsNullOrEmpty(originHandle)) fd.OriginHandle = originHandle;
- XDataUtils.WriteElementData(tr.GetObject(id, OpenMode.ForRead), fd, tr);
-
- // Use centralized LabelUtils to render labels for created element
- try
- {
- LabelUtils.RefreshEntityLabel(id, tr);
- }
- catch { }
-
- // Add to children of origin
- if (!string.IsNullOrEmpty(originHandle))
- {
- AddChildToOrigin(originHandle, id.Handle.ToString(), tr);
- }
- }
- }
-
- // Helper để thêm con vào Origin
  private void AddChildToOrigin(string originHandle, string childHandle, Transaction tr)
  {
  ObjectId originId = AcadUtils.GetObjectIdFromHandle(originHandle);
@@ -529,118 +560,7 @@ namespace DTS_Wall_Tool.Commands
  XDataUtils.WriteStoryData(originObj, story, tr);
  }
  }
- else
- {
- // Maybe origin is an element origin
- var elem = XDataUtils.ReadElementData(originObj);
- if (elem != null)
- {
- if (elem.ChildHandles == null) elem.ChildHandles = new List<string>();
- if (!elem.ChildHandles.Contains(childHandle))
- {
- elem.ChildHandles.Add(childHandle);
- XDataUtils.WriteElementData(originObj, elem, tr);
  }
- }
- }
- }
-
- // FIX: Calculate unified extents for grids
- private void CalculateGridExtents(List<SapUtils.GridLineRecord> grids,
- out double extMinX, out double extMaxX, out double extMinY, out double extMaxY)
- {
- var xGrids = grids.Where(g => g.Orientation == "X").ToList();
- var yGrids = grids.Where(g => g.Orientation == "Y").ToList();
-
- double minX = xGrids.Any() ? xGrids.Min(g => g.Coordinate) :0;
- double maxX = xGrids.Any() ? xGrids.Max(g => g.Coordinate) :0;
- double minY = yGrids.Any() ? yGrids.Min(g => g.Coordinate) :0;
- double maxY = yGrids.Any() ? yGrids.Max(g => g.Coordinate) :0;
-
- double rangeX = maxX - minX;
- double rangeY = maxY - minY;
- double maxRange = Math.Max(rangeX, rangeY);
- if (maxRange <1000) maxRange =5000;
-
- double extend = maxRange *0.15; //15% range
-
- extMinX = minX - extend;
- extMaxX = maxX + extend;
- extMinY = minY - extend;
- extMaxY = maxY + extend;
- }
-
- /// <summary>
- /// Tạo Origin cho mặt bằng2D - trả về handle
- /// </summary>
- private string CreateOriginForStory(BlockTableRecord btr, Transaction tr, Point2D insertPoint, SapUtils.GridStoryItem story)
- {
- AcadUtils.CreateLayer(ORIGIN_LAYER,1);
- Circle c = new Circle { Center = new Point3d(insertPoint.X, insertPoint.Y,0), Radius =500, Layer = ORIGIN_LAYER, ColorIndex =1 };
- ObjectId id = btr.AppendEntity(c); tr.AddNewlyCreatedDBObject(c, true);
- var sd = new StoryData { StoryName = story.Name, Elevation = story.Coordinate, StoryHeight =3300, OffsetX = insertPoint.X, OffsetY = insertPoint.Y };
- DBObject obj = tr.GetObject(id, OpenMode.ForRead);
- XDataUtils.WriteStoryData(obj, sd, tr);
- return id.Handle.ToString();
- }
-
- /// <summary>
- /// Vẽ tất cả mặt bằng2D với spacing =2/3 Y-range
- /// </summary>
- private void PlotAllStories2D(List<SapUtils.GridStoryItem> stories)
- {
- var allGrids = SapUtils.GetGridLines();
- var allFrames = SapUtils.GetAllFramesGeometry();
- var yGrids = allGrids.Where(g => g.Orientation == "Y").OrderBy(g => g.Coordinate).ToList();
- if (yGrids.Count ==0) { WriteError("Không có trục Y"); return; }
-
- // Compute spacing based on Y-range with larger multiplier
- double maxY = yGrids.Max(g => g.Coordinate);
- double minY = yGrids.Min(g => g.Coordinate);
- double rangeY = maxY - minY;
- double spacing = Math.Max(20000.0, rangeY *2.5);
-
- // Prompt user for base insertion point for All-2D layout
- WriteMessage($"\nChọn điểm gốc để vẽ bố cục {stories.Count} mặt bằng (All2D). Spacing = {spacing:0}");
- PromptPointOptions ptOpt = new PromptPointOptions("Chọn điểm gốc: ");
- PromptPointResult ptRes = Ed.GetPoint(ptOpt);
- if (ptRes.Status != PromptStatus.OK)
- {
- WriteMessage("Bỏ qua vẽ All2D (không chọn điểm).");
- return;
- }
- Point2D baseInsert = new Point2D(ptRes.Value.X, ptRes.Value.Y);
-
- // Ensure layers exist
- AcadUtils.CreateLayer(AXIS_LAYER,5);
- AcadUtils.CreateLayer(FRAME_LAYER,2);
- AcadUtils.CreateLayer(POINT_LAYER,3);
- AcadUtils.CreateLayer(ORIGIN_LAYER,1);
- AcadUtils.CreateLayer(LABEL_LAYER,254);
-
- var sorted = stories.OrderBy(s => s.Coordinate).ToList();
- UsingTransaction(tr =>
- {
- var bt = tr.GetObject(Db.BlockTableId, OpenMode.ForRead) as BlockTable;
- var btr = tr.GetObject(bt[BlockTableRecord.ModelSpace], OpenMode.ForWrite) as BlockTableRecord;
-
- for (int i =0; i < sorted.Count; i++)
- {
- var st = sorted[i];
- // Arrange along Y from baseInsert
- Point2D insert = new Point2D(baseInsert.X, baseInsert.Y + i * spacing);
-
- // Create origin first
- string originHandle = CreateOriginForStory(btr, tr, insert, st);
-
- var framesAt = allFrames.Where(f => Math.Abs(f.AverageZ - st.Coordinate) <=200).ToList();
- PlotGridLines(btr, tr, allGrids, insert);
- PlotFramesAt(btr, tr, framesAt, insert, st.Coordinate, originHandle);
- }
- });
- WriteSuccess("Vẽ tất cả mặt bằng2D hoàn thành");
- }
-
  #endregion
  }
 }
