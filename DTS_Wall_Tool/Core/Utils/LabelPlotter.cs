@@ -75,56 +75,81 @@ namespace DTS_Wall_Tool.Core.Utils
 
             // CASE1: Phần tử thẳng đứng (Cột) - Vertical
             // Điều kiện: Độ dài2D gần bằng0 nhưng độ dài3D lớn
-            if (length2d < GeometryConstants.EPSILON && length3d > GeometryConstants.EPSILON)
+            Vector3d axisDir = delta.GetNormal();
+            Vector3d up = new Vector3d(0, 0, 1);
+
+            // Nếu gần thẳng đứng
+            bool isVertical = length2d < GeometryConstants.EPSILON && length3d > GeometryConstants.EPSILON;
+
+            // SELECT base point
+            Point3d basePt;
+            if (position == LabelPosition.StartTop || position == LabelPosition.StartBottom)
+                basePt = startPt;
+            else if (position == LabelPosition.EndTop || position == LabelPosition.EndBottom)
+                basePt = endPt;
+            else
+                basePt = new Point3d((startPt.X + endPt.X) / 2.0, (startPt.Y + endPt.Y) / 2.0, (startPt.Z + endPt.Z) / 2.0);
+
+            // Compute textNormal and textDirection (baseline)
+            Vector3d textNormal;
+            if (isVertical)
             {
-                // Lấy trung điểm theo chiều cao Z
-                Point3d midPt = new Point3d(
-                    startPt.X,
-                    startPt.Y,
-                    (startPt.Z + endPt.Z) / 2.0
-                );
-
-                // Offset sang phải một chút (trục X) để không đè vào cột
-                double offset = (textHeight / 2.0) + TEXT_GAP + 100.0; // +100 cho cột to
-                insertPoint = new Point3d(midPt.X + offset, midPt.Y, midPt.Z);
-
-                rotation = 0; // Text vẫn nằm ngang cho dễ đọc
-                attachment = AttachmentPoint.MiddleLeft;
+                // For columns prefer a horizontal normal (push text away in X)
+                textNormal = new Vector3d(1, 0, 0);
+                axisDir = up; // baseline along Z for column text (text runs up)
             }
-            // CASE2: Phần tử xiên hoặc nằm ngang (Dầm/Giằng)
             else
             {
-                // Tính toán vị trí trên mặt phẳng2D (XY) nhưng giữ cao độ Z
-                Point2D s2 = new Point2D(startPt.X, startPt.Y);
-                Point2D e2 = new Point2D(endPt.X, endPt.Y);
-
-                var geo = CalculateLabelGeometry(s2, e2, position, textHeight);
-
-                // Nội suy cao độ Z tại điểm chèn
-                // Nếu là Middle thì lấy Average Z
-                // Nếu là Start/End thì lấy Z tương ứng
-                double z = 0;
-                if (position == LabelPosition.StartTop || position == LabelPosition.StartBottom)
-                    z = startPt.Z;
-                else if (position == LabelPosition.EndTop || position == LabelPosition.EndBottom)
-                    z = endPt.Z;
-                else
-                    z = (startPt.Z + endPt.Z) / 2.0;
-
-                insertPoint = new Point3d(geo.InsertPoint.X, geo.InsertPoint.Y, z);
-                rotation = geo.Rotation;
-                attachment = geo.Attachment;
+                // For beams/slanted: normal is cross(axis, globalZ) -> horizontal vector
+                textNormal = axisDir.CrossProduct(up);
+                if (textNormal.Length < 0.001) textNormal = new Vector3d(0, 0, 1);
+                else textNormal = textNormal.GetNormal();
             }
 
-            // Tạo MText
+            // Up direction for text is cross(normal, axis)
+            Vector3d textUp = textNormal.CrossProduct(axisDir).GetNormal();
+
+            // Offset distance
+            bool isTop = (position == LabelPosition.StartTop || position == LabelPosition.MiddleTop || position == LabelPosition.EndTop);
+            double offset = (textHeight / 2.0) + TEXT_GAP;
+
+            if (isVertical)
+            {
+                offset += 100.0; // extra gap for columns
+                insertPoint = basePt + textNormal * offset;
+            }
+            else
+            {
+                double sign = isTop ? 1.0 : -1.0;
+                insertPoint = basePt + textUp * (offset * sign);
+            }
+
+            // Create MText with3D orientation
             MText mtext = new MText();
             mtext.Contents = content;
             mtext.Location = insertPoint;
             mtext.TextHeight = textHeight;
-            mtext.Rotation = rotation;
-            mtext.Attachment = attachment;
             mtext.Layer = layer;
             mtext.ColorIndex = DEFAULT_COLOR;
+
+            // IMPORTANT: set Normal and Direction for proper3D orientation
+            mtext.Normal = textNormal;
+            mtext.Direction = axisDir.GetNormal();
+
+            // Attachment selection
+            if (isVertical)
+            {
+                mtext.Attachment = AttachmentPoint.MiddleLeft;
+            }
+            else
+            {
+                if (position == LabelPosition.MiddleTop || position == LabelPosition.MiddleBottom)
+                    mtext.Attachment = isTop ? AttachmentPoint.BottomCenter : AttachmentPoint.TopCenter;
+                else if (position.ToString().StartsWith("Start"))
+                    mtext.Attachment = isTop ? AttachmentPoint.BottomLeft : AttachmentPoint.TopLeft;
+                else
+                    mtext.Attachment = isTop ? AttachmentPoint.BottomRight : AttachmentPoint.TopRight;
+            }
 
             ObjectId id = btr.AppendEntity(mtext);
             tr.AddNewlyCreatedDBObject(mtext, true);

@@ -134,15 +134,15 @@ namespace DTS_Wall_Tool.Core.Utils
 
             string p1Name = "", p2Name = "";
             int ret = model.FrameObj.GetPoints(frameName, ref p1Name, ref p2Name);
-            if (ret !=0) return null;
+            if (ret != 0) return null;
 
-            double x1 =0, y1 =0, z1 =0;
+            double x1 = 0, y1 = 0, z1 = 0;
             ret = model.PointObj.GetCoordCartesian(p1Name, ref x1, ref y1, ref z1, "Global");
-            if (ret !=0) return null;
+            if (ret != 0) return null;
 
-            double x2 =0, y2 =0, z2 =0;
+            double x2 = 0, y2 = 0, z2 = 0;
             ret = model.PointObj.GetCoordCartesian(p2Name, ref x2, ref y2, ref z2, "Global");
-            if (ret !=0) return null;
+            if (ret != 0) return null;
 
             return new SapFrame
             {
@@ -252,7 +252,7 @@ namespace DTS_Wall_Tool.Core.Utils
 
             try
             {
-                int numberItems =0;
+                int numberItems = 0;
                 string[] frameNames = null;
                 string[] loadPatterns = null;
                 int[] myTypes = null;
@@ -276,12 +276,12 @@ namespace DTS_Wall_Tool.Core.Utils
                     eItemType.Objects
                 );
 
-                if (ret !=0 || numberItems ==0) return result;
+                if (ret != 0 || numberItems == 0) return result;
 
-                for (int i =0; i < numberItems; i++)
+                for (int i = 0; i < numberItems; i++)
                 {
                     string pattern = loadPatterns[i];
-                    double value = (val1[i] *1000.0); // kN/mm -> kN/m
+                    double value = (val1[i] * 1000.0); // kN/mm -> kN/m
                     double iPos = dist1[i];
                     double jPos = dist2[i];
                     string dirStr = GetDirectionName(dirs[i]);
@@ -696,6 +696,83 @@ namespace DTS_Wall_Tool.Core.Utils
 
         #endregion
 
+        #region Points (New)
+
+        public class SapPoint
+        {
+            public string Name { get; set; }
+            public double X { get; set; }
+            public double Y { get; set; }
+            public double Z { get; set; }
+        }
+
+        /// <summary>
+        /// Lấy toàn bộ danh sách điểm (Joints) từ SAP2000
+        /// Sử dụng bảng "Joint Coordinates" để tối ưu tốc độ
+        /// </summary>
+        public static List<SapPoint> GetAllPoints()
+        {
+            var result = new List<SapPoint>();
+            var model = GetModel();
+            if (model == null) return result;
+
+            try
+            {
+                int tableVersion = 0;
+                string[] fieldNames = null;
+                string[] tableData = null;
+                int numberRecords = 0;
+                string[] fieldsKeysIncluded = null;
+
+                string[] fieldKeyListInput = new string[] { "" }; // Request all fields
+
+                int ret = model.DatabaseTables.GetTableForDisplayArray(
+                    "Joint Coordinates",
+                    ref fieldKeyListInput, "All", ref tableVersion, ref fieldsKeysIncluded,
+                    ref numberRecords, ref tableData
+                );
+
+                if (ret == 0 && numberRecords > 0 && fieldsKeysIncluded != null && tableData != null)
+                {
+                    int idxName = Array.IndexOf(fieldsKeysIncluded, "Joint");
+                    int idxX = -1, idxY = -1, idxZ = -1;
+
+                    for (int i = 0; i < fieldsKeysIncluded.Length; i++)
+                    {
+                        var f = fieldsKeysIncluded[i] ?? string.Empty;
+                        var fl = f.ToLowerInvariant();
+                        if (fl.Contains("x") || fl.Contains("coord1") || fl.Contains("globalx") || fl.Contains("xor")) idxX = i;
+                        if (fl.Contains("y") || fl.Contains("coord2") || fl.Contains("globaly")) idxY = i;
+                        if (fl.Contains("z") || fl.Contains("coord3") || fl.Contains("globalz")) idxZ = i;
+                    }
+
+                    if (idxName >= 0 && idxX >= 0 && idxY >= 0 && idxZ >= 0)
+                    {
+                        int cols = fieldsKeysIncluded.Length;
+                        for (int r = 0; r < numberRecords; r++)
+                        {
+                            try
+                            {
+                                string name = tableData[r * cols + idxName] ?? string.Empty;
+                                double x = 0, y = 0, z = 0;
+                                double.TryParse(tableData[r * cols + idxX], NumberStyles.Any, CultureInfo.InvariantCulture, out x);
+                                double.TryParse(tableData[r * cols + idxY], NumberStyles.Any, CultureInfo.InvariantCulture, out y);
+                                double.TryParse(tableData[r * cols + idxZ], NumberStyles.Any, CultureInfo.InvariantCulture, out z);
+
+                                result.Add(new SapPoint { Name = name, X = x, Y = y, Z = z });
+                            }
+                            catch { }
+                        }
+                    }
+                }
+            }
+            catch { }
+
+            return result;
+        }
+
+        #endregion
+
         public class GridStoryItem
         {
             public string AxisDir { get; set; } // X/Y/Z
@@ -721,7 +798,7 @@ namespace DTS_Wall_Tool.Core.Utils
                 {
                     StoryName = this.StoryName,
                     Elevation = this.Elevation,
-                    StoryHeight =3300
+                    StoryHeight = 3300
                 };
             }
             public override string ToString() => $"{AxisDir}\t{Name}\t{Coordinate}";

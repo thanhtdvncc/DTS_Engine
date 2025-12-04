@@ -326,10 +326,18 @@ namespace DTS_Wall_Tool.Commands
 
  Point2D baseInsertPoint = new Point2D(ptRes.Value.X, ptRes.Value.Y);
 
+ //1. Lấy dữ liệu toàn cục
+ WriteMessage("Đang đọc dữ liệu từ SAP...");
  var allGrids = SapUtils.GetGridLines();
  var allFrames = SapUtils.GetAllFramesGeometry();
+ 
+ // NEW: Lấy tất cả Points
+ var allPoints = SapUtils.GetAllPoints();
+ WriteMessage($" -> Frames: {allFrames.Count}, Points: {allPoints.Count}");
+
  var sortedStories = stories.OrderBy(s => s.Coordinate).ToList();
 
+ // Tạo Layer
  SetupLayers();
 
  UsingTransaction(tr =>
@@ -337,25 +345,38 @@ namespace DTS_Wall_Tool.Commands
  var bt = tr.GetObject(Db.BlockTableId, OpenMode.ForRead) as BlockTable;
  var btr = tr.GetObject(bt[BlockTableRecord.ModelSpace], OpenMode.ForWrite) as BlockTableRecord;
 
- //1. Vẽ Grid ở tầng thấp nhất
- var firstStory = sortedStories.First();
- PlotGridLines(btr, tr, allGrids, baseInsertPoint, firstStory.Coordinate);
-
- //2. Vẽ Frames theo tầng
- for (int i =0; i < sortedStories.Count; i++)
+ //2. Vẽ Grid ở tầng thấp nhất
+ if (sortedStories.Count >0)
  {
- var story = sortedStories[i];
+ PlotGridLines(btr, tr, allGrids, baseInsertPoint, sortedStories[0].Coordinate);
+ }
+
+ //3. Vẽ Frames & Origin theo tầng
+ foreach (var story in sortedStories)
+ {
  WriteMessage($" Vẽ {story.Name} tại Z={story.Coordinate}...");
 
- // Tạo Origin tại cao độ Z thật
+ // Origin
  string originHandle = CreateOriginForStory3D(btr, tr, baseInsertPoint, story);
 
- // Lọc frame thuộc tầng (bao gồm cột đỡ tầng này)
+ // Frames thuộc tầng
  var framesAtStory = FilterFramesForStory(allFrames, story.Coordinate);
-
- // Vẽ frame3D
- PlotFramesAt(btr, tr, framesAtStory, baseInsertPoint, story.Coordinate, originHandle, is3D: true);
+ PlotFramesAt3D(btr, tr, framesAtStory, baseInsertPoint, story.Coordinate, originHandle);
  }
+
+ //4. Vẽ POINTS (Toàn bộ points trong vùng Z của các tầng được chọn)
+ WriteMessage(" Vẽ Points...");
+ double minZ = sortedStories.Min(s => s.Coordinate) -500;
+ double maxZ = sortedStories.Max(s => s.Coordinate) +4000; // Bao gồm cả đỉnh cột tầng trên cùng
+
+ var pointsToDraw = allPoints.Where(p => p.Z >= minZ && p.Z <= maxZ).ToList();
+
+ foreach (var pt in pointsToDraw)
+ {
+ Point3d p3d = new Point3d(pt.X + baseInsertPoint.X, pt.Y + baseInsertPoint.Y, pt.Z);
+ PlotPoint3D(btr, tr, p3d);
+ }
+
  });
 
  WriteSuccess("Vẽ mô hình3D hoàn thành");
@@ -504,6 +525,45 @@ namespace DTS_Wall_Tool.Commands
  };
  btr.AppendEntity(circle);
  tr.AddNewlyCreatedDBObject(circle, true);
+ }
+
+ // Plot frames for3D mode (do not create points here)
+ private void PlotFramesAt3D(BlockTableRecord btr, Transaction tr, List<SapFrame> frames,
+ Point2D offset, double elevation, string originHandle)
+ {
+ if (frames == null) return;
+
+ foreach (var frame in frames)
+ {
+ Point3d pt1 = new Point3d(frame.StartPt.X + offset.X, frame.StartPt.Y + offset.Y, frame.Z1);
+ Point3d pt2 = new Point3d(frame.EndPt.X + offset.X, frame.EndPt.Y + offset.Y, frame.Z2);
+
+ Line line = new Line(pt1, pt2);
+ line.Layer = FRAME_LAYER;
+ line.ColorIndex = frame.IsBeam ?2 :5;
+
+ ObjectId lineId = btr.AppendEntity(line);
+ tr.AddNewlyCreatedDBObject(line, true);
+
+ // Gán Data
+ ElementData elemData;
+ if (frame.IsBeam)
+ elemData = new BeamData { SectionName = frame.Section, Length = frame.Length2D, BeamType = "Main" };
+ else
+ elemData = new ColumnData { SectionName = frame.Section, Material = "Concrete" };
+
+ elemData.BaseZ = frame.Z1; //3D dùng Z thực
+ elemData.Height = Math.Abs(frame.Z2 - frame.Z1);
+ if (!string.IsNullOrEmpty(originHandle)) elemData.OriginHandle = originHandle;
+
+ XDataUtils.WriteElementData(tr.GetObject(lineId, OpenMode.ForRead), elemData, tr);
+
+ // Label3D (Sử dụng LabelPlotter mới)
+ try { LabelUtils.RefreshEntityLabel(lineId, tr); } catch { }
+
+ if (!string.IsNullOrEmpty(originHandle))
+ AddChildToOrigin(originHandle, lineId.Handle.ToString(), tr);
+ }
  }
 
  private string CreateOriginForStory(BlockTableRecord btr, Transaction tr, Point2D insertPoint, SapUtils.GridStoryItem story)
