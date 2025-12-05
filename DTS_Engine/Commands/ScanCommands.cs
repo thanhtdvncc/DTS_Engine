@@ -9,7 +9,8 @@ using System.Collections.Generic;
 namespace DTS_Engine.Commands
 {
     /// <summary>
-    /// Các lệnh quét và báo cáo thông tin đối tượng
+    /// Các lệnh quét và báo cáo thông tin đối tượng.
+    /// Sử dụng VisualUtils để hiển thị tạm thời, không làm bẩn bản vẽ.
     /// </summary>
     public class ScanCommands : CommandBase
     {
@@ -215,47 +216,46 @@ namespace DTS_Engine.Commands
         }
 
         /// <summary>
-        /// Draw scan links. Returns count of drawn lines and prints a legend summary (color -> type).
+        /// Draw scan links using VisualUtils (transient graphics).
+        /// Returns count of drawn lines and prints a legend summary (color -> type).
         /// </summary>
         private int DrawScanLinks(Point3d originPt, List<ScanItem> items)
         {
-            AcadUtils.CreateLayer(SCAN_LINK_LAYER, 7); // Default White
+            // Dọn dẹp visual cũ
+            VisualUtils.ClearAll();
 
             int count = 0;
             var typeCounts = new Dictionary<string, int>();
             var typeColors = new Dictionary<string, int>();
 
-            UsingTransaction(tr =>
+            // Chuyển đổi ScanItem sang ScanLinkItem cho VisualUtils
+            var scanLinkItems = new List<ScanLinkItem>();
+
+            foreach (var item in items)
             {
-                var bt = (BlockTable)tr.GetObject(Db.BlockTableId, OpenMode.ForRead);
-                var btr = (BlockTableRecord)tr.GetObject(bt[BlockTableRecord.ModelSpace], OpenMode.ForWrite);
+                int color = GetColorByType(item.ElemType);
+                if (item.Type == "ORIGIN") color = 1; // Red
 
-                foreach (var item in items)
+                scanLinkItems.Add(new ScanLinkItem
                 {
-                    // Màu theo loại phần tử
-                    int color = GetColorByType(item.ElemType);
-                    if (item.Type == "ORIGIN") color = 1; // Red
+                    ObjId = item.ObjId,
+                    Center = item.Center,
+                    ColorIndex = color,
+                    Type = item.Type
+                });
 
-                    // Vẽ đường line3D
-                    Line line = new Line(originPt, item.Center);
-                    line.Layer = SCAN_LINK_LAYER;
-                    line.ColorIndex = color;
+                // Tally
+                if (!typeCounts.ContainsKey(item.Type)) typeCounts[item.Type] = 0;
+                typeCounts[item.Type]++;
+                if (!typeColors.ContainsKey(item.Type)) typeColors[item.Type] = color;
+            }
 
-                    btr.AppendEntity(line);
-                    tr.AddNewlyCreatedDBObject(line, true);
-                    count++;
+            // Sử dụng VisualUtils để vẽ transient
+            count = VisualUtils.DrawScanLinks(originPt, scanLinkItems);
 
-                    // Tally
-                    if (!typeCounts.ContainsKey(item.Type)) typeCounts[item.Type] = 0;
-                    typeCounts[item.Type]++;
-                    if (!typeColors.ContainsKey(item.Type)) typeColors[item.Type] = color;
-                }
-            });
+            // Báo cáo kết quả
+            WriteSuccess($"Đã hiển thị {count} đường link tạm thời cho:");
 
-            // Updated output message
-            WriteSuccess($"[OK] Đã vẽ {count} đường link cho:");
-
-            // Print concise summary
             foreach (var kv in typeColors)
             {
                 int c = kv.Value;
@@ -263,6 +263,8 @@ namespace DTS_Engine.Commands
                 int cnt = typeCounts.ContainsKey(kv.Key) ? typeCounts[kv.Key] : 0;
                 WriteMessage($" - {kv.Key}: ({cname}) - {cnt} đường");
             }
+
+            WriteMessage("\n(Sử dụng DTS_CLEAR_VISUAL để xóa hiển thị tạm thời)");
 
             return count;
         }

@@ -8,66 +8,71 @@ using DTS_Engine.Core.Utils;
 namespace DTS_Engine.Commands
 {
     /// <summary>
-    /// Các lệnh tiện ích
+    /// Các lệnh tiện ích chung cho DTS Engine.
     /// </summary>
     public class UtilityCommands : CommandBase
     {
         /// <summary>
-        /// Lệnh test cơ bản
+        /// Hiển thị danh sách lệnh DTS.
         /// </summary>
         [CommandMethod("DTS_HELP")]
         public void DTS_HELP()
         {
             WriteMessage("╔══════════════════════════════════════════════════════════════╗");
-            WriteMessage("║   DTS TOOL - DANH SÁCH LỆNH       ║");
+            WriteMessage("║   DTS TOOL - DANH SÁCH LỆNH                                  ║");
             WriteMessage("╠══════════════════════════════════════════════════════════════╣");
-            WriteMessage("║ THIẾT LẬP:             ║");
-            WriteMessage("║   DTS_SET_ORIGIN  - Thiết lập Origin cho tầng    ║");
-            WriteMessage("║   DTS_LINK        - Liên kết phần tử với Origin     ║");
-            WriteMessage("║   DTS_UNLINK - Xóa liên kết phần tử       ║");
-            WriteMessage("║   DTS_SHOW_LINK   - Hiển thị thông tin liên kết              ║");
+            WriteMessage("║ THIẾT LẬP:                                                   ║");
+            WriteMessage("║   DTS_SET_ORIGIN  - Thiết lập Origin cho tầng                ║");
+            WriteMessage("║   DTS_LINK        - Liên kết phần tử (hỗ trợ Reference)      ║");
+            WriteMessage("║   DTS_LINK_ORIGIN - Liên kết phần tử với Story Origin        ║");
+            WriteMessage("║   DTS_UNLINK      - Gỡ liên kết cụ thể giữa Con và Cha       ║");
+            WriteMessage("║   DTS_CLEAR_LINK  - Xóa toàn bộ liên kết của phần tử         ║");
+            WriteMessage("║   DTS_SHOW_LINK   - Hiển thị và kiểm tra liên kết            ║");
             WriteMessage("╠══════════════════════════════════════════════════════════════╣");
-            WriteMessage("║ SAP2000:        ║");
-            WriteMessage("║   DTS_TEST_SAP- Kiểm tra kết nối SAP2000       ║");
-            WriteMessage("║   DTS_GET_FRAMES  - Lấy danh sách frames từ SAP     ║");
-            WriteMessage("║   DTS_SYNC_SAP    - Đồng bộ SAP → CAD (PULL) ║");
-            WriteMessage("║   DTS_PUSH_LOAD   - Gán tải CAD → SAP (PUSH)           ║");
-            WriteMessage("║   DTS_CHECK_SYNC  - Kiểm tra trạng thái đồng bộ         ║");
-            WriteMessage("║   DTS_SHOW_LOADCASES - Hiển thị tất cả loadcase đã cache║");
-            WriteMessage("║   DTS_SWITCH_LOADCASE - Chuyển loadcase mặc định          ║");
+            WriteMessage("║ SAP2000:                                                     ║");
+            WriteMessage("║   DTS_TEST_SAP    - Kiểm tra kết nối SAP2000                 ║");
+            WriteMessage("║   DTS_GET_FRAMES  - Lấy danh sách frames từ SAP              ║");
+            WriteMessage("║   DTS_SYNC_SAP    - Đồng bộ SAP → CAD (PULL)                 ║");
+            WriteMessage("║   DTS_PUSH_LOAD   - Gán tải CAD → SAP (PUSH)                 ║");
+            WriteMessage("║   DTS_CHECK_SYNC  - Kiểm tra trạng thái đồng bộ              ║");
             WriteMessage("╠══════════════════════════════════════════════════════════════╣");
-            WriteMessage("║ TÍNH TOÁN: ║");
-            WriteMessage("║   DTS_CALC_LOAD   - Tính tải trọng tường  ║");
+            WriteMessage("║ TÍNH TOÁN:                                                   ║");
+            WriteMessage("║   DTS_CALC_LOAD   - Tính tải trọng tường                     ║");
             WriteMessage("║   DTS_CALC_ALL    - Tính tải cho tất cả phần tử ILoadBearing ║");
-            WriteMessage("║   DTS_SCAN_WALL   - Quét và nhận diện tường  ║");
+            WriteMessage("║   DTS_SCAN        - Quét và kiểm tra thông tin đối tượng     ║");
             WriteMessage("╠══════════════════════════════════════════════════════════════╣");
-            WriteMessage("║ HIỂN THỊ & DỌN DẸP:           ║");
+            WriteMessage("║ HIỂN THỊ & DỌN DẸP:                                          ║");
             WriteMessage("║   DTS_SHOW_LABEL  - Hiển thị/Cập nhật nhãn phần tử           ║");
-            WriteMessage("║   DTS_CLEAR_LABEL - Xóa tất cả nhãn               ║");
-            WriteMessage("║   DTS_CLEANUP     - Dọn dẹp tất cả layer tạm   ║");
+            WriteMessage("║   DTS_CLEAR_LABEL - Xóa tất cả nhãn                          ║");
+            WriteMessage("║   DTS_CLEAR_VISUAL- Xóa hiển thị tạm thời (Transient)        ║");
+            WriteMessage("║   DTS_CLEANUP     - Dọn dẹp tất cả layer tạm                 ║");
             WriteMessage("╠══════════════════════════════════════════════════════════════╣");
-            WriteMessage("║ MÀU SẮC TRẠNG THÁI:         ║");
-            WriteMessage("║   Xanh lá (3)  - Đã đồng bộ / Full match                 ║");
-            WriteMessage("║   Vàng (2)   - CAD thay đổi / Partial match     ║");
-            WriteMessage("║   Xanh dương(5)- SAP thay đổi             ║");
-            WriteMessage("║   Đỏ (1)       - Không map / SAP đã xóa        ║");
-            WriteMessage("║   Magenta (6)  - Xung đột              ║");
-            WriteMessage("║   Cyan (4)     - Phần tử mới                ║");
+            WriteMessage("║ MÀU SẮC TRẠNG THÁI:                                          ║");
+            WriteMessage("║   Xanh lá (3)  - Đã đồng bộ / Full match                     ║");
+            WriteMessage("║   Vàng (2)     - CAD thay đổi / Partial match                ║");
+            WriteMessage("║   Xanh dương(5)- SAP thay đổi                                ║");
+            WriteMessage("║   Đỏ (1)       - Không map / SAP đã xóa                      ║");
+            WriteMessage("║   Magenta (6)  - Xung đột                                    ║");
+            WriteMessage("║   Cyan (4)     - Phần tử mới                                 ║");
             WriteMessage("╚══════════════════════════════════════════════════════════════╝");
         }
 
+        /// <summary>
+        /// Hiển thị thông tin phiên bản DTS Engine.
+        /// </summary>
         [CommandMethod("DTS_VERSION")]
         public void DTS_VERSION()
         {
             WriteMessage("╔══════════════════════════════════════════════════════════════╗");
-            WriteMessage("║  DTS ENGINE v2.1.0 - ILoadBearing Polymorphism       ║");
-            WriteMessage("║  BY THANHTDVNCC / CTCI VIETNAM           ║");
-            WriteMessage("║  ISO/IEC 25010 Compliant     ║");
-            WriteMessage("║    ║");
-            WriteMessage("║  Supported Element Types:   ║");
-            WriteMessage("║  - WallData   : DistributedLine (kN/m) -> Frame             ║");
-            WriteMessage("║  - BeamData   : DistributedLine (kN/m) -> Frame       ║");
-            WriteMessage("║  - SlabData : UniformArea (kN/m²) -> Area        ║");
+            WriteMessage("║  DTS ENGINE v2.2.0 - Smart Linking & Transient Graphics     ║");
+            WriteMessage("║  BY THANHTDVNCC / CTCI VIETNAM                               ║");
+            WriteMessage("║  ISO/IEC 25010 Compliant                                     ║");
+            WriteMessage("║                                                              ║");
+            WriteMessage("║  New in v2.2.0:                                              ║");
+            WriteMessage("║  - VisualUtils: Transient Graphics (không làm bẩn bản vẽ)   ║");
+            WriteMessage("║  - Smart Link: Hỗ trợ Reference (nhánh phụ)                  ║");
+            WriteMessage("║  - DTS_UNLINK: Gỡ liên kết cụ thể                            ║");
+            WriteMessage("║  - DTS_CLEAR_VISUAL: Xóa hiển thị tạm thời                   ║");
             WriteMessage("╚══════════════════════════════════════════════════════════════╝");
         }
 
@@ -222,21 +227,25 @@ namespace DTS_Engine.Commands
         }
 
         /// <summary>
-        /// Xóa tất cả layer tạm
+        /// Xóa tất cả layer tạm.
         /// </summary>
         [CommandMethod("DTS_CLEANUP")]
         public void DTS_CLEANUP()
         {
-            WriteMessage("DỌN DẸP LAYER TẠM");
+            WriteMessage("DỌN DẸP LAYER TẠM VÀ HIỂN THỊ");
+
+            // Xóa transient graphics trước
+            VisualUtils.ClearAll();
 
             string[] tempLayers = {
-     "dts_linkmap",
-          "dts_highlight",
-   "dts_mapping",
-       "dts_labels",
-     "dts_temp",
-      "dts_frame_label"
-        };
+                "dts_linkmap",
+                "dts_highlight",
+                "dts_mapping",
+                "dts_labels",
+                "dts_temp",
+                "dts_frame_label",
+                "dts_scan_link"
+            };
 
             int totalCleared = 0;
             foreach (var layer in tempLayers)
@@ -245,7 +254,18 @@ namespace DTS_Engine.Commands
                 totalCleared++;
             }
 
-            WriteSuccess($"Đã dọn dẹp {totalCleared} layer tạm");
+            WriteSuccess($"Đã dọn dẹp {totalCleared} layer tạm và hiển thị Transient.");
+        }
+
+        /// <summary>
+        /// Xóa tất cả hiển thị tạm thời (Transient Graphics).
+        /// Lệnh alias cho DTS_CLEAR_VISUAL trong LinkCommands.
+        /// </summary>
+        [CommandMethod("DTS_CLEAR_TRANSIENT")]
+        public void DTS_CLEAR_TRANSIENT()
+        {
+            VisualUtils.ClearAll();
+            WriteSuccess("Đã xóa hiển thị tạm thời (Transient Graphics).");
         }
 
         /// <summary>

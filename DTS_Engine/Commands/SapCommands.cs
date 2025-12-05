@@ -545,7 +545,7 @@ namespace DTS_Engine.Commands
             {
                 result.State = mapResult.HasMapping ? SyncState.Synced : SyncState.NewElement;
             }
-            lineEnt.ColorIndex = colorIndex;
+            // Note: ColorIndex is used for labels, actual entity color is not modified to avoid "color pollution"
 
             LabelUtils.UpdateWallLabels(lineId, wallData, mapResult, tr);
 
@@ -619,7 +619,8 @@ namespace DTS_Engine.Commands
         }
 
         /// <summary>
-        /// Phát hiện thay đổi và xung đột
+        /// Phát hiện thay đổi và xung đột.
+        /// Sử dụng VisualUtils để hiển thị tạm thời, không làm bẩn bản vẽ.
         /// </summary>
         [CommandMethod("DTS_CHECK_SYNC")]
         public void DTS_CHECK_SYNC()
@@ -635,33 +636,36 @@ namespace DTS_Engine.Commands
                 return;
             }
 
+            // Dọn dẹp visual cũ
+            VisualUtils.ClearAll();
+
             var stats = new Dictionary<SyncState, int>();
 
             UsingTransaction(tr =>
-        {
-            var changes = SyncEngine.DetectAllChanges(lineIds, tr);
-
-            foreach (var kvp in changes)
             {
-                try
+                var changes = SyncEngine.DetectAllChanges(lineIds, tr);
+
+                foreach (var kvp in changes)
                 {
-                    DBObject obj = tr.GetObject(kvp.Key, OpenMode.ForRead);
-                    if (obj == null) continue;
+                    try
+                    {
+                        DBObject obj = tr.GetObject(kvp.Key, OpenMode.ForRead);
+                        if (obj == null) continue;
 
-                    if (!XDataUtils.HasDtsData(obj))
-                        continue;
+                        if (!XDataUtils.HasDtsData(obj))
+                            continue;
 
-                    var state = kvp.Value;
-                    if (!stats.ContainsKey(state)) stats[state] = 0;
-                    stats[state]++;
+                        var state = kvp.Value;
+                        if (!stats.ContainsKey(state)) stats[state] = 0;
+                        stats[state]++;
 
-                    int color = SyncEngine.GetSyncStateColor(state);
-                    Entity ent = tr.GetObject(kvp.Key, OpenMode.ForWrite) as Entity;
-                    if (ent != null) ent.ColorIndex = color;
+                        // Sử dụng VisualUtils thay vì đổi màu thật
+                        int color = SyncEngine.GetSyncStateColor(state);
+                        VisualUtils.HighlightObject(kvp.Key, color);
+                    }
+                    catch { }
                 }
-                catch { }
-            }
-        });
+            });
 
             int synced = stats.TryGetValue(SyncState.Synced, out var tmp) ? tmp : 0;
             int cadModified = stats.TryGetValue(SyncState.CadModified, out tmp) ? tmp : 0;
@@ -670,13 +674,15 @@ namespace DTS_Engine.Commands
             int sapDeleted = stats.TryGetValue(SyncState.SapDeleted, out tmp) ? tmp : 0;
             int newElement = stats.TryGetValue(SyncState.NewElement, out tmp) ? tmp : 0;
 
-            WriteMessage("\n[DONE] Trạng thái đồng bộ:");
+            WriteMessage("\n--- BÁO CÁO TRẠNG THÁI ---");
             if (synced > 0) WriteMessage($" Đã đồng bộ (Xanh lá): {synced}");
             if (cadModified > 0) WriteMessage($" CAD thay đổi (Cyan): {cadModified}");
             if (sapModified > 0) WriteMessage($" SAP thay đổi (Xanh): {sapModified}");
             if (conflict > 0) WriteMessage($" Xung đột (Magenta): {conflict}");
             if (sapDeleted > 0) WriteMessage($" Frame bị xóa (Đỏ): {sapDeleted}");
             if (newElement > 0) WriteMessage($" Phần tử mới (Vàng): {newElement}");
+
+            WriteMessage("\n(Sử dụng DTS_CLEAR_VISUAL để xóa hiển thị trạng thái)");
         }
 
         #endregion

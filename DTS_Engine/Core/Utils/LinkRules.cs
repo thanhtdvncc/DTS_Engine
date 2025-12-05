@@ -3,10 +3,15 @@ using DTS_Engine.Core.Data;
 
 namespace DTS_Engine.Core.Utils
 {
+    /// <summary>
+    /// Quy tac lien ket giua cac phan tu trong DTS Engine.
+    /// Dam bao tinh toan ven cua cay lien ket.
+    /// </summary>
     public static class LinkRules
     {
         /// <summary>
-        /// Rule 1: Phân c?p nghiêm ng?t cho Cha Chính (Primary Parent)
+        /// Rule 1: Phan cap nghiem ngat cho Cha Chinh (Primary Parent).
+        /// Xac dinh xem mot loai phan tu co the lam cha cua loai khac khong.
         /// </summary>
         public static bool CanBePrimaryParent(ElementType parentType, ElementType childType)
         {
@@ -28,8 +33,8 @@ namespace DTS_Engine.Core.Utils
         }
 
         /// <summary>
-        /// Rule 2: Ch?ng vòng l?p (Acyclic Check).
-        /// Duy?t ng??c t? Parent lên trên, n?u g?p Child Handle thì là vòng l?p.
+        /// Rule 2: Chong vong lap (Acyclic Check).
+        /// Duyet nguoc tu Parent len tren, neu gap Child Handle thi la vong lap.
         /// </summary>
         public static bool DetectCycle(DBObject parentObj, string childHandle, Transaction tr)
         {
@@ -68,16 +73,16 @@ namespace DTS_Engine.Core.Utils
         }
 
         /// <summary>
-        /// Rule 3: Ki?m tra h?p l? cho Reference (Cha ph?)
-        /// S? d?ng handle string thay vì truy c?p tr?c ti?p property Handle trên ElementData.
+        /// Rule 3: Kiem tra hop le cho Reference (Cha phu).
+        /// Su dung handle string thay vi truy cap truc tiep property Handle tren ElementData.
         /// </summary>
         public static bool CanAddReference(ElementData host, string hostHandle, string targetHandle)
         {
             if (host == null) return false;
             if (string.IsNullOrEmpty(hostHandle) || string.IsNullOrEmpty(targetHandle)) return false;
-            if (hostHandle == targetHandle) return false; // Không t? tham chi?u
-            if (host.OriginHandle == targetHandle) return false; // Không trùng Cha chính
-            if (host.ChildHandles != null && host.ChildHandles.Contains(targetHandle)) return false; // Không tham chi?u con mình
+            if (hostHandle == targetHandle) return false; // Khong tu tham chieu
+            if (host.OriginHandle == targetHandle) return false; // Khong trung Cha chinh
+            if (host.ChildHandles != null && host.ChildHandles.Contains(targetHandle)) return false; // Khong tham chieu con minh
             return true;
         }
     }

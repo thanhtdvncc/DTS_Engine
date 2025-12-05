@@ -132,6 +132,7 @@
     <Compile Include="Core\Utils\LinkRules.cs" />
     <Compile Include="Core\Utils\SapUtils.cs" />
     <Compile Include="Core\Utils\UnitManager.cs" />
+    <Compile Include="Core\Utils\VisualUtils.cs" />
     <Compile Include="Core\Utils\XDataUtils.cs" />
     <Compile Include="DataStructures\SpatialHash.cs" />
     <Compile Include="Models\AxisLine.cs" />

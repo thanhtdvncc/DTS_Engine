@@ -10,22 +10,23 @@ using System.Linq;
 namespace DTS_Engine.Commands
 {
     /// <summary>
-    /// Quản lý liên kết (Link) với cơ chế Audit thông minh & An toàn (Safe Mode)
+    /// Quản lý liên kết phần tử (Smart Linking System).
+    /// Hỗ trợ liên kết Cha-Con và Reference (nhánh phụ).
+    /// Sử dụng VisualUtils để hiển thị tạm thời, không làm bẩn bản vẽ.
     /// </summary>
     public class LinkCommands : CommandBase
     {
         #region 1. DTS_LINK_ORIGIN (Gán phần tử vào Story/Trục)
 
         /// <summary>
-        /// Lệnh cũ DTS_LINK -> Đổi tên thành DTS_LINK_ORIGIN
-        /// Chuyên dùng để gán các phần tử vào Story Origin
+        /// Liên kết các phần tử với Story Origin.
+        /// Quét chọn vùng chứa Origin và các phần tử cần liên kết.
         /// </summary>
         [CommandMethod("DTS_LINK_ORIGIN")]
         public void DTS_LINK_ORIGIN()
         {
             WriteMessage("\n=== LIÊN KẾT VỚI ORIGIN (STORY) ===");
             
-            // 1. Quét chọn vùng
             WriteMessage("Quét chọn vùng chứa Origin và các phần tử...");
             var allIds = AcadUtils.SelectObjectsOnScreen("LINE,LWPOLYLINE,POLYLINE,CIRCLE");
             if (allIds.Count == 0) return;
@@ -39,11 +40,9 @@ namespace DTS_Engine.Commands
                 {
                     if (id.IsErased) continue;
                     
-                    // Kiểm tra an toàn
                     DBObject obj = SafeGetObject(tr, id, OpenMode.ForRead);
                     if (obj == null) continue;
 
-                    // Phân loại
                     if (XDataUtils.ReadStoryData(obj) != null)
                         originId = id;
                     else if (XDataUtils.ReadElementData(obj) != null)
@@ -53,7 +52,7 @@ namespace DTS_Engine.Commands
 
             if (originId == ObjectId.Null)
             {
-                WriteError("Không tìm thấy Origin nào trong vùng chọn!");
+                WriteError("Không tìm thấy Origin nào trong vùng chọn.");
                 return;
             }
 
@@ -63,8 +62,7 @@ namespace DTS_Engine.Commands
                 return;
             }
 
-            // Thực hiện Link
-            ExecuteLink(childIds, originId, isStoryOrigin: true);
+            ExecuteSmartLink(childIds, originId, isStoryOrigin: true);
         }
 
         #endregion
@@ -72,53 +70,60 @@ namespace DTS_Engine.Commands
         #region 2. DTS_LINK (Liên kết Cha - Con kết cấu)
 
         /// <summary>
-        /// Lệnh mới: Link Cha - Con theo cấu trúc cây (Dầm -> Cột, Sàn -> Dầm)
-        /// Quy trình: Chọn nhiều Con -> Chọn 1 Cha
+        /// Tạo liên kết Cha - Con.
+        /// Logic mới: Nếu đã có Cha chính, tự động thêm vào Reference (nhánh phụ).
         /// </summary>
         [CommandMethod("DTS_LINK")]
         public void DTS_LINK()
         {
-            // UI: professional wording required by product spec
-            WriteMessage("\n=== Tạo liên kết phần tử ===");
+            WriteMessage("\n=== THIẾT LẬP LIÊN KẾT PHẦN TỬ ===");
+
+            // Dọn dẹp visual cũ
+            VisualUtils.ClearAll();
 
             // Bước 1: Chọn Con
             WriteMessage("\n1. Chọn các phần tử CON cần liên kết:");
             var childIds = AcadUtils.SelectObjectsOnScreen("LINE,LWPOLYLINE,POLYLINE,CIRCLE");
             if (childIds.Count == 0) return;
 
+            WriteMessage($"   Đã chọn {childIds.Count} phần tử con.");
+
             // Bước 2: Chọn Cha
-            PromptEntityOptions peo = new PromptEntityOptions("\n2. Chọn 1 phần tử CHA:");
-            // Allow any object to be selected as parent (user requested this behavior)
+            PromptEntityOptions peo = new PromptEntityOptions("\n2. Chọn phần tử CHA (Origin, Dầm, Cột...):");
             var per = Ed.GetEntity(peo);
             if (per.Status != PromptStatus.OK) return;
 
             ObjectId parentId = per.ObjectId;
 
-            // Validate: Cha không nằm trong đám con
             if (childIds.Contains(parentId))
             {
                 childIds.Remove(parentId);
-                WriteMessage(" (Đã loại bỏ Cha khỏi danh sách Con)");
+                WriteMessage("   (Đã loại bỏ đối tượng Cha khỏi danh sách Con)");
             }
 
-            // Thực hiện Link
-            ExecuteLink(childIds, parentId, isStoryOrigin: false);
+            ExecuteSmartLink(childIds, parentId, isStoryOrigin: false);
         }
 
         #endregion
 
-        #region Core Linking Logic
+        #region Core Smart Linking Logic
 
-        private void ExecuteLink(List<ObjectId> childIds, ObjectId parentId, bool isStoryOrigin)
+        /// <summary>
+        /// Thực hiện liên kết thông minh.
+        /// Nếu phần tử đã có Cha chính và đang liên kết với Cha khác,
+        /// sẽ tự động thêm vào Reference (nhánh phụ) thay vì ghi đè.
+        /// </summary>
+        private void ExecuteSmartLink(List<ObjectId> childIds, ObjectId parentId, bool isStoryOrigin)
         {
-            int success = 0, failed = 0, loops = 0;
-            // Keep lists for visualization and reporting
+            int primaryCount = 0, refCount = 0, errorCount = 0, cycleCount = 0;
             var newlyLinked = new List<ObjectId>();
-            // reason -> detail -> list of ids
-            var skippedByReason = new Dictionary<string, Dictionary<string, List<ObjectId>>>();
-            // Protect UI wording: do not change messages below without review
-            // UI_PROTECTION_START
+            var skippedByReason = new Dictionary<string, List<ObjectId>>();
             string parentInfo = parentId.Handle.ToString();
+            string parentHandle = parentId.Handle.ToString();
+
+            // Highlight Cha để user dễ nhìn
+            VisualUtils.ClearAll();
+            VisualUtils.HighlightObject(parentId, 4); // Cyan
 
             UsingTransaction(tr =>
             {
@@ -126,18 +131,28 @@ namespace DTS_Engine.Commands
                 if (parentObj == null) return;
 
                 // Xác định Parent Type & Data
-                string parentHandle = parentObj.Handle.ToString();
                 ElementType parentType = ElementType.Unknown;
-                
                 var storyData = XDataUtils.ReadStoryData(parentObj);
                 var parentElemData = XDataUtils.ReadElementData(parentObj);
 
-                if (storyData != null) { parentType = ElementType.StoryOrigin; parentInfo = $"Origin {storyData.StoryName} {storyData.Elevation:0}mm"; }
-                else if (parentElemData != null) parentType = parentElemData.ElementType;
+                if (storyData != null)
+                {
+                    parentType = ElementType.StoryOrigin;
+                    parentInfo = $"Origin {storyData.StoryName} ({storyData.Elevation:0}mm)";
+                }
+                else if (parentElemData != null)
+                {
+                    parentType = parentElemData.ElementType;
+                    parentInfo = $"{parentElemData.ElementType} (handle {parentHandle})";
+                }
                 else
                 {
-                    WriteError("Đối tượng CHA chưa được gán Type (DTS Data).");
-                    return;
+                    // Tự động gán StoryData nếu chưa có dữ liệu DTS
+                    var autoOrigin = new StoryData { StoryName = "AutoOrigin", Elevation = 0 };
+                    XDataUtils.WriteStoryData(parentObj, autoOrigin, tr);
+                    storyData = autoOrigin;
+                    parentType = ElementType.StoryOrigin;
+                    parentInfo = "Origin AutoOrigin (0mm)";
                 }
 
                 foreach (ObjectId childId in childIds)
@@ -148,163 +163,170 @@ namespace DTS_Engine.Commands
                     var childData = XDataUtils.ReadElementData(childEnt);
                     if (childData == null)
                     {
-                        AddSkip("NoData", childId, "No DTS data");
-                        failed++; continue; // Hoặc tự động gán default? Tùy policy.
+                        AddToSkipList(skippedByReason, "NoData", childId);
+                        errorCount++;
+                        continue;
                     }
 
                     // Rule 1: Hierarchy Check
                     if (!LinkRules.CanBePrimaryParent(parentType, childData.ElementType))
                     {
-                        string detail = $"{childData.ElementType}->{parentType}";
-                        AddSkip("Hierarchy", childId, detail);
-                        WriteError($"Bỏ qua {childEnt.Handle}: Sai phân cấp ({childData.ElementType} -> {parentType})");
-                        failed++;
+                        AddToSkipList(skippedByReason, $"Hierarchy:{childData.ElementType}->{parentType}", childId);
+                        errorCount++;
                         continue;
                     }
 
                     // Rule 2: Acyclic Check (Chỉ áp dụng nếu cha không phải là Story)
-                    if (!isStoryOrigin)
+                    if (!isStoryOrigin && LinkRules.DetectCycle(parentObj, childEnt.Handle.ToString(), tr))
                     {
-                        if (LinkRules.DetectCycle(parentObj, childEnt.Handle.ToString(), tr))
-                        {
-                        AddSkip("Cycle", childId, "cycle detected");
-                        WriteError($"Bỏ qua {childEnt.Handle}: Tham chiếu vòng (child là ancestor của parent)");
-                        loops++;
+                        AddToSkipList(skippedByReason, "Cycle", childId);
+                        cycleCount++;
                         continue;
+                    }
+
+                    // Quyết định loại Link: Primary hoặc Reference
+                    bool isReference = false;
+
+                    if (!string.IsNullOrEmpty(childData.OriginHandle))
+                    {
+                        if (childData.OriginHandle != parentHandle)
+                        {
+                            // Đã có cha khác -> Thêm vào Reference (nhánh phụ)
+                            if (childData.ReferenceHandles == null)
+                                childData.ReferenceHandles = new List<string>();
+
+                            if (!childData.ReferenceHandles.Contains(parentHandle))
+                            {
+                                childData.ReferenceHandles.Add(parentHandle);
+                                isReference = true;
+                                refCount++;
+                            }
                         }
+                        // Nếu đã là cha hiện tại -> bỏ qua (không làm gì)
+                    }
+                    else
+                    {
+                        // Chưa có cha -> Gán làm cha chính
+                        childData.OriginHandle = parentHandle;
+
+                        // Kế thừa cao độ nếu cha là Story
+                        if (storyData != null)
+                        {
+                            childData.BaseZ = storyData.Elevation;
+                            childData.Height = storyData.StoryHeight;
+                        }
+
+                        primaryCount++;
                     }
 
-                    // Xử lý Link cũ (nếu có) -> Unlink sạch sẽ
-                    if (childData.IsLinked && childData.OriginHandle != parentHandle)
-                    {
-                        XDataUtils.RemoveLinkTwoWay(childEnt, tr);
-                        childData = XDataUtils.ReadElementData(childEnt); // Reload
-                    }
-
-                    // CẬP NHẬT CON
-                    childData.OriginHandle = parentHandle;
-                    // Kế thừa cao độ nếu cha là Story
-                    if (storyData != null)
-                    {
-                        childData.BaseZ = storyData.Elevation;
-                        childData.Height = storyData.StoryHeight;
-                    }
+                    // Cập nhật dữ liệu Con
                     XDataUtils.WriteElementData(childEnt, childData, tr);
 
-                    // CẬP NHẬT CHA (Thêm handle con vào danh sách)
-                    if (storyData != null)
-                    {
-                        if (!storyData.ChildHandles.Contains(childEnt.Handle.ToString()))
-                            storyData.ChildHandles.Add(childEnt.Handle.ToString());
-                    }
-                    else if (parentElemData != null)
-                    {
-                        if (!parentElemData.ChildHandles.Contains(childEnt.Handle.ToString()))
-                            parentElemData.ChildHandles.Add(childEnt.Handle.ToString());
-                    }
+                    // Cập nhật dữ liệu Cha (thêm handle con vào danh sách)
+                    UpdateParentChildList(parentObj, childEnt.Handle.ToString(), storyData, parentElemData, tr);
 
-                    success++;
                     newlyLinked.Add(childId);
                 }
 
-                // Lưu lại CHA
-                if (storyData != null) XDataUtils.WriteStoryData(parentObj, storyData, tr);
+                // Lưu lại Cha
+                if (storyData != null)
+                    XDataUtils.WriteStoryData(parentObj, storyData, tr);
                 else if (parentElemData != null)
-                {
                     XDataUtils.WriteElementData(parentObj, parentElemData, tr);
-                    // update parentInfo with type and handle
-                    parentInfo = $"{parentElemData.ElementType} (handle {parentObj.Handle})";
-                }
             });
 
-            // Draw highlights/visual links for newly linked and skipped items
+            // Hiển thị visual cho các phần tử đã link
             if (newlyLinked.Count > 0)
             {
-                // draw links for the group
-                DrawLinkLines(parentId, newlyLinked);
-                HighlightObjects(newlyLinked, 3); // highlight linked items (color index 3)
+                VisualUtils.DrawLinkLines(parentId, newlyLinked, 3); // Green
+                VisualUtils.HighlightObjects(newlyLinked, 3);
             }
 
-            // Skipped items visual: draw links in different colors per reason and highlight
-            foreach (var reasonKvp in skippedByReason)
+            // Hiển thị visual cho các phần tử bị bỏ qua
+            foreach (var kv in skippedByReason)
             {
-                string reason = reasonKvp.Key;
-                // choose colorIndex per reason
-                int colorIndexForReason = reason == "Hierarchy" ? 1 : (reason == "Cycle" ? 6 : 4);
-                // flatten lists
-                var flatList = new List<ObjectId>();
-                foreach (var det in reasonKvp.Value)
-                {
-                    flatList.AddRange(det.Value);
-                }
-                if (flatList.Count == 0) continue;
-                DrawLinkLines(parentId, flatList, colorIndexForReason);
-                HighlightObjects(flatList, colorIndexForReason);
+                int colorIndex = kv.Key.StartsWith("Hierarchy") ? 1 : (kv.Key == "Cycle" ? 6 : 4);
+                VisualUtils.HighlightObjects(kv.Value, colorIndex);
             }
 
-            // Reporting summary (professional wording)
-            if (success > 0) WriteSuccess($"Đã link {success} phần tử vào {parentInfo}.");
+            // Báo cáo kết quả
+            WriteSuccess($"Kết quả liên kết với [{parentInfo}]:");
+            if (primaryCount > 0) WriteMessage($"  - Liên kết chính (Primary): {primaryCount} phần tử");
+            if (refCount > 0) WriteMessage($"  - Liên kết nhánh (Reference): {refCount} phần tử");
 
-            // Aggregate skipped messages by reason
+            // Báo cáo lỗi
             if (skippedByReason.Count > 0)
             {
                 foreach (var kv in skippedByReason)
                 {
-                    string reasonKey = kv.Key;
-                    int total = kv.Value.Values.Sum(l => l.Count);
-                    if (reasonKey == "Hierarchy")
+                    string reason = kv.Key;
+                    int count = kv.Value.Count;
+
+                    if (reason.StartsWith("Hierarchy:"))
                     {
-                        // group by detail for hierarchy
-                        foreach (var det in kv.Value)
-                        {
-                            WriteMessage($"Bỏ qua {det.Value.Count} phần tử do phân cấp: {det.Key}.");
-                        }
+                        string detail = reason.Replace("Hierarchy:", "");
+                        WriteMessage($"  - Bỏ qua {count} phần tử (phân cấp không hợp lệ: {detail})");
                     }
-                    else if (reasonKey == "Cycle")
+                    else if (reason == "Cycle")
                     {
-                        WriteMessage($"Bỏ qua {total} phần tử do tham chiếu vòng (mô tả: child là ancestor của parent).");
+                        WriteMessage($"  - Bỏ qua {count} phần tử (tham chiếu vòng)");
                     }
-                    else if (reasonKey == "NoData")
+                    else if (reason == "NoData")
                     {
-                        WriteMessage($"Bỏ qua {total} phần tử do không có dữ liệu DTS (chưa gán type).");
-                    }
-                    else
-                    {
-                        WriteMessage($"Bỏ qua {total} phần tử ({reasonKey}).");
+                        WriteMessage($"  - Bỏ qua {count} phần tử (chưa có dữ liệu DTS)");
                     }
                 }
             }
 
-            if (loops > 0) WriteError($"Phát hiện {loops} trường hợp vòng lặp.");
+            if (cycleCount > 0)
+                WriteWarning($"Phát hiện {cycleCount} trường hợp tham chiếu vòng.");
 
-            // UI_PROTECTION_END
+            WriteMessage("\n(Sử dụng DTS_CLEAR_VISUAL để xóa hiển thị tạm thời)");
+        }
 
-            // Local helper to record skips
-            void AddSkip(string reason, ObjectId id, string detail)
+        private void UpdateParentChildList(DBObject parentObj, string childHandle, StoryData storyData, ElementData parentElemData, Transaction tr)
+        {
+            if (storyData != null)
             {
-                if (!skippedByReason.ContainsKey(reason)) skippedByReason[reason] = new Dictionary<string, List<ObjectId>>();
-                var dict = skippedByReason[reason];
-                if (string.IsNullOrEmpty(detail)) detail = "";
-                if (!dict.ContainsKey(detail)) dict[detail] = new List<ObjectId>();
-                dict[detail].Add(id);
+                if (!storyData.ChildHandles.Contains(childHandle))
+                    storyData.ChildHandles.Add(childHandle);
             }
+            else if (parentElemData != null)
+            {
+                if (!parentElemData.ChildHandles.Contains(childHandle))
+                    parentElemData.ChildHandles.Add(childHandle);
+            }
+        }
+
+        private void AddToSkipList(Dictionary<string, List<ObjectId>> dict, string reason, ObjectId id)
+        {
+            if (!dict.ContainsKey(reason))
+                dict[reason] = new List<ObjectId>();
+            dict[reason].Add(id);
         }
 
         #endregion
 
-        #region 3. SHOW LINK & SMART AUDIT (Xử lý xóa/lỗi)
+        #region 3. DTS_SHOW_LINK (Hiển thị liên kết & Audit)
 
+        /// <summary>
+        /// Hiển thị các liên kết và kiểm tra tính toàn vẹn.
+        /// Tự động phát hiện và xử lý: Con mất cha (Orphan), Cha chứa con đã xóa (Ghost).
+        /// </summary>
         [CommandMethod("DTS_SHOW_LINK")]
         public void DTS_SHOW_LINK()
         {
             WriteMessage("\n=== HIỂN THỊ LIÊN KẾT & KIỂM TRA ===");
+
             var ids = AcadUtils.SelectObjectsOnScreen("LINE,LWPOLYLINE,POLYLINE,CIRCLE");
             if (ids.Count == 0) return;
 
-            // Danh sách cần xử lý
-            var orphans = new List<ObjectId>(); // Con mất cha
-            var ghostRefs = new Dictionary<ObjectId, int>(); // Cha chứa con ma
-            var validLinks = new Dictionary<ObjectId, List<ObjectId>>(); // Map Cha -> List<Con> để vẽ
+            // Dọn dẹp visual cũ
+            VisualUtils.ClearAll();
+
+            var orphans = new List<ObjectId>();
+            var ghostRefs = new Dictionary<ObjectId, int>();
+            var validLinks = new Dictionary<ObjectId, List<ObjectId>>();
 
             UsingTransaction(tr =>
             {
@@ -314,30 +336,31 @@ namespace DTS_Engine.Commands
                     DBObject obj = SafeGetObject(tr, id, OpenMode.ForRead);
                     if (obj == null) continue;
 
-                    // 1. KIỂM TRA VAI TRÒ LÀ CON (Check chiều Con -> Cha)
+                    // Kiểm tra vai trò là Con
                     var elemData = XDataUtils.ReadElementData(obj);
                     if (elemData != null && elemData.IsLinked)
                     {
                         ObjectId parentId = AcadUtils.GetObjectIdFromHandle(elemData.OriginHandle);
-                        
-                        // Kiểm tra cha tồn tại không?
+
                         if (IsValidObject(tr, parentId))
                         {
-                            if (!validLinks.ContainsKey(parentId)) validLinks[parentId] = new List<ObjectId>();
+                            if (!validLinks.ContainsKey(parentId))
+                                validLinks[parentId] = new List<ObjectId>();
                             validLinks[parentId].Add(id);
                         }
                         else
                         {
-                            // CHA ĐÃ BỊ XÓA -> ĐÂY LÀ TRẺ MỒ CÔI (ORPHAN)
                             orphans.Add(id);
                         }
                     }
 
-                    // 2. KIỂM TRA VAI TRÒ LÀ CHA (Check chiều Cha -> Con)
+                    // Kiểm tra vai trò là Cha
                     List<string> childHandles = null;
                     var storyData = XDataUtils.ReadStoryData(obj);
-                    if (storyData != null) childHandles = storyData.ChildHandles;
-                    else if (elemData != null) childHandles = elemData.ChildHandles;
+                    if (storyData != null)
+                        childHandles = storyData.ChildHandles;
+                    else if (elemData != null)
+                        childHandles = elemData.ChildHandles;
 
                     if (childHandles != null && childHandles.Count > 0)
                     {
@@ -347,13 +370,14 @@ namespace DTS_Engine.Commands
                             ObjectId cId = AcadUtils.GetObjectIdFromHandle(h);
                             if (!IsValidObject(tr, cId))
                             {
-                                ghosts++; // Con đã bị xóa (Ghost Child)
+                                ghosts++;
                             }
                             else
                             {
-                                // Nếu con còn sống, thêm vào map để vẽ (nếu chưa có)
-                                if (!validLinks.ContainsKey(id)) validLinks[id] = new List<ObjectId>();
-                                if (!validLinks[id].Contains(cId)) validLinks[id].Add(cId);
+                                if (!validLinks.ContainsKey(id))
+                                    validLinks[id] = new List<ObjectId>();
+                                if (!validLinks[id].Contains(cId))
+                                    validLinks[id].Add(cId);
                             }
                         }
                         if (ghosts > 0) ghostRefs[id] = ghosts;
@@ -361,56 +385,24 @@ namespace DTS_Engine.Commands
                 }
             });
 
-            // --- XỬ LÝ 1: VẼ LINK HỢP LỆ ---
+            // Vẽ link hợp lệ
             if (validLinks.Count > 0)
             {
-                int drawn = 0;
-                // UI protection: maintain concise professional messages and avoid per-element lists
-                // UI_PROTECTION_START
-                // Aggregate by parent type/name (e.g., 'Tường -> Origin 1 500mm')
-                var summary = new Dictionary<string, int>();
-
+                int totalLinks = 0;
                 foreach (var kv in validLinks)
                 {
-                    var pId = kv.Key;
-                    string pInfo = pId.Handle.ToString();
-                    UsingTransaction(tr =>
-                    {
-                        var pObj = SafeGetObject(tr, pId, OpenMode.ForRead);
-                        if (pObj != null)
-                        {
-                            var pStory = XDataUtils.ReadStoryData(pObj);
-                            var pElem = XDataUtils.ReadElementData(pObj);
-                            if (pStory != null) pInfo = $"Origin {pStory.StoryName} {pStory.Elevation:0}mm";
-                            else if (pElem != null) pInfo = $"{pElem.ElementType} -> (handle {pObj.Handle})";
-                        }
-                    });
-
-                    // Count types (use parent info as key)
-                    if (!summary.ContainsKey(pInfo)) summary[pInfo] = 0;
-                    summary[pInfo] += kv.Value.Count;
-
-                    DrawLinkLines(pId, kv.Value);
-                    drawn += kv.Value.Count;
+                    VisualUtils.DrawLinkLines(kv.Key, kv.Value, 3); // Green
+                    totalLinks += kv.Value.Count;
                 }
-
-                // Print concise summaries
-                foreach (var s in summary)
-                {
-                    // Example: "Đã vẽ 226 đường link từ Tường -> Origin 1 500mm"
-                    WriteSuccess($"Đã vẽ {s.Value} đường link từ {InferChildType(validLinks)} -> {s.Key}.");
-                }
-
-                // UI_PROTECTION_END
+                WriteSuccess($"Hiển thị {totalLinks} liên kết hợp lệ.");
             }
 
-            // --- XỬ LÝ 2: DỌN DẸP "CON MA" (GARBAGE COLLECTION) ---
-            // Đây là data rác (con đã bị xóa), nên dọn dẹp để nhẹ bản vẽ
+            // Dọn dẹp "con ma" (Ghost Children)
             if (ghostRefs.Count > 0)
             {
                 int totalGhosts = ghostRefs.Values.Sum();
-                WriteMessage($"\n[INFO] Đang dọn dẹp {totalGhosts} tham chiếu rác (con đã bị xóa)...");
-                
+                WriteMessage($"\nĐang dọn dẹp {totalGhosts} tham chiếu rác (con đã bị xóa)...");
+
                 UsingTransaction(tr =>
                 {
                     foreach (var kv in ghostRefs)
@@ -421,39 +413,34 @@ namespace DTS_Engine.Commands
                 WriteSuccess("Đã làm sạch dữ liệu Cha.");
             }
 
-            // --- XỬ LÝ 3: GIẢI QUYẾT "MỒ CÔI" (ORPHANS) - QUAN TRỌNG ---
+            // Xử lý "mồ côi" (Orphans)
             if (orphans.Count > 0)
             {
-                // Highlight các đối tượng mồ côi
-                HighlightObjects(orphans, 1); // Màu đỏ
-                WriteError($"\n[CẢNH BÁO] Phát hiện {orphans.Count} phần tử MẤT CHA (Cha đã bị xóa)!");
-                WriteMessage("Các phần tử này đang được tô đỏ.");
+                VisualUtils.HighlightObjects(orphans, 1); // Red
+                WriteWarning($"Phát hiện {orphans.Count} phần tử MẤT CHA (Cha đã bị xóa).");
 
-                // Hỏi người dùng cách xử lý
-                var pko = new PromptKeywordOptions("\nBạn muốn xử lý thế nào? [Unlink/ReLink/Ignore]: ");
-                pko.Keywords.Add("Unlink");   // Xóa link cũ
-                pko.Keywords.Add("ReLink");   // Chọn cha mới ngay
-                pko.Keywords.Add("Ignore");   // Để yên đó
+                var pko = new PromptKeywordOptions("\nChọn cách xử lý: [Unlink/ReLink/Ignore]: ");
+                pko.Keywords.Add("Unlink");
+                pko.Keywords.Add("ReLink");
+                pko.Keywords.Add("Ignore");
                 pko.Keywords.Default = "Ignore";
 
                 var res = Ed.GetKeywords(pko);
 
                 if (res.Status == PromptStatus.OK)
                 {
-                if (res.StringResult == "Unlink")
+                    if (res.StringResult == "Unlink")
                     {
-                        BreakLinks(orphans);
+                        BreakOrphanLinks(orphans);
                     }
                     else if (res.StringResult == "ReLink")
                     {
-                        WriteMessage("\nChọn Cha mới cho các phần tử mồ côi này:");
-                        // Allow picking any object, but validate it's a DTS element (has DTS data)
+                        WriteMessage("\nChọn Cha mới cho các phần tử mồ côi:");
                         PromptEntityOptions peo = new PromptEntityOptions("\nChọn Cha mới: ");
                         var per = Ed.GetEntity(peo);
 
                         if (per.Status == PromptStatus.OK)
                         {
-                            // Validate selected parent has DTS data (StoryData or ElementData)
                             bool validParent = false;
                             UsingTransaction(tr =>
                             {
@@ -464,46 +451,195 @@ namespace DTS_Engine.Commands
 
                             if (!validParent)
                             {
-                                WriteError("Chọn sai loại đối tượng. Vui lòng chọn một phần tử có dữ liệu DTS (Origin hoặc Element).");
+                                WriteError("Đối tượng được chọn không có dữ liệu DTS.");
                             }
                             else
                             {
-                                ExecuteLink(orphans, per.ObjectId, false);
+                                ExecuteSmartLink(orphans, per.ObjectId, false);
                             }
                         }
                     }
                     else
                     {
-                        WriteMessage("Đã bỏ qua. Link lỗi vẫn tồn tại.");
+                        WriteMessage("Đã bỏ qua. Liên kết lỗi vẫn tồn tại.");
                     }
                 }
             }
             else if (validLinks.Count == 0)
             {
-                WriteMessage("\nKhông tìm thấy liên kết nào trong các đối tượng đã chọn.");
+                WriteMessage("Không tìm thấy liên kết nào trong các đối tượng đã chọn.");
             }
+
+            WriteMessage("\n(Sử dụng DTS_CLEAR_VISUAL để xóa hiển thị tạm thời)");
         }
 
         #endregion
 
-        #region 4. UNLINK (Cập nhật báo cáo rõ ràng)
+        #region 4. DTS_UNLINK (Gỡ liên kết cụ thể)
 
+        /// <summary>
+        /// Gỡ liên kết cụ thể giữa Con và Cha.
+        /// Nếu gỡ Cha chính, sẽ tự động đôn Reference đầu tiên lên làm Cha chính.
+        /// </summary>
         [CommandMethod("DTS_UNLINK")]
         public void DTS_UNLINK()
         {
-            WriteMessage("\n=== HỦY LIÊN KẾT ===");
-            var ids = AcadUtils.SelectObjectsOnScreen("LINE,LWPOLYLINE,POLYLINE,CIRCLE");
-            if (ids.Count == 0) return;
+            WriteMessage("\n=== GỠ LIÊN KẾT CỤ THỂ ===");
 
-            int success = 0, ignored = 0, protectedOrigins = 0;
-            List<ObjectId> toRemoveVisuals = new List<ObjectId>();
+            VisualUtils.ClearAll();
+
+            // Bước 1: Chọn Con
+            PromptEntityOptions peoChild = new PromptEntityOptions("\n1. Chọn phần tử CON cần gỡ liên kết:");
+            var resChild = Ed.GetEntity(peoChild);
+            if (resChild.Status != PromptStatus.OK) return;
+
+            VisualUtils.HighlightObject(resChild.ObjectId, 6); // Magenta
+
+            // Bước 2: Xác định các cha hiện tại
+            var parents = new List<ObjectId>();
+            UsingTransaction(tr =>
+            {
+                var childData = XDataUtils.ReadElementData(tr.GetObject(resChild.ObjectId, OpenMode.ForRead));
+                if (childData != null)
+                {
+                    if (!string.IsNullOrEmpty(childData.OriginHandle))
+                    {
+                        var pid = AcadUtils.GetObjectIdFromHandle(childData.OriginHandle);
+                        if (pid != ObjectId.Null) parents.Add(pid);
+                    }
+
+                    if (childData.ReferenceHandles != null)
+                    {
+                        foreach (var refH in childData.ReferenceHandles)
+                        {
+                            var rid = AcadUtils.GetObjectIdFromHandle(refH);
+                            if (rid != ObjectId.Null) parents.Add(rid);
+                        }
+                    }
+                }
+            });
+
+            if (parents.Count == 0)
+            {
+                WriteMessage("Phần tử này chưa có liên kết nào.");
+                VisualUtils.ClearAll();
+                return;
+            }
+
+            // Highlight các cha
+            VisualUtils.HighlightObjects(parents, 2); // Yellow
+            WriteMessage($"Phần tử đang liên kết với {parents.Count} đối tượng (đang tô vàng).");
+
+            // Bước 3: Chọn Cha cần gỡ
+            PromptEntityOptions peoParent = new PromptEntityOptions("\n2. Chọn đối tượng CHA muốn gỡ bỏ:");
+            var resParent = Ed.GetEntity(peoParent);
+
+            if (resParent.Status == PromptStatus.OK)
+            {
+                if (ExecuteUnlinkSpecific(resChild.ObjectId, resParent.ObjectId))
+                {
+                    WriteSuccess("Đã gỡ liên kết thành công.");
+                }
+                else
+                {
+                    WriteError("Không tìm thấy liên kết giữa 2 đối tượng này.");
+                }
+            }
+
+            VisualUtils.ClearAll();
+        }
+
+        private bool ExecuteUnlinkSpecific(ObjectId childId, ObjectId parentId)
+        {
+            bool result = false;
 
             UsingTransaction(tr =>
             {
-                foreach (ObjectId id in ids)
+                var childObj = tr.GetObject(childId, OpenMode.ForWrite);
+                var childData = XDataUtils.ReadElementData(childObj);
+                string parentHandle = parentId.Handle.ToString();
+
+                if (childData != null)
                 {
-                    if (id.IsErased) continue;
-                    DBObject obj = SafeGetObject(tr, id, OpenMode.ForWrite);
+                    // Case A: Gỡ Cha chính
+                    if (childData.OriginHandle == parentHandle)
+                    {
+                        childData.OriginHandle = null;
+
+                        // Đôn Reference đầu tiên lên làm Cha chính (nếu có)
+                        if (childData.ReferenceHandles != null && childData.ReferenceHandles.Count > 0)
+                        {
+                            childData.OriginHandle = childData.ReferenceHandles[0];
+                            childData.ReferenceHandles.RemoveAt(0);
+                            WriteMessage($"Đã chuyển {childData.OriginHandle} thành Cha chính.");
+                        }
+                        result = true;
+                    }
+                    // Case B: Gỡ Reference
+                    else if (childData.ReferenceHandles != null && childData.ReferenceHandles.Contains(parentHandle))
+                    {
+                        childData.ReferenceHandles.Remove(parentHandle);
+                        result = true;
+                    }
+
+                    if (result)
+                    {
+                        XDataUtils.WriteElementData(childObj, childData, tr);
+
+                        // Xóa reference ngược từ Cha -> Con
+                        RemoveChildFromParent(tr, parentId, childId.Handle.ToString());
+                    }
+                }
+            });
+
+            return result;
+        }
+
+        private void RemoveChildFromParent(Transaction tr, ObjectId parentId, string childHandle)
+        {
+            try
+            {
+                var parentObj = tr.GetObject(parentId, OpenMode.ForWrite);
+                var storyData = XDataUtils.ReadStoryData(parentObj);
+                var elemData = XDataUtils.ReadElementData(parentObj);
+
+                if (storyData != null && storyData.ChildHandles.Contains(childHandle))
+                {
+                    storyData.ChildHandles.Remove(childHandle);
+                    XDataUtils.WriteStoryData(parentObj, storyData, tr);
+                }
+                else if (elemData != null && elemData.ChildHandles.Contains(childHandle))
+                {
+                    elemData.ChildHandles.Remove(childHandle);
+                    XDataUtils.WriteElementData(parentObj, elemData, tr);
+                }
+            }
+            catch { }
+        }
+
+        #endregion
+
+        #region 5. DTS_CLEAR_LINK (Xóa toàn bộ liên kết)
+
+        /// <summary>
+        /// Xóa sạch mọi liên kết của đối tượng (Reset về trạng thái tự do).
+        /// </summary>
+        [CommandMethod("DTS_CLEAR_LINK")]
+        public void DTS_CLEAR_LINK()
+        {
+            WriteMessage("\n=== XÓA TOÀN BỘ LIÊN KẾT ===");
+
+            var ids = AcadUtils.SelectObjectsOnScreen("LINE,LWPOLYLINE,POLYLINE,CIRCLE");
+            if (ids.Count == 0) return;
+
+            int count = 0;
+            int protectedOrigins = 0;
+
+            UsingTransaction(tr =>
+            {
+                foreach (var id in ids)
+                {
+                    var obj = SafeGetObject(tr, id, OpenMode.ForWrite);
                     if (obj == null) continue;
 
                     // Bảo vệ Origin
@@ -513,35 +649,48 @@ namespace DTS_Engine.Commands
                         continue;
                     }
 
-                    var elemData = XDataUtils.ReadElementData(obj);
-                    if (elemData != null && elemData.IsLinked)
+                    var data = XDataUtils.ReadElementData(obj);
+                    if (data != null && (data.IsLinked || (data.ReferenceHandles != null && data.ReferenceHandles.Count > 0)))
                     {
+                        // Xóa 2 chiều
                         XDataUtils.RemoveLinkTwoWay(obj, tr);
-                        success++;
-                        toRemoveVisuals.Add(id);
-                    }
-                    else
-                    {
-                        ignored++;
+
+                        // Clear Reference
+                        data = XDataUtils.ReadElementData(obj); // Reload
+                        if (data != null && data.ReferenceHandles != null)
+                        {
+                            data.ReferenceHandles.Clear();
+                            XDataUtils.WriteElementData(obj, data, tr);
+                        }
+
+                        count++;
                     }
                 }
             });
 
-            // Xóa đường visual
-            if (toRemoveVisuals.Count > 0) RemoveVisualLines(toRemoveVisuals);
-
-            WriteSuccess($"Đã Unlink: {success} phần tử.");
-            if (ignored > 0) WriteMessage($"Bỏ qua: {ignored} phần tử (không có link).");
-            if (protectedOrigins > 0) WriteMessage($"Bảo vệ: {protectedOrigins} phần tử là Origin (không thể unlink chính nó).");
+            WriteSuccess($"Đã xóa liên kết của {count} phần tử.");
+            if (protectedOrigins > 0)
+                WriteMessage($"Bỏ qua {protectedOrigins} phần tử Origin (không thể xóa liên kết Origin).");
         }
 
         #endregion
 
-        #region Helpers An Toàn (Safety Helpers)
+        #region 6. DTS_CLEAR_VISUAL (Dọn dẹp hiển thị tạm)
 
         /// <summary>
-        /// Lấy đối tượng an toàn, trả về null nếu lỗi hoặc bị xóa
+        /// Xóa tất cả hiển thị tạm thời (Transient Graphics).
         /// </summary>
+        [CommandMethod("DTS_CLEAR_VISUAL")]
+        public void DTS_CLEAR_VISUAL()
+        {
+            VisualUtils.ClearAll();
+            WriteSuccess("Đã xóa hiển thị tạm thời.");
+        }
+
+        #endregion
+
+        #region Safety Helpers
+
         private DBObject SafeGetObject(Transaction tr, ObjectId id, OpenMode mode)
         {
             if (id == ObjectId.Null || id.IsErased) return null;
@@ -549,9 +698,6 @@ namespace DTS_Engine.Commands
             catch { return null; }
         }
 
-        /// <summary>
-        /// Kiểm tra ObjectId có trỏ đến đối tượng hợp lệ không
-        /// </summary>
         private bool IsValidObject(Transaction tr, ObjectId id)
         {
             return SafeGetObject(tr, id, OpenMode.ForRead) != null;
@@ -568,15 +714,14 @@ namespace DTS_Engine.Commands
                 List<string> handles = story != null ? story.ChildHandles : elem?.ChildHandles;
                 if (handles == null) return;
 
-                // Lọc giữ lại các handle tồn tại
                 var validHandles = new List<string>();
                 foreach (string h in handles)
                 {
                     ObjectId cid = AcadUtils.GetObjectIdFromHandle(h);
-                    if (IsValidObject(tr, cid)) validHandles.Add(h);
+                    if (IsValidObject(tr, cid))
+                        validHandles.Add(h);
                 }
 
-                // Ghi lại nếu có thay đổi
                 if (validHandles.Count != handles.Count)
                 {
                     if (story != null)
@@ -594,7 +739,7 @@ namespace DTS_Engine.Commands
             catch { }
         }
 
-        private void BreakLinks(List<ObjectId> orphans)
+        private void BreakOrphanLinks(List<ObjectId> orphans)
         {
             int count = 0;
             UsingTransaction(tr =>
@@ -603,100 +748,18 @@ namespace DTS_Engine.Commands
                 {
                     DBObject obj = SafeGetObject(tr, id, OpenMode.ForWrite);
                     if (obj == null) continue;
-                    
+
                     var data = XDataUtils.ReadElementData(obj);
                     if (data != null)
                     {
-                        data.OriginHandle = null; // Cắt link
+                        data.OriginHandle = null;
                         XDataUtils.WriteElementData(obj, data, tr);
                         count++;
                     }
                 }
             });
-            // Xóa highlight
-            HighlightObjects(orphans, 256); // ByLayer
-            WriteSuccess($"Đã cắt link (Unlink) cho {count} phần tử.");
-        }
 
-        private void HighlightObjects(List<ObjectId> ids, int colorIndex)
-        {
-            UsingTransaction(tr =>
-            {
-                foreach (var id in ids)
-                {
-                    Entity ent = SafeGetObject(tr, id, OpenMode.ForWrite) as Entity;
-                    if (ent != null) ent.ColorIndex = colorIndex;
-                }
-            });
-        }
-
-        // UI helper - infer a generic child type string for summary messages
-        // UI_PROTECTION_START
-        private string InferChildType(Dictionary<ObjectId, List<ObjectId>> validLinks)
-        {
-            // Try to find first child and read its ElementType to produce a friendly label.
-            try
-            {
-                foreach (var kv in validLinks)
-                {
-                    if (kv.Value != null && kv.Value.Count > 0)
-                    {
-                        using (var tr = AcadUtils.Db.TransactionManager.StartTransaction())
-                        {
-                            var firstChildObj = SafeGetObject(tr, kv.Value[0], OpenMode.ForRead);
-                            if (firstChildObj != null)
-                            {
-                                var childData = XDataUtils.ReadElementData(firstChildObj);
-                                if (childData != null)
-                                {
-                                    tr.Commit();
-                                    return childData.ElementType == ElementType.Unknown ? "Phần tử" : childData.ElementType.ToString();
-                                }
-                            }
-                            tr.Commit();
-                        }
-                    }
-                }
-            }
-            catch { }
-            return "Phần tử";
-        }
-        // UI_PROTECTION_END
-
-        // --- Visual Helpers ---
-        private void DrawLinkLines(ObjectId parentId, List<ObjectId> childIds, int colorIndex = 2)
-        {
-            AcadUtils.CreateLayer("dts_linkmap", 2);
-            UsingTransaction(tr =>
-            {
-                Entity pEnt = SafeGetObject(tr, parentId, OpenMode.ForRead) as Entity;
-                if (pEnt == null) return;
-                var pCen = AcadUtils.GetEntityCenter(pEnt);
-
-                var btr = (BlockTableRecord)tr.GetObject(pEnt.Database.CurrentSpaceId, OpenMode.ForWrite);
-
-                foreach (var cid in childIds)
-                {
-                    Entity cEnt = SafeGetObject(tr, cid, OpenMode.ForRead) as Entity;
-                    if (cEnt == null) continue;
-                    var cCen = AcadUtils.GetEntityCenter(cEnt);
-
-                    // Vẽ đường ảo
-                    Line linkLine = new Line(new Autodesk.AutoCAD.Geometry.Point3d(pCen.X, pCen.Y, 0),
-                                             new Autodesk.AutoCAD.Geometry.Point3d(cCen.X, cCen.Y, 0));
-                    linkLine.Layer = "dts_linkmap";
-                    linkLine.ColorIndex = colorIndex; // color per reason
-                    btr.AppendEntity(linkLine);
-                    tr.AddNewlyCreatedDBObject(linkLine, true);
-                }
-            });
-        }
-
-        private void RemoveVisualLines(List<ObjectId> relatedIds)
-        {
-            // Đơn giản hóa: Xóa toàn bộ layer dts_linkmap để vẽ lại sau (tránh phức tạp hình học)
-            // Hoặc có thể lọc kỹ hơn nếu cần. Ở đây ta chọn giải pháp Clean & Redraw.
-            AcadUtils.ClearLayer("dts_linkmap"); 
+            WriteSuccess($"Đã cắt liên kết cho {count} phần tử mồ côi.");
         }
 
         #endregion
