@@ -102,6 +102,7 @@
     <Compile Include="Core\Data\MappingRecord.cs" />
     <Compile Include="Core\Data\PileData.cs" />
     <Compile Include="Core\Data\RebarData.cs" />
+    <Compile Include="Core\Data\SapArea.cs" />
     <Compile Include="Core\Data\SapFrame.cs" />
     <Compile Include="Core\Data\ShearWallData.cs" />
     <Compile Include="Core\Data\SlabData.cs" />
@@ -116,6 +117,7 @@
     <Compile Include="Core\GeoAlgo.cs" />
     <Compile Include="Core\GlobalUsings.cs" />
     <Compile Include="Core\Interfaces\IActivatable.cs" />
+    <Compile Include="Core\Interfaces\IAreaGeometry.cs" />
     <Compile Include="Core\Interfaces\IIdentifiable.cs" />
     <Compile Include="Core\Interfaces\ILineGeometry.cs" />
     <Compile Include="Core\Interfaces\ILoadBearing.cs" />
