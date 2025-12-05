@@ -1,10 +1,10 @@
-﻿using DTS_Wall_Tool.Core.Interfaces;
-using DTS_Wall_Tool.Core.Utils;
+﻿using DTS_Engine.Core.Interfaces;
+using DTS_Engine.Core.Utils;
 using System;
 using System.Collections.Generic;
 using System.Linq;
 
-namespace DTS_Wall_Tool.Core.Data
+namespace DTS_Engine.Core.Data
 {
     /// <summary>
     /// ⚠️ LEGACY CLASSES - CHỈ ĐỂ ĐỌC DỮ LIỆU CŨ, KHÔNG SỬ DỤNG CHO CODE MỚI
@@ -269,34 +269,34 @@ namespace DTS_Wall_Tool.Core.Data
                         {
                             var load = new LoadDefinition();
 
-                            if (loadDict.TryGetValue("Pattern", out var p)) 
+                            if (loadDict.TryGetValue("Pattern", out var p))
                                 load.Pattern = p?.ToString() ?? "DL";
-                                            
-                            if (loadDict.TryGetValue("Value", out var v)) 
+
+                            if (loadDict.TryGetValue("Value", out var v))
                                 load.Value = Convert.ToDouble(v);
-                    
+
                             if (loadDict.TryGetValue("Type", out var t))
                             {
                                 if (Enum.TryParse<LoadType>(t.ToString(), out var lt))
                                     load.Type = lt;
                             }
-                    
-                            if (loadDict.TryGetValue("TargetElement", out var te)) 
+
+                            if (loadDict.TryGetValue("TargetElement", out var te))
                                 load.TargetElement = te?.ToString() ?? "Frame";
-                                
-                            if (loadDict.TryGetValue("Direction", out var d)) 
+
+                            if (loadDict.TryGetValue("Direction", out var d))
                                 load.Direction = d?.ToString() ?? "Gravity";
-                                
-                            if (loadDict.TryGetValue("DistI", out var di)) 
+
+                            if (loadDict.TryGetValue("DistI", out var di))
                                 load.DistI = Convert.ToDouble(di);
-                                
-                            if (loadDict.TryGetValue("DistJ", out var dj)) 
+
+                            if (loadDict.TryGetValue("DistJ", out var dj))
                                 load.DistJ = Convert.ToDouble(dj);
-                
-                            if (loadDict.TryGetValue("IsRelativeDistance", out var ir)) 
+
+                            if (loadDict.TryGetValue("IsRelativeDistance", out var ir))
                                 load.IsRelativeDistance = Convert.ToBoolean(ir);
-                            
-                            if (loadDict.TryGetValue("LoadFactor", out var lf)) 
+
+                            if (loadDict.TryGetValue("LoadFactor", out var lf))
                                 load.LoadFactor = Convert.ToDouble(lf);
 
                             Loads.Add(load);

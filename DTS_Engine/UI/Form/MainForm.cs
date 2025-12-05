@@ -2,7 +2,7 @@
 using System.Drawing;
 using System.Windows.Forms;
 
-namespace DTS_Wall_Tool.UI.Forms
+namespace DTS_Engine.UI.Forms
 {
     /// <summary>
     /// Form chính của ứng dụng DTS Wall Tool

@@ -1,8 +1,8 @@
-﻿using DTS_Wall_Tool.Core.Interfaces;
-using DTS_Wall_Tool.Core.Primitives;
+﻿using DTS_Engine.Core.Interfaces;
+using DTS_Engine.Core.Primitives;
 using System;
 
-namespace DTS_Wall_Tool.Models.Base
+namespace DTS_Engine.Models.Base
 {
     /// <summary>
     /// Base class cho các đối tượng có hình học đoạn thẳng. 

@@ -1,4 +1,4 @@
-﻿namespace DTS_Wall_Tool.Core.Interfaces
+﻿namespace DTS_Engine.Core.Interfaces
 {
     /// <summary>
     /// Interface cho các đối tượng có định danh

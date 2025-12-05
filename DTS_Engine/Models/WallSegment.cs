@@ -1,7 +1,7 @@
-﻿using DTS_Wall_Tool.Core.Primitives;
-using DTS_Wall_Tool.Models.Base;
+﻿using DTS_Engine.Core.Primitives;
+using DTS_Engine.Models.Base;
 
-namespace DTS_Wall_Tool.Models
+namespace DTS_Engine.Models
 {
     /// <summary>
     /// Đại diện cho một đoạn tường trong quá trình xử lý. 

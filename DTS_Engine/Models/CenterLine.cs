@@ -1,10 +1,10 @@
-﻿using DTS_Wall_Tool.Core.Algorithms;
-using DTS_Wall_Tool.Core.Primitives;
-using DTS_Wall_Tool.Models.Base;
+﻿using DTS_Engine.Core.Algorithms;
+using DTS_Engine.Core.Primitives;
+using DTS_Engine.Models.Base;
 using System;
 using System.Collections.Generic;
 
-namespace DTS_Wall_Tool.Models
+namespace DTS_Engine.Models
 {
     /// <summary>
     /// Đại diện cho đường tim tường đã xử lý. 

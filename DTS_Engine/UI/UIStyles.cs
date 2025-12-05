@@ -1,7 +1,7 @@
 ﻿using System.Drawing;
 using System.Windows.Forms;
 
-namespace DTS_Wall_Tool.UI
+namespace DTS_Engine.UI
 {
     /// <summary>
     /// Định nghĩa styles chung cho UI

@@ -1,4 +1,4 @@
-﻿namespace DTS_Wall_Tool.Core.Data
+﻿namespace DTS_Engine.Core.Data
 {
     /// <summary>
     /// Định danh loại phần tử xây dựng. 

@@ -1,9 +1,9 @@
 ﻿using Autodesk.AutoCAD.DatabaseServices;
 using Autodesk.AutoCAD.Geometry;
-using DTS_Wall_Tool.Core.Primitives;
+using DTS_Engine.Core.Primitives;
 using System;
 
-namespace DTS_Wall_Tool.Core.Utils
+namespace DTS_Engine.Core.Utils
 {
     /// <summary>
     /// Vị trí chèn Label trên Frame

@@ -1,7 +1,7 @@
-﻿using DTS_Wall_Tool.Core.Primitives;
+﻿using DTS_Engine.Core.Primitives;
 using System;
 
-namespace DTS_Wall_Tool.Core.Algorithms
+namespace DTS_Engine.Core.Algorithms
 {
     /// <summary>
     /// Các thuật toán tính chồng lấn và đồng tuyến

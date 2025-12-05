@@ -1,7 +1,7 @@
 ﻿using System;
 using System.Collections.Generic;
 
-namespace DTS_Wall_Tool.Core.Data
+namespace DTS_Engine.Core.Data
 {
     /// <summary>
     /// Lớp cơ sở trừu tượng cho tất cả phần tử xây dựng trong hệ thống DTS. 

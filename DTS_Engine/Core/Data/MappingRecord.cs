@@ -1,4 +1,4 @@
-﻿namespace DTS_Wall_Tool.Core.Data
+﻿namespace DTS_Engine.Core.Data
 {
     /// <summary>
     /// Bản ghi mapping giữa phần tử CAD và đối tượng SAP2000 (Frame/Area)

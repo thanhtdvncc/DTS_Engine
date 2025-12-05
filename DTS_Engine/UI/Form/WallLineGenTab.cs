@@ -1,13 +1,13 @@
-﻿using DTS_Wall_Tool.Core.Engines;
-using DTS_Wall_Tool.Core.Primitives;
-using DTS_Wall_Tool.Core.Utils;
-using DTS_Wall_Tool.Models;
+﻿using DTS_Engine.Core.Engines;
+using DTS_Engine.Core.Primitives;
+using DTS_Engine.Core.Utils;
+using DTS_Engine.Models;
 using System;
 using System.Collections.Generic;
 using System.Drawing;
 using System.Windows.Forms;
 
-namespace DTS_Wall_Tool.UI.Forms
+namespace DTS_Engine.UI.Forms
 {
     /// <summary>
     /// Tab xử lý Wall Line Generation

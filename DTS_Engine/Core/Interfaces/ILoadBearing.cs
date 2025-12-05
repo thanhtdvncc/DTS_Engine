@@ -1,28 +1,28 @@
-using DTS_Wall_Tool.Core.Data;
+using DTS_Engine.Core.Data;
 using System.Collections.Generic;
 
-namespace DTS_Wall_Tool.Core.Interfaces
+namespace DTS_Engine.Core.Interfaces
 {
     /// <summary>
     /// ??nh ngh?a lo?i t?i tr?ng ?? Engine x? lý ?úng ph??ng th?c gán t?i
     /// </summary>
-public enum LoadType
+    public enum LoadType
     {
-/// <summary>
+        /// <summary>
         /// T?i phân b? lên thanh (kN/m) -> Gán cho Frame (D?m/C?t)
         /// </summary>
-      DistributedLine,
+        DistributedLine,
 
-     /// <summary>
+        /// <summary>
         /// T?i phân b? ??u lên di?n tích (kN/m²) -> Gán cho Area (Sàn/Vách)
         /// </summary>
-  UniformArea,
+        UniformArea,
 
- /// <summary>
+        /// <summary>
         /// T?i t?p trung (kN) -> Gán cho Point ho?c Frame
         /// </summary>
         Point
- }
+    }
 
     /// <summary>
     /// C?u trúc l?u tr? m?t m?c t?i tr?ng ??n l?.
@@ -30,7 +30,7 @@ public enum LoadType
     /// </summary>
     public class LoadDefinition
     {
-/// <summary>
+        /// <summary>
         /// Load Pattern trong SAP2000 (VD: "DL", "SDL", "WIND")
         /// </summary>
         public string Pattern { get; set; } = "DL";
@@ -38,15 +38,15 @@ public enum LoadType
         /// <summary>
         /// Giá tr? t?i tr?ng (??n v? tùy thu?c LoadType)
         /// - DistributedLine: kN/m
-  /// - UniformArea: kN/m²
+        /// - UniformArea: kN/m²
         /// - Point: kN
         /// </summary>
         public double Value { get; set; }
 
-    /// <summary>
+        /// <summary>
         /// Lo?i t?i tr?ng - quy?t ??nh ph??ng th?c gán t?i trong SAP
         /// </summary>
-  public LoadType Type { get; set; } = LoadType.DistributedLine;
+        public LoadType Type { get; set; } = LoadType.DistributedLine;
 
         /// <summary>
         /// Lo?i ??i t??ng ?ích trong SAP ("Frame" ho?c "Area")
@@ -54,54 +54,54 @@ public enum LoadType
         public string TargetElement { get; set; } = "Frame";
 
         /// <summary>
-    /// H??ng t?i (Gravity, X, Y, Z)
+        /// H??ng t?i (Gravity, X, Y, Z)
         /// </summary>
         public string Direction { get; set; } = "Gravity";
 
-      /// <summary>
+        /// <summary>
         /// V? trí b?t ??u t?i trên ph?n t? (mm ho?c t? l? 0-1)
         /// </summary>
         public double DistI { get; set; } = 0;
 
         /// <summary>
         /// V? trí k?t thúc t?i trên ph?n t? (mm ho?c t? l? 0-1)
-   /// </summary>
+        /// </summary>
         public double DistJ { get; set; } = 0;
 
- /// <summary>
+        /// <summary>
         /// S? d?ng kho?ng cách t??ng ??i (true) hay tuy?t ??i (false)
         /// </summary>
         public bool IsRelativeDistance { get; set; } = false;
 
         /// <summary>
-  /// H? s? t?i tr?ng (?? tính t?i thi?t k?)
+        /// H? s? t?i tr?ng (?? tính t?i thi?t k?)
         /// </summary>
         public double LoadFactor { get; set; } = 1.0;
 
-    /// <summary>
+        /// <summary>
         /// Clone ??i t??ng
         /// </summary>
-     public LoadDefinition Clone()
- {
+        public LoadDefinition Clone()
+        {
             return new LoadDefinition
             {
-Pattern = Pattern,
-       Value = Value,
-    Type = Type,
-     TargetElement = TargetElement,
-       Direction = Direction,
-     DistI = DistI,
-           DistJ = DistJ,
-   IsRelativeDistance = IsRelativeDistance,
-      LoadFactor = LoadFactor
-     };
-  }
+                Pattern = Pattern,
+                Value = Value,
+                Type = Type,
+                TargetElement = TargetElement,
+                Direction = Direction,
+                DistI = DistI,
+                DistJ = DistJ,
+                IsRelativeDistance = IsRelativeDistance,
+                LoadFactor = LoadFactor
+            };
+        }
 
-     public override string ToString()
-   {
+        public override string ToString()
+        {
             string unit = Type == LoadType.DistributedLine ? "kN/m" :
              Type == LoadType.UniformArea ? "kN/m²" : "kN";
-return $"{Pattern}: {Value:0.00} {unit} ({Type}) -> {TargetElement}";
+            return $"{Pattern}: {Value:0.00} {unit} ({Type}) -> {TargetElement}";
         }
     }
 
@@ -109,24 +109,24 @@ return $"{Pattern}: {Value:0.00} {unit} ({Type}) -> {TargetElement}";
     /// Interface chung cho m?i ph?n t? có kh? n?ng truy?n t?i tr?ng sang SAP2000.
     /// Các l?p implement: WallData, BeamData, SlabData, ColumnData...
     /// 
-  /// Workflow:
+    /// Workflow:
     /// 1. Ph?n t? tính toán t?i tr?ng -> thêm vào Loads
     /// 2. SyncEngine ??c Loads và Mappings
-/// 3. SyncEngine phân lu?ng x? lý theo LoadType
+    /// 3. SyncEngine phân lu?ng x? lý theo LoadType
     /// </summary>
     public interface ILoadBearing
     {
-     /// <summary>
+        /// <summary>
         /// Danh sách các t?i tr?ng ?ã tính toán s?n sàng gán vào SAP
         /// </summary>
         List<LoadDefinition> Loads { get; set; }
 
         /// <summary>
         /// Danh sách mapping sang ??i t??ng SAP2000 (Frame/Area)
-     /// </summary>
+        /// </summary>
         List<MappingRecord> Mappings { get; set; }
 
-      /// <summary>
+        /// <summary>
         /// Tính toán và ?i?n t?i tr?ng vào danh sách Loads.
         /// M?i l?p s? implement logic tính toán riêng.
         /// </summary>
@@ -138,8 +138,8 @@ return $"{Pattern}: {Value:0.00} {unit} ({Type}) -> {TargetElement}";
         void ClearLoads();
 
         /// <summary>
-    /// Ki?m tra có t?i tr?ng ?? gán không
- /// </summary>
+        /// Ki?m tra có t?i tr?ng ?? gán không
+        /// </summary>
         bool HasLoads { get; }
     }
 }

@@ -1,11 +1,11 @@
 ﻿using Autodesk.AutoCAD.DatabaseServices;
-using DTS_Wall_Tool.Core.Data;
+using DTS_Engine.Core.Data;
 using System;
 using System.Collections.Generic;
 using System.Text;
 using System.Web.Script.Serialization;
 
-namespace DTS_Wall_Tool.Core.Utils
+namespace DTS_Engine.Core.Utils
 {
     /// <summary>
     /// Tiện ích đọc/ghi XData với Factory Pattern. 
@@ -91,34 +91,34 @@ namespace DTS_Wall_Tool.Core.Utils
         /// </summary>
         private static ElementData CreateElementByType(string xType)
         {
-          if (string.IsNullOrEmpty(xType)) return null;
+            if (string.IsNullOrEmpty(xType)) return null;
 
             switch (xType)
             {
-      case "WALL":
-  return new WallData();
-      case "COLUMN":
-  return new ColumnData();
-       case "BEAM":
-      return new BeamData();
-           case "SLAB":
-      return new SlabData();
+                case "WALL":
+                    return new WallData();
+                case "COLUMN":
+                    return new ColumnData();
+                case "BEAM":
+                    return new BeamData();
+                case "SLAB":
+                    return new SlabData();
                 case "FOUNDATION":
-             return new FoundationData();
-         case "SHEARWALL":
-   return new ShearWallData();
-            case "STAIR":
-       return new StairData();
-           case "PILE":
-         return new PileData();
+                    return new FoundationData();
+                case "SHEARWALL":
+                    return new ShearWallData();
+                case "STAIR":
+                    return new StairData();
+                case "PILE":
+                    return new PileData();
                 case "LINTEL":
-           return new LintelData();
-        case "REBAR":
-     return new RebarData();
-           // Thêm các loại mới ở đây...
-     default:
-     return null;
-       }
+                    return new LintelData();
+                case "REBAR":
+                    return new RebarData();
+                // Thêm các loại mới ở đây...
+                default:
+                    return null;
+            }
         }
 
         #endregion

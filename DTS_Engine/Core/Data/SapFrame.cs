@@ -1,6 +1,6 @@
-﻿using DTS_Wall_Tool.Core.Primitives;
+﻿using DTS_Engine.Core.Primitives;
 
-namespace DTS_Wall_Tool.Core.Data
+namespace DTS_Engine.Core.Data
 {
     /// <summary>
     /// Dữ liệu Frame (dầm/cột) từ SAP2000

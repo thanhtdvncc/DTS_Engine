@@ -1,13 +1,13 @@
 ﻿using Autodesk.AutoCAD.DatabaseServices;
 using Autodesk.AutoCAD.Runtime;
-using DTS_Wall_Tool.Core.Data;
-using DTS_Wall_Tool.Core.Utils;
-using DTS_Wall_Tool.Core.Primitives;
+using DTS_Engine.Core.Data;
+using DTS_Engine.Core.Primitives;
+using DTS_Engine.Core.Utils;
+using System;
 using System.Collections.Generic;
 using System.Linq;
-using System;
 
-namespace DTS_Wall_Tool.Commands
+namespace DTS_Engine.Commands
 {
     /// <summary>
     /// Các lệnh quản lý liên kết (Link) giữa phần tử và Origin
@@ -30,7 +30,7 @@ namespace DTS_Wall_Tool.Commands
 
             // Chọn toàn bộ vùng - tự động nhận diện Origin và các phần tử
             var allIds = AcadUtils.SelectObjectsOnScreen("LINE,LWPOLYLINE,POLYLINE,CIRCLE");
-            if (allIds.Count ==0)
+            if (allIds.Count == 0)
             {
                 WriteMessage("Không có đối tượng nào được chọn.");
                 return;
@@ -72,7 +72,7 @@ namespace DTS_Wall_Tool.Commands
                 return;
             }
 
-            if (elementIds.Count ==0)
+            if (elementIds.Count == 0)
             {
                 WriteMessage("Không có phần tử DTS_APP nào để liên kết.");
                 WriteMessage("Hướng dẫn: Chạy DTS_SET hoặc DTS_SCAN để đăng ký phần tử trước.");
@@ -80,8 +80,8 @@ namespace DTS_Wall_Tool.Commands
             }
 
             // Bước2: Thực hiện Link
-            int linkedCount =0;
-            int skippedCount =0;
+            int linkedCount = 0;
+            int skippedCount = 0;
 
             // Thống kê theo loại
             Dictionary<ElementType, int> typeStats = new Dictionary<ElementType, int>();
@@ -106,7 +106,7 @@ namespace DTS_Wall_Tool.Commands
                         skippedCount++;
                         // vẫn giữ link line ghi nhận sau
                         // thống kê loại nếu có
-                        if (!typeStats.ContainsKey(elemData.ElementType)) typeStats[elemData.ElementType] =0;
+                        if (!typeStats.ContainsKey(elemData.ElementType)) typeStats[elemData.ElementType] = 0;
                         typeStats[elemData.ElementType]++;
                         continue;
                     }
@@ -129,7 +129,7 @@ namespace DTS_Wall_Tool.Commands
 
                     // Thống kê theo loại
                     if (!typeStats.ContainsKey(elemData.ElementType))
-                        typeStats[elemData.ElementType] =0;
+                        typeStats[elemData.ElementType] = 0;
                     typeStats[elemData.ElementType]++;
                 }
 
@@ -140,7 +140,7 @@ namespace DTS_Wall_Tool.Commands
             DrawExistingLinksForElements(elementIds);
 
             // Báo cáo kết quả - tổng hợp ngắn gọn với tên loại
-            if (typeStats.Count >0)
+            if (typeStats.Count > 0)
             {
                 var parts = typeStats.OrderBy(x => x.Key)
                     .Select(kvp => $"{kvp.Value} {GetElementTypeDisplayName(kvp.Key)}")
@@ -160,10 +160,10 @@ namespace DTS_Wall_Tool.Commands
             }
             else
             {
-                WriteMessage($"Đã link: {linkedCount} phần tử{(skippedCount >0 ? $" (bỏ qua {skippedCount} đã link trước đó)" : "")} ");
+                WriteMessage($"Đã link: {linkedCount} phần tử{(skippedCount > 0 ? $" (bỏ qua {skippedCount} đã link trước đó)" : "")} ");
             }
 
-            if (skippedCount >0)
+            if (skippedCount > 0)
                 WriteMessage($"Bỏ qua: {skippedCount} phần tử (đã link trước đó)");
         }
 
@@ -173,7 +173,7 @@ namespace DTS_Wall_Tool.Commands
         private void DrawLinkLines(ObjectId originId, List<ObjectId> elementIds)
         {
             // Tạo layer nếu chưa có
-            AcadUtils.CreateLayer("dts_linkmap",2); // Màu vàng =2
+            AcadUtils.CreateLayer("dts_linkmap", 2); // Màu vàng =2
 
             UsingTransaction(tr =>
             {
@@ -188,7 +188,7 @@ namespace DTS_Wall_Tool.Commands
                     var elemCenter = AcadUtils.GetEntityCenter(elemEnt);
 
                     // Vẽ đường màu vàng
-                    AcadUtils.CreateLine(originCenter, elemCenter, "dts_linkmap",2, tr);
+                    AcadUtils.CreateLine(originCenter, elemCenter, "dts_linkmap", 2, tr);
                 }
             });
         }
@@ -229,14 +229,14 @@ namespace DTS_Wall_Tool.Commands
             WriteMessage("Chọn đối tượng để unlink...");
 
             var elementIds = AcadUtils.SelectObjectsOnScreen("LINE,LWPOLYLINE,POLYLINE,CIRCLE");
-            if (elementIds.Count ==0)
+            if (elementIds.Count == 0)
             {
                 WriteMessage("Không có phần tử nào được chọn.");
                 return;
             }
 
-            int unlinkedCount =0;
-            int skippedCount =0;
+            int unlinkedCount = 0;
+            int skippedCount = 0;
 
             // Group unlinked stats by origin -> type counts
             var originGroups = new Dictionary<ObjectId, Dictionary<ElementType, int>>();
@@ -256,7 +256,7 @@ namespace DTS_Wall_Tool.Commands
 
                         // Save type stats per origin
                         if (!originGroups.ContainsKey(originId)) originGroups[originId] = new Dictionary<ElementType, int>();
-                        if (!originGroups[originId].ContainsKey(elemData.ElementType)) originGroups[originId][elemData.ElementType] =0;
+                        if (!originGroups[originId].ContainsKey(elemData.ElementType)) originGroups[originId][elemData.ElementType] = 0;
                         originGroups[originId][elemData.ElementType]++;
 
                         // Remove link
@@ -272,7 +272,7 @@ namespace DTS_Wall_Tool.Commands
             });
 
             // After unlink, remove visual link lines associated with these elements
-            if (unlinkedElementsList.Count >0)
+            if (unlinkedElementsList.Count > 0)
             {
                 RemoveLinkLinesForElements(unlinkedElementsList);
             }
@@ -281,7 +281,7 @@ namespace DTS_Wall_Tool.Commands
             DrawExistingLinksForElements(elementIds);
 
             // Report results grouped by origin
-            if (originGroups.Count >0)
+            if (originGroups.Count > 0)
             {
                 foreach (var kv in originGroups)
                 {
@@ -325,7 +325,7 @@ namespace DTS_Wall_Tool.Commands
                 WriteMessage($"Đã Unlink: {unlinkedCount} phần tử");
             }
 
-            if (skippedCount >0)
+            if (skippedCount > 0)
                 WriteMessage($"Bỏ qua: {skippedCount} phần tử (không có link)");
         }
 
@@ -334,7 +334,7 @@ namespace DTS_Wall_Tool.Commands
         /// </summary>
         private void RemoveLinkLinesForElements(List<ObjectId> elementIds)
         {
-            const double TOL =0.001; // tolerance for point comparison
+            const double TOL = 0.001; // tolerance for point comparison
 
             // Build list of centers for elements
             var centers = new List<Point2dWrapper>();
@@ -424,14 +424,14 @@ namespace DTS_Wall_Tool.Commands
 
             // Chọn nhiều đối tượng
             var selectedIds = AcadUtils.SelectObjectsOnScreen("LINE,LWPOLYLINE,POLYLINE,CIRCLE");
-            if (selectedIds.Count ==0)
+            if (selectedIds.Count == 0)
             {
                 WriteMessage("Không có đối tượng nào được chọn.");
                 return;
             }
 
             // Vẽ link hiện có cho các phần tử đã chọn và đếm tổng số phần tử đã link
-            int linkedCount =0;
+            int linkedCount = 0;
 
             // Tạo nhóm origin->elements để vẽ (tránh vẽ trùng)
             var groups = new Dictionary<ObjectId, List<ObjectId>>();
@@ -450,7 +450,7 @@ namespace DTS_Wall_Tool.Commands
                     if (storyData != null)
                     {
                         // For origin entries, collect their child handles if exist
-                        if (storyData.ChildHandles.Count >0)
+                        if (storyData.ChildHandles.Count > 0)
                         {
                             var childIds = new List<ObjectId>();
                             foreach (var handle in storyData.ChildHandles)
@@ -462,7 +462,7 @@ namespace DTS_Wall_Tool.Commands
                                 }
                             }
 
-                            if (childIds.Count >0)
+                            if (childIds.Count > 0)
                             {
                                 // group by this origin
                                 if (!groups.ContainsKey(objId)) groups[objId] = new List<ObjectId>();
@@ -480,7 +480,7 @@ namespace DTS_Wall_Tool.Commands
                                     }
                                     else
                                     {
-                                        if (!typeStats.ContainsKey(childData.ElementType)) typeStats[childData.ElementType] =0;
+                                        if (!typeStats.ContainsKey(childData.ElementType)) typeStats[childData.ElementType] = 0;
                                         typeStats[childData.ElementType]++;
                                     }
                                     linkedCount++;
@@ -507,7 +507,7 @@ namespace DTS_Wall_Tool.Commands
                             }
                             else
                             {
-                                if (!typeStats.ContainsKey(elemData.ElementType)) typeStats[elemData.ElementType] =0;
+                                if (!typeStats.ContainsKey(elemData.ElementType)) typeStats[elemData.ElementType] = 0;
                                 typeStats[elemData.ElementType]++;
                             }
 
@@ -527,17 +527,17 @@ namespace DTS_Wall_Tool.Commands
             }
 
             // Nếu không có link
-            if (linkedCount ==0)
+            if (linkedCount == 0)
             {
                 WriteMessage("Không có link nào giữa các đối tượng đã chọn và bất kỳ Origin nào.");
                 return;
             }
 
             // Nếu có các phần tử không có thuộc tính -> highlight and ask
-            if (unknownLinkedIds.Count >0)
+            if (unknownLinkedIds.Count > 0)
             {
                 // Highlight them in red on a special layer
-                AcadUtils.CreateLayer("dts_highlight_no_type",1); // red
+                AcadUtils.CreateLayer("dts_highlight_no_type", 1); // red
                 UsingTransaction(tr =>
                 {
                     foreach (var id in unknownLinkedIds.Distinct())
@@ -546,7 +546,7 @@ namespace DTS_Wall_Tool.Commands
                         {
                             var ent = tr.GetObject(id, OpenMode.ForWrite) as Entity;
                             if (ent == null) continue;
-                            ent.ColorIndex =1; // red
+                            ent.ColorIndex = 1; // red
                             ent.Layer = "dts_highlight_no_type";
                         }
                         catch { }
@@ -561,7 +561,7 @@ namespace DTS_Wall_Tool.Commands
                 if (pres.Status == Autodesk.AutoCAD.EditorInput.PromptStatus.OK && pres.StringResult == "Yes")
                 {
                     // Break links: remove child handles from parents (StoryData or ElementData)
-                    int broken =0;
+                    int broken = 0;
 
                     UsingTransaction(tr =>
                     {
@@ -576,7 +576,7 @@ namespace DTS_Wall_Tool.Commands
 
                             // Only proceed if any of the unknown ids belong to this origin
                             var intersect = kv.Value.Intersect(unknownLinkedIds).ToList();
-                            if (intersect.Count ==0) continue;
+                            if (intersect.Count == 0) continue;
 
                             try
                             {
@@ -641,7 +641,7 @@ namespace DTS_Wall_Tool.Commands
                 }
             }
 
-            if (typeStats.Count >0)
+            if (typeStats.Count > 0)
             {
                 var parts = typeStats.OrderBy(x => x.Key)
                     .Select(kvp => $"{kvp.Value} phần tử {GetElementTypeDisplayName(kvp.Key)}")
@@ -649,7 +649,7 @@ namespace DTS_Wall_Tool.Commands
 
                 WriteMessage($"Đã tìm thấy {string.Join(", ", parts)} đang được link.");
             }
-            else if (unknownLinkedIds.Count >0)
+            else if (unknownLinkedIds.Count > 0)
             {
                 // already reported unknowns above
             }

@@ -1,7 +1,7 @@
-﻿using DTS_Wall_Tool.Core.Algorithms;
-using DTS_Wall_Tool.Core.Primitives;
+﻿using DTS_Engine.Core.Algorithms;
+using DTS_Engine.Core.Primitives;
 
-namespace DTS_Wall_Tool.Core
+namespace DTS_Engine.Core
 {
     /// <summary>
     /// Facade class giữ backward compatibility với code cũ. 

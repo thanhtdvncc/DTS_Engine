@@ -1,6 +1,6 @@
 ﻿using System;
 
-namespace DTS_Wall_Tool.Core.Primitives
+namespace DTS_Engine.Core.Primitives
 {
     /// <summary>
     /// Hộp bao chữ nhật song song với trục (AABB - Axis-Aligned Bounding Box). 

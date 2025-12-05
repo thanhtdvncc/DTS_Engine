@@ -4,11 +4,11 @@ using System.Runtime.InteropServices;
 // General Information about an assembly is controlled through the following
 // set of attributes. Change these attribute values to modify the information
 // associated with an assembly.
-[assembly: AssemblyTitle("DTS_Wall_Tool")]
+[assembly: AssemblyTitle("DTS_Engine")]
 [assembly: AssemblyDescription("")]
 [assembly: AssemblyConfiguration("")]
 [assembly: AssemblyCompany("")]
-[assembly: AssemblyProduct("DTS_Wall_Tool")]
+[assembly: AssemblyProduct("DTS_Engine")]
 [assembly: AssemblyCopyright("Copyright ©  2025 - DTS Engineer")]
 [assembly: AssemblyTrademark("")]
 [assembly: AssemblyCulture("")]

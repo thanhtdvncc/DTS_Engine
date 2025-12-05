@@ -1,10 +1,10 @@
-﻿using System;
+﻿using DTS_Engine.Core.Interfaces;
+using DTS_Engine.Core.Primitives;
+using System;
 using System.Collections.Generic;
 using System.Linq;
-using DTS_Wall_Tool.Core.Interfaces;
-using DTS_Wall_Tool.Core.Primitives;
 
-namespace DTS_Wall_Tool.Core.Data
+namespace DTS_Engine.Core.Data
 {
     /// <summary>
     /// Represents an area (polygon) imported from SAP2000 or used for mapping.

@@ -1,8 +1,7 @@
-﻿using System;
+﻿using DTS_Engine.Core.Primitives;
 using System.Collections.Generic;
-using DTS_Wall_Tool.Core.Primitives;
 
-namespace DTS_Wall_Tool.Core.Interfaces
+namespace DTS_Engine.Core.Interfaces
 {
     /// <summary>
     /// Represents a 2D area geometry (polygon) with additional metadata.

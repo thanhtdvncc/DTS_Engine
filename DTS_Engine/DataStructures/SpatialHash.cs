@@ -1,8 +1,8 @@
-﻿using DTS_Wall_Tool.Core.Primitives;
+﻿using DTS_Engine.Core.Primitives;
 using System;
 using System.Collections.Generic;
 
-namespace DTS_Wall_Tool.DataStructures
+namespace DTS_Engine.DataStructures
 {
     /// <summary>
     /// Spatial hash grid cho truy vấn không gian nhanh O(1)

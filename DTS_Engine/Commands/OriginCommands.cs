@@ -1,11 +1,11 @@
 ﻿using Autodesk.AutoCAD.DatabaseServices;
 using Autodesk.AutoCAD.EditorInput;
 using Autodesk.AutoCAD.Runtime;
-using DTS_Wall_Tool.Core.Data;
-using DTS_Wall_Tool.Core.Primitives;
-using DTS_Wall_Tool.Core.Utils;
+using DTS_Engine.Core.Data;
+using DTS_Engine.Core.Primitives;
+using DTS_Engine.Core.Utils;
 
-namespace DTS_Wall_Tool.Commands
+namespace DTS_Engine.Commands
 {
     public class OriginCommands : CommandBase
     {

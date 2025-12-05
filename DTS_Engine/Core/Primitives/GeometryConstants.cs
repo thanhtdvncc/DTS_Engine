@@ -1,6 +1,6 @@
 ﻿using System;
 
-namespace DTS_Wall_Tool.Core.Primitives
+namespace DTS_Engine.Core.Primitives
 {
     /// <summary>
     /// Các hằng số dùng trong tính toán hình học

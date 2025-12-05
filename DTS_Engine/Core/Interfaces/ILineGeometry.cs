@@ -1,6 +1,6 @@
-﻿using DTS_Wall_Tool.Core.Primitives;
+﻿using DTS_Engine.Core.Primitives;
 
-namespace DTS_Wall_Tool.Core.Interfaces
+namespace DTS_Engine.Core.Interfaces
 {
     /// <summary>
     /// Interface cho các đối tượng có hình học đoạn thẳng. 

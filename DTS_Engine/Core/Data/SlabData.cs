@@ -1,8 +1,8 @@
-﻿using DTS_Wall_Tool.Core.Interfaces;
+﻿using DTS_Engine.Core.Interfaces;
 using System.Collections.Generic;
 using System.Linq;
 
-namespace DTS_Wall_Tool.Core.Data
+namespace DTS_Engine.Core.Data
 {
     /// <summary>
     /// Dữ liệu Sàn - Kế thừa từ ElementData và implement ILoadBearing.

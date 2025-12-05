@@ -1,4 +1,4 @@
-﻿namespace DTS_Wall_Tool.Core.Primitives
+﻿namespace DTS_Engine.Core.Primitives
 {
     /// <summary>
     /// Kết quả chiếu đoạn thẳng lên trục tham chiếu

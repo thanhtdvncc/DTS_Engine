@@ -1,6 +1,6 @@
 ﻿using System;
 
-namespace DTS_Wall_Tool.Core.Primitives
+namespace DTS_Engine.Core.Primitives
 {
     /// <summary>
     /// Cấu trúc điểm 2D với các phép toán vector cơ bản. 

@@ -1,8 +1,8 @@
 ﻿using Autodesk.AutoCAD.Runtime;
-using DTS_Wall_Tool.UI.Forms;
+using DTS_Engine.UI.Forms;
 using System.Windows.Forms;
 
-namespace DTS_Wall_Tool.UI
+namespace DTS_Engine.UI
 {
     /// <summary>
     /// Lớp khởi chạy form từ AutoCAD command

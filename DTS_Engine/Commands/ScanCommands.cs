@@ -2,12 +2,11 @@
 using Autodesk.AutoCAD.EditorInput;
 using Autodesk.AutoCAD.Geometry;
 using Autodesk.AutoCAD.Runtime;
-using DTS_Wall_Tool.Core.Data;
-using DTS_Wall_Tool.Core.Utils;
+using DTS_Engine.Core.Data;
+using DTS_Engine.Core.Utils;
 using System.Collections.Generic;
-using System.Linq;
 
-namespace DTS_Wall_Tool.Commands
+namespace DTS_Engine.Commands
 {
     /// <summary>
     /// Các lệnh quét và báo cáo thông tin đối tượng

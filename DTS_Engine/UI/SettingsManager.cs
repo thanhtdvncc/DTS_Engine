@@ -3,7 +3,7 @@ using System.Collections.Generic;
 using System.IO;
 using System.Web.Script.Serialization;
 
-namespace DTS_Wall_Tool.UI
+namespace DTS_Engine.UI
 {
     /// <summary>
     /// Quản lý lưu/đọc cài đặt người dùng
@@ -13,7 +13,7 @@ namespace DTS_Wall_Tool.UI
     {
         private static readonly string SettingsFolder = Path.Combine(
             Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData),
-            "DTS_Wall_Tool");
+            "DTS_Engine");
 
         private static readonly string SettingsFile = Path.Combine(SettingsFolder, "settings.json");
 
