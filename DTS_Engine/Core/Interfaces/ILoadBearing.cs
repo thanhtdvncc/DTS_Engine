@@ -74,7 +74,7 @@ namespace DTS_Engine.Core.Interfaces
         public bool IsRelativeDistance { get; set; } = false;
 
         /// <summary>
-        /// H? s? t?i tr?ng (?? tính t?i thi?t k?)
+        /// H? s? t?i (ví d? ?? tính t? thi?t k?)
         /// </summary>
         public double LoadFactor { get; set; } = 1.0;
 
@@ -109,15 +109,15 @@ namespace DTS_Engine.Core.Interfaces
     /// Interface chung cho m?i ph?n t? có kh? n?ng truy?n t?i tr?ng sang SAP2000.
     /// Các l?p implement: WallData, BeamData, SlabData, ColumnData...
     /// 
-    /// Workflow:
-    /// 1. Ph?n t? tính toán t?i tr?ng -> thêm vào Loads
+    /// Quy trình s? d?ng:
+    /// 1. Ph?n t? tính toán t?i tr?ng -> thêm vào danh sách Loads
     /// 2. SyncEngine ??c Loads và Mappings
     /// 3. SyncEngine phân lu?ng x? lý theo LoadType
     /// </summary>
     public interface ILoadBearing
     {
         /// <summary>
-        /// Danh sách các t?i tr?ng ?ã tính toán s?n sàng gán vào SAP
+        /// Danh sách các t?i tr?ng ?ã tính toán và s?n sàng gán vào SAP
         /// </summary>
         List<LoadDefinition> Loads { get; set; }
 
@@ -127,7 +127,7 @@ namespace DTS_Engine.Core.Interfaces
         List<MappingRecord> Mappings { get; set; }
 
         /// <summary>
-        /// Tính toán và ?i?n t?i tr?ng vào danh sách Loads.
+        /// Tính toán và ??a t?i tr?ng vào danh sách Loads.
         /// M?i l?p s? implement logic tính toán riêng.
         /// </summary>
         void CalculateLoads();
@@ -138,7 +138,7 @@ namespace DTS_Engine.Core.Interfaces
         void ClearLoads();
 
         /// <summary>
-        /// Ki?m tra có t?i tr?ng ?? gán không
+        /// Ki?m tra có t?i tr?ng ?? gán hay không
         /// </summary>
         bool HasLoads { get; }
     }

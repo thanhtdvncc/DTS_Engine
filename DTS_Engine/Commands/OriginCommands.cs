@@ -12,7 +12,7 @@ namespace DTS_Engine.Commands
         private const string ORIGIN_LAYER = "dts_origin";
 
         /// <summary>
-        /// Tạo điểm gốc tầng mới (Pick điểm -> Vẽ)
+        /// Tạo điểm gốc tầng mới (chọn điểm -> vẽ)
         /// </summary>
         [CommandMethod("DTS_SET_ORIGIN")]
         public void DTS_SET_ORIGIN()
@@ -25,7 +25,7 @@ namespace DTS_Engine.Commands
             if (ptRes.Status != PromptStatus.OK) return;
 
             // 2. Nhập thông tin
-            PromptStringOptions nameOpt = new PromptStringOptions("\nNhập tên tầng (VD: Tang 1): ") { AllowSpaces = true };
+            PromptStringOptions nameOpt = new PromptStringOptions("\nNhập tên tầng (VD: Tầng 1): ") { AllowSpaces = true };
             PromptResult nameRes = Ed.GetString(nameOpt);
             if (nameRes.Status != PromptStatus.OK) return;
 

@@ -193,8 +193,8 @@ namespace DTS_Engine.Commands
         {
             string info = "";
 
-            // Common info
-            string linkInfo = data.IsLinked ? $"Linked:{data.OriginHandle}" : "Unlinked";
+            // Thông tin liên kết
+            string linkInfo = data.IsLinked ? $"Đã liên kết:{data.OriginHandle}" : "Chưa liên kết";
 
             if (data is WallData w)
             {

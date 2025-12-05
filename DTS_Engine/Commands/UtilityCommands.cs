@@ -111,7 +111,7 @@ namespace DTS_Engine.Commands
             if (ignoreCount > 0)
             {
                 WriteMessage($"Bỏ qua: {ignoreCount} phần tử (chưa có dữ liệu DTS)");
-                WriteMessage("Gợi ý: Dùng lệnh DTS_SET hoặc DTS_SCAN để gán dữ liệu trước.");
+                WriteMessage("Gợi ý: Dùng lệnh DTS_SET_TYPE hoặc DTS_SCAN để đăng ký phần tử trước.");
             }
         }
 
