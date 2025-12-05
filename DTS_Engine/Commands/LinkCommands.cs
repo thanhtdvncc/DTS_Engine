@@ -88,52 +88,77 @@ namespace DTS_Engine.Commands
 
             UsingTransaction(tr =>
             {
-                DBObject originObj = tr.GetObject(originId, OpenMode.ForWrite);
-                StoryData storyData = XDataUtils.ReadStoryData(originObj);
+                DBObject parentObj = tr.GetObject(originId, OpenMode.ForWrite);
+
+                // Xác định Parent Type
+                ElementType parentType = ElementType.Unknown;
+                var pStory = XDataUtils.ReadStoryData(parentObj);
+                var pElem = XDataUtils.ReadElementData(parentObj);
+
+                if (pStory != null) parentType = ElementType.StoryOrigin;
+                else if (pElem != null) parentType = pElem.ElementType;
+                else { WriteError("Đối tượng cha không hợp lệ."); return; }
 
                 foreach (ObjectId elemId in elementIds)
                 {
-                    Entity ent = tr.GetObject(elemId, OpenMode.ForWrite) as Entity;
-                    if (ent == null) continue;
+                    Entity childEnt = tr.GetObject(elemId, OpenMode.ForWrite) as Entity;
+                    if (childEnt == null) continue;
 
-                    // Đọc ElementData (phải tồn tại vì đã lọc ở trên)
-                    ElementData elemData = XDataUtils.ReadElementData(ent);
-                    if (elemData == null) continue;
+                    ElementData childData = XDataUtils.ReadElementData(childEnt);
+                    if (childData == null) continue;
 
-                    // Kiểm tra đã link chưa
-                    if (elemData.IsLinked && elemData.OriginHandle == originId.Handle.ToString())
+                    // RULE 1: Phân cấp
+                    if (!LinkRules.CanBePrimaryParent(parentType, childData.ElementType))
                     {
-                        skippedCount++;
-                        // vẫn giữ link line ghi nhận sau
-                        // thống kê loại nếu có
-                        if (!typeStats.ContainsKey(elemData.ElementType)) typeStats[elemData.ElementType] = 0;
-                        typeStats[elemData.ElementType]++;
+                        WriteError($"Bỏ qua {childEnt.Handle}: Sai phân cấp ({childData.ElementType} -> {parentType}).");
                         continue;
                     }
 
-                    // Thực hiện link
-                    elemData.OriginHandle = originId.Handle.ToString();
-                    elemData.BaseZ = storyData.Elevation;
-                    elemData.Height = storyData.StoryHeight;
-
-                    XDataUtils.WriteElementData(ent, elemData, tr);
-
-                    // Cập nhật ChildHandles của Origin
-                    string childHandle = elemId.Handle.ToString();
-                    if (!storyData.ChildHandles.Contains(childHandle))
+                    // RULE 2: Vòng lặp (nếu cha là Element)
+                    if (parentType != ElementType.StoryOrigin)
                     {
-                        storyData.ChildHandles.Add(childHandle);
+                        if (LinkRules.DetectCycle(parentObj, elemId.Handle.ToString(), tr))
+                        {
+                            WriteError($"Bỏ qua {childEnt.Handle}: Tham chiếu vòng.");
+                            continue;
+                        }
                     }
+
+                    // BREAK LINK CŨ SẠCH SẼ (Quan trọng)
+                    if (childData.IsLinked)
+                    {
+                         XDataUtils.RemoveLinkTwoWay(childEnt, tr);
+                         childData = XDataUtils.ReadElementData(childEnt); // Reload dữ liệu mới nhất
+                    }
+
+                    // TẠO LINK MỚI
+                    childData.OriginHandle = originId.Handle.ToString();
+                    // Nếu parent là Story, set BaseZ/Height từ story
+                    if (pStory != null)
+                    {
+                        childData.BaseZ = pStory.Elevation;
+                        childData.Height = pStory.StoryHeight;
+                    }
+                    XDataUtils.WriteElementData(childEnt, childData, tr);
+
+                    // CẬP NHẬT CHA
+                    string childHandleStr = childEnt.Handle.ToString();
+                    if (pStory != null && !pStory.ChildHandles.Contains(childHandleStr))
+                        pStory.ChildHandles.Add(childHandleStr);
+                    else if (pElem != null && !pElem.ChildHandles.Contains(childHandleStr))
+                        pElem.ChildHandles.Add(childHandleStr);
 
                     linkedCount++;
 
                     // Thống kê theo loại
-                    if (!typeStats.ContainsKey(elemData.ElementType))
-                        typeStats[elemData.ElementType] = 0;
-                    typeStats[elemData.ElementType]++;
+                    if (!typeStats.ContainsKey(childData.ElementType))
+                        typeStats[childData.ElementType] = 0;
+                    typeStats[childData.ElementType]++;
                 }
 
-                XDataUtils.WriteStoryData(originObj, storyData, tr);
+                // Lưu Cha
+                if (pStory != null) XDataUtils.WriteStoryData(parentObj, pStory, tr);
+                else if (pElem != null) XDataUtils.WriteElementData(parentObj, pElem, tr);
             });
 
             // Bước3: Vẽ đường link cho tất cả phần tử đã chọn (hiện trạng sau thao tác)
@@ -518,6 +543,24 @@ namespace DTS_Engine.Commands
             });
 
 
+            // AUTO-FIX: Quét và sửa lỗi trước khi vẽ
+            int fixedCount = 0;
+            UsingTransaction(tr =>
+            {
+                foreach (var id in selectedIds)
+                {
+                    try
+                    {
+                        var obj = tr.GetObject(id, OpenMode.ForWrite);
+                        if (XDataUtils.ValidateAndFixLinks(obj, tr)) fixedCount++;
+                    }
+                    catch { }
+                }
+                if (fixedCount > 0) tr.Commit();
+            });
+
+            if (fixedCount > 0) WriteMessage($"[Auto-Fix] Đã dọn dẹp {fixedCount} liên kết lỗi.");
+
             // Vẽ tất cả nhóm
             foreach (var kvp in groups)
             {
@@ -657,6 +700,31 @@ namespace DTS_Engine.Commands
             {
                 WriteMessage($"Đã tìm thấy {linkedCount} phần tử đang được link.");
             }
+        }
+
+        /// <summary>
+        /// Lệnh Audit thủ công
+        /// </summary>
+        [CommandMethod("DTS_AUDIT_LINKS")]
+        public void DTS_AUDIT_LINKS()
+        {
+            WriteMessage("\n=== AUDIT LINKS (QUÉT LỖI TOÀN BỘ) ===");
+            var ids = AcadUtils.SelectAll("LINE,LWPOLYLINE,POLYLINE,CIRCLE");
+            int fixCount = 0;
+
+            UsingTransaction(tr =>
+            {
+                foreach (ObjectId id in ids)
+                {
+                    var obj = tr.GetObject(id, OpenMode.ForWrite, false, true);
+                    if (XDataUtils.HasDtsData(obj))
+                    {
+                        if (XDataUtils.ValidateAndFixLinks(obj, tr)) fixCount++;
+                    }
+                }
+            });
+
+            WriteSuccess($"Đã kiểm tra và sửa {fixCount} lỗi liên kết.");
         }
 
         private ElementData CreateElementDataForEntity(Entity ent)

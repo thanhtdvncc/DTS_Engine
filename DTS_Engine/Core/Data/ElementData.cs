@@ -40,6 +40,12 @@ namespace DTS_Engine.Core.Data
         public List<string> ChildHandles { get; set; } = new List<string>();
 
         /// <summary>
+        /// [MỚI] Danh sách các liên kết tham chiếu phụ (Reference/Secondary Parents).
+        /// Dùng cho: Gối đỡ phụ, Dim/Tag, hoặc quan hệ logic không phải hình học chính.
+        /// </summary>
+        public List<string> ReferenceHandles { get; set; } = new List<string>();
+
+        /// <summary>
         /// Kiểm tra đã được liên kết với Origin chưa
         /// </summary>
         public bool IsLinked => !string.IsNullOrEmpty(OriginHandle);
@@ -146,6 +152,16 @@ namespace DTS_Engine.Core.Data
             if (dict.TryGetValue("xChildHandles", out var children))
                 ChildHandles = ConvertToStringList(children);
 
+            // [MỚI] Đọc an toàn ReferenceHandles (backward compatible)
+            if (dict.TryGetValue("xReferenceHandles", out var refs))
+            {
+                ReferenceHandles = ConvertToStringList(refs);
+            }
+            else
+            {
+                ReferenceHandles = new List<string>();
+            }
+
             if (dict.TryGetValue("xMappings", out var mappings))
                 Mappings = ConvertToMappingList(mappings);
         }
@@ -175,6 +191,9 @@ namespace DTS_Engine.Core.Data
 
             if (ChildHandles != null && ChildHandles.Count > 0)
                 dict["xChildHandles"] = ChildHandles;
+            // [MỚI] Chỉ ghi ReferenceHandles nếu có để giữ nhỏ gọn dữ liệu
+            if (ReferenceHandles != null && ReferenceHandles.Count > 0)
+                dict["xReferenceHandles"] = ReferenceHandles;
 
             if (Mappings != null && Mappings.Count > 0)
                 dict["xMappings"] = ConvertMappingsToSerializable(Mappings);
@@ -198,6 +217,8 @@ namespace DTS_Engine.Core.Data
             {
                 target.Mappings.Add(m.Clone());
             }
+            // [MỚI] Clone References
+            target.ReferenceHandles = new List<string>(ReferenceHandles ?? new List<string>());
         }
 
         /// <summary>

@@ -381,6 +381,131 @@ namespace DTS_Engine.Core.Utils
             }
         }
 
+        /// <summary>
+        /// [SELF-HEALING] Kiểm tra và tự động cắt bỏ các liên kết gãy (trỏ tới đối tượng không tồn tại).
+        /// </summary>
+        public static bool ValidateAndFixLinks(DBObject obj, Transaction tr)
+        {
+            var data = ReadElementData(obj);
+            if (data == null) return false;
+
+            bool isModified = false;
+            string myHandle = obj.Handle.ToString();
+
+            // 1. Validate Primary Parent (Origin)
+            if (data.IsLinked)
+            {
+                bool parentValid = false;
+                ObjectId parentId = AcadUtils.GetObjectIdFromHandle(data.OriginHandle);
+
+                if (parentId != ObjectId.Null && !parentId.IsErased)
+                {
+                    try
+                    {
+                        var parentObj = tr.GetObject(parentId, OpenMode.ForRead);
+                        var pStory = ReadStoryData(parentObj);
+                        var pElem = ReadElementData(parentObj);
+
+                        // Cha phải nhận mình là con
+                        if (pStory != null && pStory.ChildHandles.Contains(myHandle)) parentValid = true;
+                        else if (pElem != null && pElem.ChildHandles.Contains(myHandle)) parentValid = true;
+                    }
+                    catch { }
+                }
+
+                if (!parentValid)
+                {
+                    data.OriginHandle = null; // Cắt link gãy
+                    isModified = true;
+                }
+            }
+
+            // 2. Validate Children
+            if (data.ChildHandles != null && data.ChildHandles.Count > 0)
+            {
+                var validChildren = new List<string>();
+                foreach (var childH in data.ChildHandles)
+                {
+                    bool childValid = false;
+                    ObjectId childId = AcadUtils.GetObjectIdFromHandle(childH);
+
+                    if (childId != ObjectId.Null && !childId.IsErased)
+                    {
+                        try
+                        {
+                            var childObj = tr.GetObject(childId, OpenMode.ForRead);
+                            var cData = ReadElementData(childObj);
+                            // Con phải nhận mình là Cha
+                            if (cData != null && cData.OriginHandle == myHandle) childValid = true;
+                        }
+                        catch { }
+                    }
+
+                    if (childValid) validChildren.Add(childH);
+                    else isModified = true; // Loại bỏ con "ma"
+                }
+                if (isModified) data.ChildHandles = validChildren;
+            }
+
+            // 3. Validate References [MỚI]
+            if (data.ReferenceHandles != null && data.ReferenceHandles.Count > 0)
+            {
+                var validRefs = new List<string>();
+                foreach (var refH in data.ReferenceHandles)
+                {
+                    ObjectId refId = AcadUtils.GetObjectIdFromHandle(refH);
+                    if (refId != ObjectId.Null && !refId.IsErased) validRefs.Add(refH);
+                    else isModified = true;
+                }
+                if (isModified) data.ReferenceHandles = validRefs;
+            }
+
+            if (isModified) WriteElementData(obj, data, tr);
+            return isModified;
+        }
+
+        /// <summary>
+        /// [ATOMIC UNLINK] Xóa liên kết an toàn 2 chiều (Cha <-> Con)
+        /// </summary>
+        public static void RemoveLinkTwoWay(DBObject child, Transaction tr)
+        {
+            var childData = ReadElementData(child);
+            if (childData == null || !childData.IsLinked) return;
+
+            string parentHandle = childData.OriginHandle;
+            string childHandle = child.Handle.ToString();
+
+            // 1. Xóa ở Con
+            childData.OriginHandle = null;
+            WriteElementData(child, childData, tr);
+
+            // 2. Xóa ở Cha
+            ObjectId parentId = AcadUtils.GetObjectIdFromHandle(parentHandle);
+            if (parentId != ObjectId.Null && !parentId.IsErased)
+            {
+                try 
+                {
+                    DBObject parentObj = tr.GetObject(parentId, OpenMode.ForWrite);
+                    var storyData = ReadStoryData(parentObj);
+                    if (storyData != null && storyData.ChildHandles.Contains(childHandle))
+                    {
+                        storyData.ChildHandles.Remove(childHandle);
+                        WriteStoryData(parentObj, storyData, tr);
+                    }
+                    else 
+                    {
+                        var parentElem = ReadElementData(parentObj);
+                        if (parentElem != null && parentElem.ChildHandles.Contains(childHandle))
+                        {
+                            parentElem.ChildHandles.Remove(childHandle);
+                            WriteElementData(parentObj, parentElem, tr);
+                        }
+                    }
+                }
+                catch { }
+            }
+        }
+
         #endregion // End of Low-Level XData Access
     }
 }
