@@ -6,7 +6,7 @@ namespace DTS_Engine.Core.Utils
 {
     /// <summary>
     /// Enum ??n v? ??ng b? v?i SAP2000 eUnits.
-    /// ?? QUAN TR?NG - KHÔNG THAY ??I GIÁ TR? INT:
+    /// QUAN TR?NG - KHÔNG THAY ??I GIÁ TR? INT:
     /// - Giá tr? int ph?i KH?P CHÍNH XÁC v?i SAP2000v1.eUnits
     /// - Sai l?ch s? gây l?i ??n v? khi gán t?i sang SAP
     /// </summary>
@@ -56,7 +56,7 @@ namespace DTS_Engine.Core.Utils
         /// Ví d?: CAD v? mm -> Scale = 0.001
         ///        CAD v? m  -> Scale = 1.0
         /// 
-        /// ?? CÔNG TH?C TÍNH T?I:
+        /// CÔNG TH?C TÍNH T?I:
         /// Load (kN/m) = Thickness(mm) * LengthScaleToMeter * Height(mm) * LengthScaleToMeter * UnitWeight(kN/m³)
         /// </summary>
         public double LengthScaleToMeter { get; private set; }
@@ -144,13 +144,13 @@ namespace DTS_Engine.Core.Utils
     /// <summary>
     /// Qu?n lý ??n v? toàn c?c cho DTS Tool.
     /// 
-    /// ?? QUAN TR?NG - LOGIC HO?T ??NG:
+    /// QUAN TR?NG - LOGIC HO?T ??NG:
     /// 1. ??n v? ???c l?u vào Named Object Dictionary c?a file DWG
     /// 2. Khi m? b?n v? m?i, g?i Initialize() ?? ??c ??n v? ?ã l?u
     /// 3. Khi k?t n?i SAP, SapUtils.SyncUnits() s? ép SAP dùng cùng ??n v?
     /// 4. T?t c? tính toán t?i tr?ng ??u dùng Info.LengthScaleToMeter
     /// 
-    /// ?? KHÔNG S?A ??I:
+    /// KHÔNG S?A ??I:
     /// - Tên dictionary DICT_NAME và KEY_UNIT (s? m?t data c?)
     /// - Logic SaveToDwg/LoadFromDwg (?nh h??ng persistence)
     /// </summary>
@@ -160,13 +160,13 @@ namespace DTS_Engine.Core.Utils
 
         /// <summary>
         /// Tên Dictionary l?u settings trong DWG.
-        /// ?? KHÔNG ??I TÊN - s? m?t d? li?u ?ã l?u trong các b?n v? c?.
+        /// KHÔNG ??I TÊN - s? m?t d? li?u ?ã l?u trong các b?n v? c?.
         /// </summary>
         private const string DICT_NAME = "DTS_SETTINGS";
 
         /// <summary>
         /// Key l?u ??n v? hi?n t?i.
-        /// ?? KHÔNG ??I TÊN - s? m?t d? li?u ?ã l?u trong các b?n v? c?.
+        /// KHÔNG ??I TÊN - s? m?t d? li?u ?ã l?u trong các b?n v? c?.
         /// </summary>
         private const string KEY_UNIT = "CurrentUnit";
 
@@ -227,7 +227,7 @@ namespace DTS_Engine.Core.Utils
 
         /// <summary>
         /// Kh?i t?o UnitManager t? file DWG hi?n t?i.
-        /// ?? G?I HÀM NÀY KHI:
+        /// G?I HÀM NÀY KHI:
         /// - Plugin ???c load (IExtensionApplication.Initialize)
         /// - M? b?n v? m?i (Document.BeginDocumentClose event)
         /// 
@@ -308,7 +308,7 @@ namespace DTS_Engine.Core.Utils
 
         /// <summary>
         /// L?u ??n v? hi?n t?i vào DWG.
-        /// ?? KHÔNG S?A ??I LOGIC NÀY:
+        /// KHÔNG S?A ??I LOGIC NÀY:
         /// - S? d?ng Named Object Dictionary ?? l?u persistent data
         /// - Xrecord ch?a TypedValue v?i DxfCode.Int16
         /// - T? ??ng t?o dictionary n?u ch?a có

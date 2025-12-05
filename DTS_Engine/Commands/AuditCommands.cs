@@ -15,8 +15,8 @@ namespace DTS_Engine.Commands
     /// <summary>
     /// Các l?nh ki?m toán t?i tr?ng SAP2000.
     /// H? tr? xu?t báo cáo th?ng kê chi ti?t theo t?ng, lo?i t?i và v? trí.
-    /// 
-    /// ?? TÍNH N?NG:
+    ///
+    /// TÍNH N?NG:
     /// - ??c toàn b? t?i tr?ng t? SAP2000 (Frame, Area, Point)
     /// - Nhóm theo t?ng và lo?i t?i
     /// - Tính t?ng di?n tích/chi?u dài
@@ -51,7 +51,7 @@ namespace DTS_Engine.Commands
 
                 WriteMessage($"\nLoad Patterns có s?n: {string.Join(", ", availablePatterns)}");
 
-                // 3. Nh?p Load Patterns c?n ki?m tra
+                // 3. Nh?p Load Pattern(s) c?n ki?m tra
                 var patternOpt = new PromptStringOptions("\nNh?p Load Pattern(s) c?n ki?m tra (cách nhau b?ng d?u ph?y): ");
                 patternOpt.DefaultValue = "DL";
                 patternOpt.AllowSpaces = true;

@@ -1,4 +1,4 @@
-using DTS_Engine.Core.Data;
+﻿using DTS_Engine.Core.Data;
 using DTS_Engine.Core.Primitives;
 using DTS_Engine.Core.Utils;
 using NetTopologySuite.Geometries;
@@ -11,31 +11,31 @@ using System.Text;
 namespace DTS_Engine.Core.Engines
 {
     /// <summary>
-    /// Engine ki?m to�n t?i tr?ng t? SAP2000.
-    /// T? ??ng gom nh�m theo T?ng -> Lo?i t?i -> Gi� tr?.
-    /// S? d?ng NetTopologySuite ?? union v� slice geometry.
+    /// Engine kiểm toán tải trọng từ SAP2000.
+    /// Tự động gom nhóm theo Tầng -> Loại tải -> Giá trị.
+    /// Sử dụng NetTopologySuite để union và slice geometry.
     /// 
-    /// ?? QUY TR�NH X? L�:
-    /// 1. Data Extraction: L?y to�n b? t?i tr?ng t? SAP2000 API
-    /// 2. Spatial Mapping: X�c ??nh t?ng v� v? tr� tr?c
-    /// 3. Grouping: Gom nh�m theo t?ng, lo?i t?i, gi� tr?
-    /// 4. Calculation: T�nh di?n t�ch/chi?u d�i v� t?ng l?c
-    /// 5. Reporting: Xu?t b�o c�o ??nh d?ng k? s?
+    /// Quy trình xử lý:
+    /// 1. Data Extraction: Lấy toàn bộ tải trọng từ SAP2000 API
+    /// 2. Spatial Mapping: Xác định tầng và vị trí trục
+    /// 3. Grouping: Gom nhóm theo tầng, loại tải, giá trị
+    /// 4. Calculation: Tính diện tích/chiều dài và tổng lực
+    /// 5. Reporting: Xuất báo cáo định dạng kỹ sư
     /// </summary>
     public class AuditEngine
     {
         #region Constants
 
-        /// <summary>Dung sai Z ?? x�c ??nh c�ng t?ng (mm)</summary>
+        /// <summary>Dung sai Z để xác định cùng tầng (mm)</summary>
         private const double STORY_TOLERANCE = 500.0;
 
-        /// <summary>Dung sai gi� tr? t?i ?? gom nh�m (%)</summary>
+        /// <summary>Dung sai giá trị tải để gom nhóm (%)</summary>
         private const double VALUE_TOLERANCE_PERCENT = 1.0;
 
-        /// <summary>H? s? quy ??i mm� sang m�</summary>
+        /// <summary>Hệ số quy đổi mm² sang m²</summary>
         private const double MM2_TO_M2 = 1.0 / 1000000.0;
 
-        /// <summary>H? s? quy ??i mm sang m</summary>
+        /// <summary>Hệ số quy đổi mm sang m</summary>
         private const double MM_TO_M = 1.0 / 1000.0;
 
         #endregion
@@ -56,7 +56,7 @@ namespace DTS_Engine.Core.Engines
         {
             _geometryFactory = new GeometryFactory();
 
-            // Cache grids v� stories t? SAP
+            // Cache grids và stories từ SAP
             if (SapUtils.IsConnected)
             {
                 _grids = SapUtils.GetGridLines();
@@ -77,10 +77,10 @@ namespace DTS_Engine.Core.Engines
         #region Main Audit Method
 
         /// <summary>
-        /// Ch?y ki?m to�n cho m?t ho?c nhi?u Load Pattern.
+        /// Chạy kiểm toán cho một hoặc nhiều Load Pattern.
         /// </summary>
-        /// <param name="loadPatterns">Danh s�ch pattern c�ch nhau b?ng d?u ph?y</param>
-        /// <returns>Danh s�ch b�o c�o theo t?ng pattern</returns>
+        /// <param name="loadPatterns">Danh sách pattern cách nhau bằng dấu phẩy</param>
+        /// <returns>Danh sách báo cáo theo từng pattern</returns>
         public List<AuditReport> RunAudit(string loadPatterns)
         {
             var reports = new List<AuditReport>();
@@ -105,7 +105,7 @@ namespace DTS_Engine.Core.Engines
         }
 
         /// <summary>
-        /// Ch?y ki?m to�n cho m?t Load Pattern
+        /// Chạy kiểm toán cho một Load Pattern
         /// </summary>
         public AuditReport RunSingleAudit(string loadPattern)
         {
@@ -120,7 +120,7 @@ namespace DTS_Engine.Core.Engines
             // 1. Cache geometry
             CacheGeometry();
 
-            // 2. Thu th?p t?t c? c�c lo?i t?i
+            // 2. Thu thập tất cả các loại tải
             var allLoads = new List<RawSapLoad>();
             allLoads.AddRange(SapUtils.GetAllFrameDistributedLoads(loadPattern));
             allLoads.AddRange(SapUtils.GetAllFramePointLoads(loadPattern));
@@ -130,13 +130,13 @@ namespace DTS_Engine.Core.Engines
 
             if (allLoads.Count == 0)
             {
-                return report; // Kh�ng c� t?i -> b�o c�o r?ng
+                return report; // Không có tải -> báo cáo rỗng
             }
 
-            // 3. X�c ??nh danh s�ch t?ng (d?a tr�n Z c?a ph?n t?)
+            // 3. Xác định danh sách tầng (dựa trên Z của phần tử)
             var storyElevations = DetermineStoryElevations(allLoads);
 
-            // 4. Nh�m theo t?ng
+            // 4. Nhóm theo t?ng
             foreach (var storyInfo in storyElevations.OrderByDescending(s => s.Value))
             {
                 var storyLoads = allLoads.Where(l =>
@@ -149,7 +149,7 @@ namespace DTS_Engine.Core.Engines
                     report.Stories.Add(storyGroup);
             }
 
-            // 5. L?y ph?n l?c ?�y ?? ??i chi?u
+            // 5. Lấy phản lực đáy để đối chiếu
             report.SapBaseReaction = SapUtils.GetBaseReactionZ(loadPattern);
 
             return report;
@@ -160,7 +160,7 @@ namespace DTS_Engine.Core.Engines
         #region Processing Methods
 
         /// <summary>
-        /// X? l� m?t t?ng
+        /// Xử lý một tầng
         /// </summary>
         private AuditStoryGroup ProcessStory(string storyName, double elevation, List<RawSapLoad> loads)
         {
@@ -170,7 +170,7 @@ namespace DTS_Engine.Core.Engines
                 Elevation = elevation
             };
 
-            // Nh�m theo lo?i t?i
+            // Nhóm theo lo?i t?i
             var loadTypeGroups = loads.GroupBy(l => l.LoadType);
 
             foreach (var typeGroup in loadTypeGroups)
@@ -184,7 +184,7 @@ namespace DTS_Engine.Core.Engines
         }
 
         /// <summary>
-        /// X? l� m?t lo?i t?i (Frame/Area/Point)
+        /// Xử lý một loại tải (Frame/Area/Point)
         /// </summary>
         private AuditLoadTypeGroup ProcessLoadType(string loadType, List<RawSapLoad> loads)
         {
@@ -193,7 +193,7 @@ namespace DTS_Engine.Core.Engines
                 LoadTypeName = GetLoadTypeDisplayName(loadType)
             };
 
-            // Nh�m theo gi� tr? t?i (v?i dung sai)
+            // Nhóm theo giá tr? t?i (v?i dung sai)
             var valueGroups = GroupByValue(loads);
 
             foreach (var valGroup in valueGroups.OrderByDescending(g => g.Key))
@@ -207,7 +207,7 @@ namespace DTS_Engine.Core.Engines
         }
 
         /// <summary>
-        /// X? l� nh�m c�ng gi� tr? t?i
+        /// Xử lý nhóm cùng giá trị tải
         /// </summary>
         private AuditValueGroup ProcessValueGroup(string loadType, double loadValue, List<RawSapLoad> loads)
         {
@@ -242,11 +242,11 @@ namespace DTS_Engine.Core.Engines
         }
 
         /// <summary>
-        /// X? l� t?i Area - Union geometry v� t�nh di?n t�ch
+        /// Xử lý tải Area - Union geometry và tính diện tích
         /// </summary>
         private void ProcessAreaLoads(List<RawSapLoad> loads, AuditValueGroup valueGroup)
         {
-            // Nh�m theo v? tr� tr?c
+            // Nhóm theo vị trí trục
             var gridGroups = loads.GroupBy(l => GetGridLocation(l.ElementName, "Area"));
 
             foreach (var gridGroup in gridGroups.OrderBy(g => g.Key))
@@ -266,7 +266,7 @@ namespace DTS_Engine.Core.Engines
 
                 if (polygons.Count == 0) continue;
 
-                // Union ?? lo?i b? overlap
+                // Union để loại bỏ overlap
                 Geometry unioned;
                 try
                 {
@@ -278,7 +278,7 @@ namespace DTS_Engine.Core.Engines
                     unioned = polygons.First();
                 }
 
-                // T�nh di?n t�ch v� t?o di?n gi?i
+                // Tính diện tích và tạo diễn giải
                 double totalAreaMm2 = unioned.Area;
                 double totalAreaM2 = totalAreaMm2 * MM2_TO_M2;
                 double force = totalAreaM2 * valueGroup.LoadValue;
@@ -297,11 +297,11 @@ namespace DTS_Engine.Core.Engines
         }
 
         /// <summary>
-        /// X? l� t?i Frame ph�n b? - T�nh t?ng chi?u d�i
+        /// Xử lý tải Frame phân bố - Tính tổng chiều dài
         /// </summary>
         private void ProcessFrameDistributedLoads(List<RawSapLoad> loads, AuditValueGroup valueGroup)
         {
-            // Nh�m theo v? tr� tr?c
+            // Nhóm theo vị trí trục
             var gridGroups = loads.GroupBy(l => GetGridLocation(l.ElementName, "Frame"));
 
             foreach (var gridGroup in gridGroups.OrderBy(g => g.Key))
@@ -323,7 +323,7 @@ namespace DTS_Engine.Core.Engines
                 double totalLengthM = totalLengthMm * MM_TO_M;
                 double force = totalLengthM * valueGroup.LoadValue;
 
-                // T?o di?n gi?i chi?u d�i
+                // Tạo diễn giải chiều dài
                 string explanation = FormatLengthExplanation(lengths);
 
                 valueGroup.Entries.Add(new AuditEntry
@@ -338,11 +338,11 @@ namespace DTS_Engine.Core.Engines
         }
 
         /// <summary>
-        /// X? l� t?i t?p trung
+        /// Xử lý tải tập trung
         /// </summary>
         private void ProcessPointLoads(List<RawSapLoad> loads, AuditValueGroup valueGroup)
         {
-            // Nh�m theo v? tr� tr?c
+            // Nhóm theo vị trí trục
             var gridGroups = loads.GroupBy(l => GetGridLocation(l.ElementName, "Point"));
 
             foreach (var gridGroup in gridGroups.OrderBy(g => g.Key))
@@ -353,7 +353,7 @@ namespace DTS_Engine.Core.Engines
 
                 string explanation = count == 1
                     ? $"P = {totalForce:0.00} kN"
-                    : $"{count} ?i?m � avg = {totalForce:0.00} kN";
+                    : $"{count} điểm × avg = {totalForce:0.00} kN";
 
                 valueGroup.Entries.Add(new AuditEntry
                 {
@@ -367,7 +367,7 @@ namespace DTS_Engine.Core.Engines
         }
 
         /// <summary>
-        /// X? l� t?i generic (fallback)
+        /// Xử lý tải generic (fallback)
         /// </summary>
         private void ProcessGenericLoads(List<RawSapLoad> loads, AuditValueGroup valueGroup)
         {
@@ -381,7 +381,7 @@ namespace DTS_Engine.Core.Engines
                 valueGroup.Entries.Add(new AuditEntry
                 {
                     GridLocation = gridGroup.Key,
-                    Explanation = $"{gridGroup.Count()} ph?n t?",
+                    Explanation = $"{gridGroup.Count()} phần tử",
                     Quantity = gridGroup.Count(),
                     Force = totalValue,
                     ElementList = elemNames
@@ -394,7 +394,7 @@ namespace DTS_Engine.Core.Engines
         #region Helper Methods
 
         /// <summary>
-        /// Cache geometry t? SAP
+        /// Cache geometry từ SAP
         /// </summary>
         private void CacheGeometry()
         {
@@ -417,16 +417,16 @@ namespace DTS_Engine.Core.Engines
         }
 
         /// <summary>
-        /// X�c ??nh danh s�ch t?ng t? cao ?? ph?n t?
+        /// Xác định danh sách tầng từ cao độ phần tử
         /// </summary>
         private Dictionary<string, double> DetermineStoryElevations(List<RawSapLoad> loads)
         {
             var result = new Dictionary<string, double>();
 
-            // L?y t?t c? Z t? loads
+            // Lấy tất cả Z từ loads
             var allZ = loads.Select(l => l.ElementZ).Distinct().OrderByDescending(z => z).ToList();
 
-            // Nh�m Z g?n nhau th�nh m?t t?ng
+            // Nhóm Z gần nhau thành một tầng
             var zGroups = new List<List<double>>();
             foreach (var z in allZ)
             {
@@ -441,7 +441,7 @@ namespace DTS_Engine.Core.Engines
                 }
             }
 
-            // Map v?i story t? Grid n?u c�
+            // Map với story từ Grid nếu có
             var zStories = _stories.Where(s => s.IsElevation).OrderByDescending(s => s.Elevation).ToList();
             int storyIndex = 1;
 
@@ -449,7 +449,7 @@ namespace DTS_Engine.Core.Engines
             {
                 double avgZ = group.Average();
 
-                // T�m story g?n nh?t
+                // Tìm story gần nhất
                 var matchingStory = zStories.FirstOrDefault(s => Math.Abs(s.Elevation - avgZ) <= STORY_TOLERANCE);
 
                 string storyName;
@@ -474,16 +474,16 @@ namespace DTS_Engine.Core.Engines
         }
 
         /// <summary>
-        /// Nh�m loads theo gi� tr? (v?i dung sai)
+        /// Nhóm loads theo giá tr? (v?i dung sai)
         /// </summary>
         private IEnumerable<IGrouping<double, RawSapLoad>> GroupByValue(List<RawSapLoad> loads)
         {
-            // Round gi� tr? ?? gom nh�m
+            // Round giá tr? ?? gom nhóm
             return loads.GroupBy(l => Math.Round(l.Value1, 2));
         }
 
         /// <summary>
-        /// X�c ??nh v? tr� theo tr?c
+        /// Xác định vị trí theo trục
         /// </summary>
         private string GetGridLocation(string elementName, string elementType)
         {
@@ -507,28 +507,28 @@ namespace DTS_Engine.Core.Engines
                 }
             }
 
-            // T�m tr?c g?n nh?t
+            // Tìm trục gần nhất
             string xGrid = FindNearestGrid(center.X, "X");
             string yGrid = FindNearestGrid(center.Y, "Y");
 
             if (!string.IsNullOrEmpty(xGrid) && !string.IsNullOrEmpty(yGrid))
             {
-                return $"Tr?c {xGrid} / {yGrid}";
+                return $"Trục {xGrid} / {yGrid}";
             }
             else if (!string.IsNullOrEmpty(xGrid))
             {
-                return $"Tr?c {xGrid}";
+                return $"Trục {xGrid}";
             }
             else if (!string.IsNullOrEmpty(yGrid))
             {
-                return $"Tr?c {yGrid}";
+                return $"Trục {yGrid}";
             }
 
             return $"({center.X / 1000:0.0}, {center.Y / 1000:0.0})";
         }
 
         /// <summary>
-        /// T�m tr?c g?n nh?t
+        /// Tìm tr?c g?n nh?t
         /// </summary>
         private string FindNearestGrid(double coord, string axis)
         {
@@ -540,14 +540,14 @@ namespace DTS_Engine.Core.Engines
             if (grids.Count == 0) return null;
 
             var nearest = grids.First();
-            if (Math.Abs(nearest.Coordinate - coord) > 5000) // > 5m th� kh�ng match
+            if (Math.Abs(nearest.Coordinate - coord) > 5000) // > 5m thì không match
                 return null;
 
             return nearest.Name;
         }
 
         /// <summary>
-        /// T?o polygon NTS t? danh s�ch ?i?m
+        /// Tạo polygon NTS từ danh sách điểm
         /// </summary>
         private Polygon CreateNtsPolygon(List<Point2D> pts)
         {
@@ -561,7 +561,7 @@ namespace DTS_Engine.Core.Engines
                     coords.Add(new Coordinate(p.X, p.Y));
                 }
 
-                // ?�ng polygon
+                // Đóng polygon
                 if (!pts[0].Equals(pts.Last()))
                 {
                     coords.Add(new Coordinate(pts[0].X, pts[0].Y));
@@ -577,13 +577,13 @@ namespace DTS_Engine.Core.Engines
         }
 
         /// <summary>
-        /// T?o di?n gi?i di?n t�ch
+        /// Tạo diễn giải diện tích
         /// </summary>
         private string FormatAreaExplanation(Geometry geom, int originalCount)
         {
             if (geom == null) return "N/A";
 
-            // Ki?m tra n?u l� rectangle
+            // Kiểm tra nếu là rectangle
             if (geom is Polygon poly && IsApproximateRectangle(poly))
             {
                 var env = poly.EnvelopeInternal;
@@ -592,18 +592,18 @@ namespace DTS_Engine.Core.Engines
                 return $"{w:0.0} x {h:0.0}";
             }
 
-            // Polygon ph?c t?p
+            // Polygon phức tạp
             double areaM2 = geom.Area * MM2_TO_M2;
             if (originalCount > 1)
             {
-                return $"Union({originalCount}) = {areaM2:0.00}m�";
+                return $"Union({originalCount}) = {areaM2:0.00}m²";
             }
 
-            return $"Poly = {areaM2:0.00}m�";
+            return $"Poly = {areaM2:0.00}m²";
         }
 
         /// <summary>
-        /// T?o di?n gi?i chi?u d�i
+        /// Tạo diễn giải chiều dài
         /// </summary>
         private string FormatLengthExplanation(List<double> lengths)
         {
@@ -614,7 +614,7 @@ namespace DTS_Engine.Core.Engines
                 return $"L = {lengths[0] * MM_TO_M:0.0}m";
             }
 
-            // Hi?n th? t?i ?a 5 chi?u d�i
+            // Hi?n th? t?i ?a 5 chi?u dài
             var display = lengths.Take(5).Select(l => $"{l * MM_TO_M:0.0}").ToList();
             string result = string.Join(" + ", display);
 
@@ -627,33 +627,33 @@ namespace DTS_Engine.Core.Engines
         }
 
         /// <summary>
-        /// Ki?m tra polygon c� g?n nh? h�nh ch? nh?t kh�ng
+        /// Kiểm tra polygon có gần như hình chữ nhật không
         /// </summary>
         private bool IsApproximateRectangle(Polygon poly)
         {
-            if (poly.NumPoints != 5) return false; // 4 ??nh + 1 ?i?m ?�ng
+            if (poly.NumPoints != 5) return false; // 4 đỉnh + 1 điểm đóng
 
             var env = poly.EnvelopeInternal;
             double envArea = env.Area;
             double polyArea = poly.Area;
 
-            // N?u di?n t�ch g?n b?ng envelope -> l� HCN
+            // Nếu diện tích gần bằng envelope -> là HCN
             return Math.Abs(envArea - polyArea) / envArea < 0.05; // 5% tolerance
         }
 
         /// <summary>
-        /// L?y t�n hi?n th? cho lo?i t?i
+        /// Lấy tên hiển thị cho loại tải
         /// </summary>
         private string GetLoadTypeDisplayName(string loadType)
         {
             switch (loadType)
             {
-                case "AreaUniform": return "S�N - UNIFORM LOAD (kN/m�)";
-                case "AreaUniformToFrame": return "S�N - UNIFORM TO FRAME (kN/m�)";
-                case "FrameDistributed": return "D?M/T??NG - DISTRIBUTED (kN/m)";
-                case "FramePoint": return "D?M - POINT LOAD (kN)";
-                case "PointForce": return "?I?M - POINT FORCE (kN)";
-                case "JointMass": return "KH?I L??NG - JOINT MASS";
+                case "AreaUniform": return "SÀN - UNIFORM LOAD (kN/m²)";
+                case "AreaUniformToFrame": return "SÀN - UNIFORM TO FRAME (kN/m²)";
+                case "FrameDistributed": return "DẦM/TƯỜNG - DISTRIBUTED (kN/m)";
+                case "FramePoint": return "DẦM - POINT LOAD (kN)";
+                case "PointForce": return "ĐIỂM - POINT FORCE (kN)";
+                case "JointMass": return "KHỐI LƯỢNG - JOINT MASS";
                 default: return loadType.ToUpper();
             }
         }
@@ -663,24 +663,24 @@ namespace DTS_Engine.Core.Engines
         #region Report Generation
 
         /// <summary>
-        /// T?o b�o c�o d?ng text
+        /// Tạo báo cáo dạng text
         /// </summary>
         public string GenerateTextReport(AuditReport report)
         {
             var sb = new StringBuilder();
 
             sb.AppendLine("===================================================================");
-            sb.AppendLine("   B�O C�O KI?M TO�N T?I TR?NG - DTS ENGINE");
-            sb.AppendLine($"   Ng�y: {report.AuditDate:dd/MM/yyyy HH:mm}");
+            sb.AppendLine("   BÁO CÁO KIỂM TOÁN TẢI TRỌNG - DTS ENGINE");
+            sb.AppendLine($"   Ngày: {report.AuditDate:dd/MM/yyyy HH:mm}");
             sb.AppendLine($"   Model: {report.ModelName}");
             sb.AppendLine($"   Load Case: {report.LoadPattern}");
-            sb.AppendLine($"   ??n v?: {report.UnitInfo}");
+            sb.AppendLine($"   Đơn vị: {report.UnitInfo}");
             sb.AppendLine("===================================================================");
             sb.AppendLine();
 
             foreach (var story in report.Stories)
             {
-                sb.AppendLine($"--- T?NG: {story.StoryName} (Z = {story.Elevation / 1000.0:0.0}m) ---");
+                sb.AppendLine($"--- TẦNG: {story.StoryName} (Z = {story.Elevation / 1000.0:0.0}m) ---");
                 sb.AppendLine();
 
                 foreach (var loadType in story.LoadTypeGroups)
@@ -690,10 +690,10 @@ namespace DTS_Engine.Core.Engines
 
                     foreach (var valGroup in loadType.ValueGroups)
                     {
-                        sb.AppendLine($"    > Nh�m gi� tr?: {valGroup.LoadValue:0.00} ({valGroup.Direction})");
+                        sb.AppendLine($"    > Nhóm giá trị: {valGroup.LoadValue:0.00} ({valGroup.Direction})");
                         sb.AppendLine(new string('-', 95));
                         sb.AppendLine(string.Format("    | {0,-22} | {1,-32} | {2,10} | {3,12} |",
-                            "V? tr� (Tr?c)", "Di?n gi?i", "SL/DT", "L?c (kN)"));
+                            "Vị trí (Trục)", "Diễn giải", "SL/DT", "Lực (kN)"));
                         sb.AppendLine(new string('-', 95));
 
                         foreach (var entry in valGroup.Entries)
@@ -712,41 +712,41 @@ namespace DTS_Engine.Core.Engines
 
                         sb.AppendLine(new string('-', 95));
                         sb.AppendLine(string.Format("    | {0,-57} | {1,10:0.00} | {2,12:0.00} |",
-                            $"T?NG NH�M {valGroup.LoadValue:0.00}",
+                            $"TỔNG NHÓM {valGroup.LoadValue:0.00}",
                             valGroup.TotalQuantity, valGroup.TotalForce));
                         sb.AppendLine(new string('-', 95));
                         sb.AppendLine();
                     }
                 }
 
-                sb.AppendLine($">>> T?NG T?NG {story.StoryName}: {story.SubTotalForce:n2} kN");
+                sb.AppendLine($">>> TỔNG TẦNG {story.StoryName}: {story.SubTotalForce:n2} kN");
                 sb.AppendLine();
             }
 
             sb.AppendLine("===================================================================");
-            sb.AppendLine($"T?NG C?NG T�NH TO�N: {report.TotalCalculatedForce:n2} kN");
+            sb.AppendLine($"TỔNG CỘNG TÍNH TOÁN: {report.TotalCalculatedForce:n2} kN");
 
             if (Math.Abs(report.SapBaseReaction) > 0.01)
             {
                 sb.AppendLine($"SAP2000 BASE REACTION (Z): {report.SapBaseReaction:n2} kN");
-                sb.AppendLine($"SAI L?CH: {report.Difference:n2} kN ({report.DifferencePercent:0.00}%)");
+                sb.AppendLine($"SAI LỆCH: {report.Difference:n2} kN ({report.DifferencePercent:0.00}%)");
 
                 if (Math.Abs(report.DifferencePercent) < 1.0)
                 {
-                    sb.AppendLine(">>> KI?M TRA: OK (sai l?ch < 1%)");
+                    sb.AppendLine(">>> KIỂM TRA: OK (sai lệch < 1%)");
                 }
                 else if (Math.Abs(report.DifferencePercent) < 5.0)
                 {
-                    sb.AppendLine(">>> KI?M TRA: CH?P NH?N (sai l?ch < 5%)");
+                    sb.AppendLine(">>> KIỂM TRA: CHẤP NHẬN (sai lệch < 5%)");
                 }
                 else
                 {
-                    sb.AppendLine(">>> KI?M TRA: C?N XEM X�T (sai l?ch > 5%)");
+                    sb.AppendLine(">>> KIỂM TRA: CẦN XEM XÉT (sai lệch > 5%)");
                 }
             }
             else
             {
-                sb.AppendLine("SAP2000 BASE REACTION: Ch?a c� (model ch?a ch?y ph�n t�ch)");
+                sb.AppendLine("SAP2000 BASE REACTION: Chưa có (model chưa chạy phân tích)");
             }
 
             sb.AppendLine("===================================================================");
@@ -755,7 +755,7 @@ namespace DTS_Engine.Core.Engines
         }
 
         /// <summary>
-        /// T?o b�o c�o chi ti?t bao g?m danh s�ch ph?n t?
+        /// T?o báo cáo chi ti?t bao g?m danh sách ph?n t?
         /// </summary>
         public string GenerateDetailedReport(AuditReport report)
         {
@@ -763,7 +763,7 @@ namespace DTS_Engine.Core.Engines
 
             sb.AppendLine(GenerateTextReport(report));
             sb.AppendLine();
-            sb.AppendLine("=== CHI TI?T PH?N T? ===");
+            sb.AppendLine("=== CHI TIẾT PHẦN TỬ ===");
             sb.AppendLine();
 
             foreach (var story in report.Stories)
@@ -779,10 +779,10 @@ namespace DTS_Engine.Core.Engines
                             if (entry.ElementList.Count > 0)
                             {
                                 sb.AppendLine($"  {entry.GridLocation}:");
-                                sb.AppendLine($"    Ph?n t?: {string.Join(", ", entry.ElementList.Take(20))}");
+                                sb.AppendLine($"    Phần tử: {string.Join(", ", entry.ElementList.Take(20))}");
                                 if (entry.ElementList.Count > 20)
                                 {
-                                    sb.AppendLine($"    ... v� {entry.ElementList.Count - 20} ph?n t? kh�c");
+                                    sb.AppendLine($"    ... và {entry.ElementList.Count - 20} phần tử khác");
                                 }
                             }
                         }
