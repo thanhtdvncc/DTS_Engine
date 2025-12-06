@@ -1,9 +1,9 @@
-using System.Collections.Generic;
+﻿using System.Collections.Generic;
 
 namespace DTS_Engine.Core.Data
 {
     /// <summary>
-    /// D? li?u Lanh t� (Lintel) - D?m ng?n tr�n c?a - K? th?a t? ElementData.
+    /// Dữ liệu Lanh tô (Lintel) - Dầm ngắn trên cửa - Kế thừa từ ElementData.
     /// </summary>
     public class LintelData : ElementData
     {
@@ -16,32 +16,32 @@ namespace DTS_Engine.Core.Data
         #region Lintel-Specific Properties
 
         /// <summary>
-        /// Chi?u r?ng lanh t� (mm)
+        /// Chiều rộng lanh tô (mm)
         /// </summary>
         public double? Width { get; set; } = null;
 
         /// <summary>
-        /// Chi?u cao lanh t� (mm)
+        /// Chiều cao lanh tô (mm)
         /// </summary>
-        public double? Height { get; set; } = null;
+        public new double? Height { get; set; } = null;
 
         /// <summary>
-        /// Chi?u d�i lanh t� (mm)
+        /// Chiều dài lanh tô (mm)
         /// </summary>
         public double? Length { get; set; } = null;
 
         /// <summary>
-        /// Lo?i lanh t� (VD: "L120x200", "L100x150")
+        /// Loại lanh tô (VD: "L120x200", "L100x150")
         /// </summary>
         public string LintelType { get; set; } = null;
 
         /// <summary>
-        /// V?t li?u
+        /// Vật liệu
         /// </summary>
         public string Material { get; set; } = "Concrete";
 
         /// <summary>
-        /// M�c b� t�ng
+        /// Mác bê tông
         /// </summary>
         public string ConcreteGrade { get; set; } = "C25";
 

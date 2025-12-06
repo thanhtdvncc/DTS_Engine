@@ -35,168 +35,126 @@ namespace DTS_Engine.Commands
         {
             ExecuteSafe(() =>
             {
-                WriteMessage("\n=== KI?M TOÁN T?I TR?NG SAP2000 ===");
+                WriteMessage("\n==============================================");
+                WriteMessage("      DTS ENGINE - AUDIT T?I TR?NG SAP2000     ");
+                WriteMessage("==============================================");
 
                 // 1. Ki?m tra k?t n?i SAP
-                if (!EnsureSapConnection())
-                    return;
+                if (!EnsureSapConnection()) return;
 
-                // 2. Hi?n th? danh sách Load Pattern có s?n
-                var availablePatterns = SapUtils.GetLoadPatterns();
-                if (availablePatterns.Count == 0)
+                // 2. L?y danh sách Pattern có t?i (Smart Filter)
+                WriteMessage("\n?ang quét d? li?u Load Patterns...");
+                var activePatterns = SapUtils.GetActiveLoadPatterns();
+                
+                // L?c b? pattern r?ng (Total = 0) n?u danh sách quá dài
+                var nonEmptyPatterns = activePatterns.Where(p => p.TotalEstimatedLoad > 0.001).ToList();
+                if (nonEmptyPatterns.Count == 0) nonEmptyPatterns = activePatterns; // Fallback
+
+                // 3. Xây d?ng Menu ch?n
+                var pko = new PromptKeywordOptions("\nCh?n Load Pattern c?n ki?m toán:");
+                pko.AllowNone = true;
+
+                // Thêm 10 pattern n?ng nh?t vào menu
+                int maxMenu = Math.Min(10, nonEmptyPatterns.Count);
+                for (int i = 0; i < maxMenu; i++)
                 {
-                    WriteError("Không tìm th?y Load Pattern nào trong model SAP2000.");
-                    return;
+                    pko.Keywords.Add(nonEmptyPatterns[i].Name);
+                }
+                
+                if (nonEmptyPatterns.Count > maxMenu) pko.Keywords.Add("Other");
+                pko.Keywords.Add("All");
+                pko.Keywords.Default = nonEmptyPatterns[0].Name;
+
+                // Hi?n th? danh sách g?i ý
+                WriteMessage("\nDanh sách Pattern có t?i tr?ng l?n nh?t:");
+                for (int i = 0; i < maxMenu; i++)
+                {
+                    WriteMessage($"  - {nonEmptyPatterns[i].Name} (Est: {nonEmptyPatterns[i].TotalEstimatedLoad:N0})");
                 }
 
-                WriteMessage($"\nLoad Patterns có s?n: {string.Join(", ", availablePatterns)}");
+                PromptResult res = Ed.GetKeywords(pko);
+                if (res.Status != PromptStatus.OK) return;
 
-                // 3. Nh?p Load Pattern(s) c?n ki?m tra
-                var patternOpt = new PromptStringOptions("\nNh?p Load Pattern(s) c?n ki?m tra (cách nhau b?ng d?u ph?y): ");
-                patternOpt.DefaultValue = "DL";
-                patternOpt.AllowSpaces = true;
+                List<string> selectedPatterns = new List<string>();
 
-                var patternRes = Ed.GetString(patternOpt);
-                if (patternRes.Status != PromptStatus.OK || string.IsNullOrWhiteSpace(patternRes.StringResult))
+                if (res.StringResult == "All")
                 {
-                    WriteMessage("?ã h?y l?nh.");
-                    return;
+                    selectedPatterns = nonEmptyPatterns.Select(p => p.Name).ToList();
+                }
+                else if (res.StringResult == "Other")
+                {
+                    var strOpt = new PromptStringOptions("\nNh?p tên Load Pattern (cách nhau d?u ph?y): ");
+                    var strRes = Ed.GetString(strOpt);
+                    if (strRes.Status == PromptStatus.OK)
+                    {
+                        selectedPatterns = strRes.StringResult.Split(',')
+                            .Select(s => s.Trim())
+                            .Where(s => !string.IsNullOrEmpty(s))
+                            .ToList();
+                    }
+                }
+                else
+                {
+                    selectedPatterns.Add(res.StringResult);
                 }
 
-                string inputPatterns = patternRes.StringResult.Trim();
+                if (selectedPatterns.Count == 0) return;
 
-                // 4. Validate patterns
-                var requestedPatterns = inputPatterns.Split(new[] { ',', ';', ' ' }, StringSplitOptions.RemoveEmptyEntries)
-                    .Select(p => p.Trim().ToUpper())
-                    .Distinct()
-                    .ToList();
-
-                var invalidPatterns = requestedPatterns
-                    .Where(p => !availablePatterns.Any(ap => ap.Equals(p, StringComparison.OrdinalIgnoreCase)))
-                    .ToList();
-
-                if (invalidPatterns.Count > 0)
-                {
-                    WriteWarning($"Các pattern không t?n t?i s? b? b? qua: {string.Join(", ", invalidPatterns)}");
-                }
-
-                var validPatterns = requestedPatterns.Except(invalidPatterns).ToList();
-                if (validPatterns.Count == 0)
-                {
-                    WriteError("Không có Load Pattern h?p l? ?? ki?m tra.");
-                    return;
-                }
-
-                // 5. Ch?n ??n v? xu?t báo cáo
-                var unitOpt = new PromptKeywordOptions("\nCh?n ??n v? xu?t báo cáo [kN/Ton/kgf/lb]: ");
-                unitOpt.Keywords.Add("kN");
+                // 4. Ch?n ??n v?
+                var unitOpt = new PromptKeywordOptions("\nCh?n ??n v? xu?t báo cáo [Ton/kN/kgf/lb]: ");
                 unitOpt.Keywords.Add("Ton");
+                unitOpt.Keywords.Add("kN");
                 unitOpt.Keywords.Add("kgf");
                 unitOpt.Keywords.Add("lb");
-                unitOpt.Keywords.Default = "kN";
+                unitOpt.Keywords.Default = "Ton"; // K? s? VN thích T?n
                 var unitRes = Ed.GetKeywords(unitOpt);
                 if (unitRes.Status != PromptStatus.OK) return;
                 string selectedUnit = unitRes.StringResult;
 
-                // 6. Ch?y ki?m toán
-                WriteMessage($"\n?ang trích xu?t d? li?u cho: {string.Join(", ", validPatterns)}...");
-                WriteMessage("(Quá trình này có th? m?t vài giây tùy kích th??c model)");
-
+                // 5. Ch?y Audit
+                WriteMessage($"\n?ang x? lý {selectedPatterns.Count} patterns...");
                 var engine = new AuditEngine();
-                var reports = engine.RunAudit(string.Join(",", validPatterns));
-
-                if (reports.Count == 0)
-                {
-                    WriteWarning("Không có d? li?u t?i tr?ng nào ???c tìm th?y.");
-                    return;
-                }
-
-                // 6. Xu?t báo cáo
+                
                 string tempFolder = Path.GetTempPath();
                 string timestamp = DateTime.Now.ToString("yyyyMMdd_HHmmss");
                 var reportFiles = new List<string>();
 
-                foreach (var report in reports)
+                foreach (var pat in selectedPatterns)
                 {
-                    string fileName = $"DTS_Audit_{report.LoadPattern}_{timestamp}.txt";
+                    WriteMessage($"?ang x? lý {pat}...");
+                    var report = engine.RunSingleAudit(pat);
+                    
+                    if (report.Stories.Count == 0)
+                    {
+                        WriteWarning($"  -> {pat}: Không tìm th?y d? li?u ho?c t?i tr?ng = 0.");
+                        continue;
+                    }
+
+                    string fileName = $"DTS_Audit_{report.ModelName}_{pat}_{timestamp}.txt";
                     string filePath = Path.Combine(tempFolder, fileName);
+                    string content = engine.GenerateTextReport(report, selectedUnit);
 
-                    string reportContent = engine.GenerateTextReport(report, selectedUnit);
-
-                    File.WriteAllText(filePath, reportContent, Encoding.UTF8);
+                    File.WriteAllText(filePath, content, Encoding.UTF8);
                     reportFiles.Add(filePath);
-
-                    // Hi?n th? tóm t?t
-                    WriteMessage($"\n--- {report.LoadPattern} ---");
-                    WriteMessage($"  S? t?ng: {report.Stories.Count}");
-                    // Hi?n th? tóm t?t (quy ??i theo ??n v? user ch?n)
-                    double factor = 1.0;
-                    string unitLabel = selectedUnit;
-                    switch (selectedUnit)
-                    {
-                        case "Ton": factor = 1.0 / 9.81; break;
-                        case "kgf": factor = 101.97; break;
-                        case "lb": factor = 224.8; break;
-                        default: factor = 1.0; unitLabel = "kN"; break;
-                    }
-
-                    WriteMessage($"  T?ng tính toán: {report.TotalCalculatedForce * factor:n2} {unitLabel}");
-
-                    if (Math.Abs(report.SapBaseReaction) > 0.01)
-                    {
-                        WriteMessage($"  Base Reaction: {report.SapBaseReaction * factor:n2} {unitLabel}");
-                        WriteMessage($"  Sai l?ch: {report.DifferencePercent:0.00}%");
-
-                        if (Math.Abs(report.DifferencePercent) < 1.0)
-                        {
-                            WriteSuccess($"  Ki?m tra OK (< 1%)");
-                        }
-                        else if (Math.Abs(report.DifferencePercent) < 5.0)
-                        {
-                            WriteWarning($"  Ch?p nh?n (< 5%)");
-                        }
-                        else
-                        {
-                            WriteError($"  C?n xem xét (> 5%)");
-                        }
-                    }
-                    else
-                    {
-                        WriteWarning("  Base Reaction: Ch?a có (ch?y phân tích model ?? l?y)");
-                    }
                 }
 
-                // 7. M? file báo cáo
-                WriteMessage($"\n--- ?ã t?o {reportFiles.Count} file báo cáo ---");
-                foreach (var file in reportFiles)
+                // 6. K?t qu?
+                if (reportFiles.Count > 0)
                 {
-                    WriteMessage($"  {file}");
+                    WriteSuccess($"?ã t?o {reportFiles.Count} báo cáo.");
+                    
+                    // M? file ??u tiên ngay l?p t?c (UX: Instant Feedback)
+                    try 
+                    { 
+                        Process.Start(reportFiles[0]); 
+                        if(reportFiles.Count > 1) WriteMessage($"Các file khác n?m t?i: {tempFolder}");
+                    } 
+                    catch { }
                 }
-
-                // H?i có mu?n m? file không
-                var openOpt = new PromptKeywordOptions("\nM? file báo cáo? [Yes/No]");
-                openOpt.Keywords.Add("Yes");
-                openOpt.Keywords.Add("No");
-                openOpt.Keywords.Default = "Yes";
-                openOpt.AllowNone = true;
-
-                var openRes = Ed.GetKeywords(openOpt);
-                if (openRes.Status == PromptStatus.OK && openRes.StringResult == "Yes")
+                else
                 {
-                    foreach (var file in reportFiles)
-                    {
-                        try
-                        {
-                            Process.Start(file);
-                        }
-                        catch (System.Exception ex)
-                        {
-                            WriteWarning($"Không th? m? file: {ex.Message}");
-                        }
-                    }
+                    WriteWarning("Không t?o ???c báo cáo nào (Model tr?ng ho?c không có t?i).");
                 }
-
-                WriteSuccess("Ki?m toán hoàn t?t.");
             });
         }
 
@@ -221,7 +179,7 @@ namespace DTS_Engine.Commands
                 var patterns = SapUtils.GetLoadPatterns();
                 if (patterns.Count == 0)
                 {
-                    WriteError("Không tìm th?y Load Pattern nào.");
+                WriteError("Không tìm th?y Load Pattern nào.");
                     return;
                 }
 

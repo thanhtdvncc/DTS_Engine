@@ -17,7 +17,7 @@ namespace DTS_Engine.Core.Utils
     /// - Mọi giá trị chiều dài từ CAD đều qua UnitManager quy đổi
     /// - Tải trọng luôn xuất sang SAP theo đơn vị của UnitManager
     /// </summary>
-    public static class SapUtils
+    public static partial class SapUtils    
     {
         #region Connection
 
@@ -671,6 +671,103 @@ ref csys,
 
         #endregion
 
+        #region Audit Helpers
+
+        public class PatternSummary
+        {
+            public string Name { get; set; }
+            public double TotalEstimatedLoad { get; set; } // Tổng sơ bộ để sort
+        }
+
+        /// <summary>
+        /// Lấy danh sách các Load Pattern có chứa tải trọng (loại bỏ pattern rỗng).
+        /// Sắp xếp giảm dần theo tổng tải trọng ước tính.
+        /// </summary>
+        public static List<PatternSummary> GetActiveLoadPatterns()
+        {
+            var result = new List<PatternSummary>();
+            var model = GetModel();
+            if (model == null) return result;
+
+            try
+            {
+                int count = 0;
+                string[] names = null;
+                model.LoadPatterns.GetNameList(ref count, ref names);
+                if (names == null) return result;
+
+                var activePatterns = new Dictionary<string, double>();
+
+                // 1. Check Frame Loads (Nhanh)
+                CheckTableForPatterns(model, "Frame Loads - Distributed", "LoadPat", "FOverL", activePatterns);
+                
+                // 2. Check Area Loads (Nhanh)
+                CheckTableForPatterns(model, "Area Loads - Uniform", "LoadPat", "UnifLoad", activePatterns);
+
+                // 3. Check Point Loads
+                CheckTableForPatterns(model, "Joint Loads - Force", "LoadPat", "F3", activePatterns);
+
+                // Convert to list
+                foreach(var kvp in activePatterns)
+                {
+                    result.Add(new PatternSummary { Name = kvp.Key, TotalEstimatedLoad = Math.Abs(kvp.Value) });
+                }
+
+                // Add các pattern có tên nhưng chưa detect được (để an toàn)
+                foreach(var n in names)
+                {
+                    if (!activePatterns.ContainsKey(n))
+                        result.Add(new PatternSummary { Name = n, TotalEstimatedLoad = 0 });
+                }
+            }
+            catch 
+            {
+                // Fallback: Return all names unsorted
+                int c = 0; string[] n = null;
+                model.LoadPatterns.GetNameList(ref c, ref n);
+                if(n!=null) result = n.Select(x => new PatternSummary { Name = x, TotalEstimatedLoad = 0 }).ToList();
+            }
+
+            return result.OrderByDescending(p => p.TotalEstimatedLoad).ToList();
+        }
+
+        private static void CheckTableForPatterns(cSapModel model, string tableName, string patField, string valField, Dictionary<string, double> dict)
+        {
+            try
+            {
+                int tableVer = 0;
+                string[] fields = null;
+                int numRec = 0;
+                string[] tableData = null;
+                string[] input = new string[] { "" };
+
+                int ret = model.DatabaseTables.GetTableForDisplayArray(tableName, ref input, "All", ref tableVer, ref fields, ref numRec, ref tableData);
+
+                if (ret == 0 && numRec > 0)
+                {
+                    int idxPat = Array.IndexOf(fields, patField);
+                    int idxVal = Array.IndexOf(fields, valField); // Dùng cột giá trị để tính tổng sơ bộ
+
+                    if (idxPat >= 0)
+                    {
+                        int cols = fields.Length;
+                        for (int i = 0; i < numRec; i++)
+                        {
+                            string p = tableData[i * cols + idxPat];
+                            double v = 0;
+                            if (idxVal >= 0) double.TryParse(tableData[i * cols + idxVal], NumberStyles.Any, CultureInfo.InvariantCulture, out v);
+
+                            if (!dict.ContainsKey(p)) dict[p] = 0;
+                            dict[p] += Math.Abs(v);
+                        }
+                    }
+                }
+            }
+            catch { }
+        }
+
+        #endregion
+
         #region Load Patterns & Stories
 
         public static bool LoadPatternExists(string patternName)
@@ -822,7 +919,6 @@ ref csys,
             try
             {
                 int tableVersion = 0;
-                string[] fieldNames = null;
                 string[] tableData = null;
                 int numberRecords = 0;
                 string[] fieldsKeysIncluded = null;

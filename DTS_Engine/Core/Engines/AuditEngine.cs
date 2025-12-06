@@ -22,9 +22,8 @@ namespace DTS_Engine.Core.Engines
         #region Constants & Fields
 
         private const double STORY_TOLERANCE = 500.0; // mm
-        private const double GRID_SNAP_TOLERANCE = 500.0; // mm
-        // Minimum area to consider (m^2)
-        private const double MIN_AREA_THRESHOLD_M2 = 0.05; // 0.05 m2
+        private const double GRID_SNAP_TOLERANCE = 200.0; // mm (giảm xuống cho chính xác)
+        private const double MIN_AREA_THRESHOLD_M2 = 0.05;
 
         // Cache grids tách biệt X và Y để tìm kiếm nhanh
         private List<SapUtils.GridLineRecord> _xGrids;
@@ -51,7 +50,6 @@ namespace DTS_Engine.Core.Engines
             if (SapUtils.IsConnected)
             {
                 var allGrids = SapUtils.GetGridLines();
-                // Phân loại Grid X và Y, sắp xếp tăng dần để binary search hoặc linear scan
                 _xGrids = allGrids.Where(g => g.Orientation == "X").OrderBy(g => g.Coordinate).ToList();
                 _yGrids = allGrids.Where(g => g.Orientation == "Y").OrderBy(g => g.Coordinate).ToList();
                 _stories = SapUtils.GetStories();
@@ -98,6 +96,7 @@ namespace DTS_Engine.Core.Engines
         /// </summary>
         public AuditReport RunSingleAudit(string loadPattern)
         {
+            CacheGeometry();
             var report = new AuditReport
             {
                 LoadPattern = loadPattern,
@@ -106,7 +105,6 @@ namespace DTS_Engine.Core.Engines
                 UnitInfo = UnitManager.Info.ToString()
             };
 
-            // 1. Thu thập tải trọng từ SAP (đã quy đổi về kN, m, kN/m, kN/m2)
             var allLoads = new List<RawSapLoad>();
             allLoads.AddRange(SapUtils.GetAllFrameDistributedLoads(loadPattern));
             allLoads.AddRange(SapUtils.GetAllFramePointLoads(loadPattern));
@@ -115,11 +113,9 @@ namespace DTS_Engine.Core.Engines
             allLoads.AddRange(SapUtils.GetAllPointLoads(loadPattern));
 
             if (allLoads.Count == 0) return report;
-
-            // 2. Xác định danh sách tầng dựa trên cao độ phần tử
+                  
             var storyElevations = DetermineStoryElevations(allLoads);
 
-            // 3. Xử lý từng tầng
             foreach (var storyInfo in storyElevations.OrderByDescending(s => s.Value))
             {
                 var storyLoads = allLoads.Where(l => Math.Abs(l.ElementZ - storyInfo.Value) <= STORY_TOLERANCE).ToList();
@@ -130,20 +126,16 @@ namespace DTS_Engine.Core.Engines
                     report.Stories.Add(storyGroup);
             }
 
-            // 4. Lấy phản lực đáy tổng cộng để so sánh (kiểm tra cân bằng lực)
-            // Lấy theo hướng chủ đạo của Load Pattern (thường là Gravity - Z)
-            // Tuy nhiên nếu là gió (X/Y), cần lấy FX/FY. Ở đây lấy vector tổng hoặc mặc định Z.
-            report.SapBaseReaction = SapUtils.GetBaseReaction(loadPattern, "Z"); 
-            
-            // Note: Nếu tải trọng ngang, người dùng nên check FX/FY. 
-            // Logic mở rộng: Check hướng tải trong allLoads để quyết định lấy Reaction hướng nào.
+            // Lấy Base Reaction (nếu tải ngang thì lấy Max(X,Y,Z))
             if (CheckIfLateralLoad(allLoads))
             {
-                // Nếu chủ yếu là tải ngang, lấy reaction ngang lớn nhất
                 double rx = SapUtils.GetBaseReaction(loadPattern, "X");
                 double ry = SapUtils.GetBaseReaction(loadPattern, "Y");
-                if (Math.Abs(rx) > Math.Abs(report.SapBaseReaction)) report.SapBaseReaction = rx;
-                if (Math.Abs(ry) > Math.Abs(report.SapBaseReaction)) report.SapBaseReaction = ry;
+                report.SapBaseReaction = Math.Abs(rx) > Math.Abs(ry) ? rx : ry;
+            }
+            else
+            {
+                report.SapBaseReaction = SapUtils.GetBaseReaction(loadPattern, "Z");
             }
 
             return report;
@@ -644,125 +636,64 @@ namespace DTS_Engine.Core.Engines
         }
 
         // --- XỬ LÝ TẢI ĐIỂM (POINT) ---
+        // Cập nhật lại logic tìm trục cho điểm để fix lỗi "?"
         private void ProcessPointLoads(List<RawSapLoad> loads, AuditValueGroup valueGroup)
         {
-            // 1. Chuẩn bị dữ liệu: Gắn thông tin Grid cho từng điểm tải
             var pointItems = new List<PointAuditItem>();
-            var allPoints = SapUtils.GetAllPoints(); // Lấy cache toạ độ điểm
+            var allPoints = SapUtils.GetAllPoints(); 
 
             foreach (var load in loads)
             {
                 var ptCoord = allPoints.FirstOrDefault(p => p.Name == load.ElementName);
-                if (ptCoord == null) continue; // Skip nếu không tìm thấy tọa độ
+                if (ptCoord == null) continue;
 
-                // Tìm Grid X và Grid Y chính xác (Snap)
-                var gridX = _xGrids.OrderBy(g => Math.Abs(g.Coordinate - ptCoord.X)).FirstOrDefault();
-                var gridY = _yGrids.OrderBy(g => Math.Abs(g.Coordinate - ptCoord.Y)).FirstOrDefault();
-
-                string xName = (gridX != null && Math.Abs(gridX.Coordinate - ptCoord.X) < GRID_SNAP_TOLERANCE) 
-                    ? gridX.Name 
-                    : null;
-                    
-                string yName = (gridY != null && Math.Abs(gridY.Coordinate - ptCoord.Y) < GRID_SNAP_TOLERANCE)
-                    ? FormatGridWithOffset(gridY.Name, ptCoord.Y - gridY.Coordinate) // Hỗ trợ E(-2.2m)
-                    : null;
+                // Sử dụng FindAxisRange để tìm trục gần nhất, kể cả offset
+                string xName = FindAxisRange(ptCoord.X, ptCoord.X, _xGrids, true); 
+                string yName = FindAxisRange(ptCoord.Y, ptCoord.Y, _yGrids, true);
 
                 pointItems.Add(new PointAuditItem
                 {
                     Load = load,
                     XName = xName,
-                    YName = yName,
-                    RawX = ptCoord.X, // Dùng để sort
-                    RawY = ptCoord.Y
+                    YName = yName
                 });
             }
 
-            // 2. Chiến lược gom nhóm: Ưu tiên gom theo phương ngang (Y Grids) trước, sau đó dọc (X Grids)
-            // Kỹ sư thường đọc bản vẽ theo phương ngang (Trục A, B, C...)
-            
             var processedItems = new HashSet<RawSapLoad>();
 
-            // --- PASS 1: Gom theo Trục Y (Ngang) ---
-            var groupsY = pointItems.Where(p => p.YName != null)
-                                    .GroupBy(p => p.YName)
-                                    .OrderBy(g => g.Key);
-
+            // Gom theo Y (Ngang)
+            var groupsY = pointItems.GroupBy(p => p.YName).OrderBy(g => g.Key);
             foreach (var grp in groupsY)
             {
-                var itemsInRow = grp.ToList();
-                // Chỉ gom nếu có từ 2 điểm trở lên trên cùng trục
-                if (itemsInRow.Count > 1) 
+                var items = grp.ToList();
+                if (items.Count > 1) // Chỉ gom nếu > 1
                 {
-                    double totalForce = itemsInRow.Sum(i => i.Load.Value1);
-                    int count = itemsInRow.Count;
+                    var xLocs = items.Select(i => i.XName).Distinct().OrderBy(s => s).ToList();
+                    string xDesc = xLocs.Count > 5 ? $"{xLocs.Count} vị trí" : string.Join(", ", xLocs);
                     
-                    // Tạo danh sách trục cắt: VD "1, 2, 11, 12"
-                    var xLocs = itemsInRow.Select(i => i.XName ?? "?").OrderBy(s => s).Distinct();
-                    string crossAxes = string.Join(",", xLocs);
-                    if (crossAxes.Length > 20) crossAxes = $"{itemsInRow.Count} vị trí";
-
                     valueGroup.Entries.Add(new AuditEntry
                     {
-                        GridLocation = $"Trục {grp.Key} (x {crossAxes})", // VD: Trục E(-2.2m) (x 1,2,11,12)
-                        Explanation = $"{count} vị trí",
-                        Quantity = count,
-                        Force = totalForce,
-                        ElementList = itemsInRow.Select(i => i.Load.ElementName).ToList()
+                        GridLocation = $"Trục {grp.Key}",
+                        Explanation = $"Tại: {xDesc}",
+                        Quantity = items.Count,
+                        Force = items.Sum(i => i.Load.Value1),
+                        ElementList = items.Select(i => i.Load.ElementName).ToList()
                     });
-
-                    foreach (var item in itemsInRow) processedItems.Add(item.Load);
+                    foreach (var i in items) processedItems.Add(i.Load);
                 }
             }
 
-            // --- PASS 2: Gom theo Trục X (Dọc) cho các điểm còn lại ---
-            var remainingItems = pointItems.Where(p => !processedItems.Contains(p.Load)).ToList();
-            var groupsX = remainingItems.Where(p => p.XName != null)
-                                        .GroupBy(p => p.XName)
-                                        .OrderBy(g => g.Key);
-
-            foreach (var grp in groupsX)
+            // Gom phần còn lại (lẻ)
+            var leftovers = pointItems.Where(p => !processedItems.Contains(p.Load));
+            foreach(var item in leftovers)
             {
-                var itemsInCol = grp.ToList();
-                if (itemsInCol.Count > 1)
-                {
-                    double totalForce = itemsInCol.Sum(i => i.Load.Value1);
-                    int count = itemsInCol.Count;
-
-                    var yLocs = itemsInCol.Select(i => i.YName ?? "?").OrderBy(s => s).Distinct();
-                    string crossAxes = string.Join(",", yLocs);
-                     if (crossAxes.Length > 20) crossAxes = $"{itemsInCol.Count} vị trí";
-
-                    valueGroup.Entries.Add(new AuditEntry
-                    {
-                        GridLocation = $"Trục {grp.Key} (x {crossAxes})",
-                        Explanation = $"{count} vị trí",
-                        Quantity = count,
-                        Force = totalForce,
-                        ElementList = itemsInCol.Select(i => i.Load.ElementName).ToList()
-                    });
-
-                    foreach (var item in itemsInCol) processedItems.Add(item.Load);
-                }
-            }
-
-            // --- PASS 3: Các điểm lẻ tẻ còn lại ---
-            var leftovers = pointItems.Where(p => !processedItems.Contains(p.Load)).ToList();
-            
-            // Gom các điểm trùng vị trí (nếu có)
-            var uniqueLeftovers = leftovers.GroupBy(p => GetGridLocationForPoint(p.Load.ElementName));
-            
-            foreach (var grp in uniqueLeftovers)
-            {
-                double totalForce = grp.Sum(i => i.Load.Value1);
-                int count = grp.Count();
-                
                 valueGroup.Entries.Add(new AuditEntry
                 {
-                    GridLocation = grp.Key, // Format cũ: (GridX, GridY)
-                    Explanation = "1 vị trí",
-                    Quantity = count,
-                    Force = totalForce,
-                    ElementList = grp.Select(i => i.Load.ElementName).ToList()
+                    GridLocation = $"Giao {item.XName} / {item.YName}",
+                    Explanation = "1 vị trí riêng lẻ",
+                    Quantity = 1,
+                    Force = item.Load.Value1,
+                    ElementList = new List<string> { item.Load.ElementName }
                 });
             }
         }
@@ -798,37 +729,33 @@ namespace DTS_Engine.Core.Engines
             return $"Trục {xRange} x {yRange}";
         }
 
-        private string FindAxisRange(double minVal, double maxVal, List<SapUtils.GridLineRecord> grids)
+        // Cập nhật hàm tìm trục để hỗ trợ snap single point tốt hơn
+        private string FindAxisRange(double minVal, double maxVal, List<SapUtils.GridLineRecord> grids, bool isPoint = false)
         {
             if (grids == null || grids.Count == 0) return "?";
 
-            // Tìm trục gần Min nhất
             var startGrid = grids.OrderBy(g => Math.Abs(g.Coordinate - minVal)).First();
             double startDiff = minVal - startGrid.Coordinate;
 
-            // Tìm trục gần Max nhất
+            if (isPoint || Math.Abs(maxVal - minVal) < GRID_SNAP_TOLERANCE)
+            {
+                // Format: A(+1.2m)
+                return FormatGridWithOffset(startGrid.Name, startDiff);
+            }
+
             var endGrid = grids.OrderBy(g => Math.Abs(g.Coordinate - maxVal)).First();
             double endDiff = maxVal - endGrid.Coordinate;
 
-            string startName = FormatGridWithOffset(startGrid.Name, startDiff);
+            if (startGrid.Name == endGrid.Name) return FormatGridWithOffset(startGrid.Name, startDiff);
 
-            // Nếu cùng một trục (hoặc khoảng cách rất nhỏ)
-            if (startGrid.Name == endGrid.Name || Math.Abs(maxVal - minVal) < GRID_SNAP_TOLERANCE)
-            {
-                return startName;
-            }
-
-            string endName = FormatGridWithOffset(endGrid.Name, endDiff);
-            return $"{startName}-{endName}";
+            return $"{FormatGridWithOffset(startGrid.Name, startDiff)}-{FormatGridWithOffset(endGrid.Name, endDiff)}";
         }
 
         private string FormatGridWithOffset(string name, double offsetMm)
         {
             if (Math.Abs(offsetMm) < GRID_SNAP_TOLERANCE) return name;
-            
             double offsetM = offsetMm / 1000.0;
-            string sign = offsetM > 0 ? "+" : "";
-            return $"{name}({sign}{offsetM:0.#}m)";
+            return $"{name}({offsetM:+0.#;-0.#}m)";
         }
 
         private string GetGridLocationForPoint(string elementName)
