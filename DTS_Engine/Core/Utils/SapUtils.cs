@@ -676,12 +676,12 @@ ref csys,
         public class PatternSummary
         {
             public string Name { get; set; }
-            public double TotalEstimatedLoad { get; set; } // Tổng sơ bộ để sort
+            public double TotalEstimatedLoad { get; set; }
         }
 
         /// <summary>
-        /// Lấy danh sách các Load Pattern có chứa tải trọng (loại bỏ pattern rỗng).
-        /// Sắp xếp giảm dần theo tổng tải trọng ước tính.
+        /// Get list of Load Patterns that actually contain loads.
+        /// Improved logic to scan multiple tables and sum absolute values.
         /// </summary>
         public static List<PatternSummary> GetActiveLoadPatterns()
         {
@@ -691,79 +691,93 @@ ref csys,
 
             try
             {
+                // 1. Get all pattern names first
                 int count = 0;
                 string[] names = null;
                 model.LoadPatterns.GetNameList(ref count, ref names);
                 if (names == null) return result;
 
-                var activePatterns = new Dictionary<string, double>();
+                var loadSums = new Dictionary<string, double>();
+                foreach (var n in names) loadSums[n] = 0;
 
-                // 1. Check Frame Loads (Nhanh)
-                CheckTableForPatterns(model, "Frame Loads - Distributed", "LoadPat", "FOverL", activePatterns);
-                
-                // 2. Check Area Loads (Nhanh)
-                CheckTableForPatterns(model, "Area Loads - Uniform", "LoadPat", "UnifLoad", activePatterns);
-
-                // 3. Check Point Loads
-                CheckTableForPatterns(model, "Joint Loads - Force", "LoadPat", "F3", activePatterns);
-
-                // Convert to list
-                foreach(var kvp in activePatterns)
+                // 2. Helper to scan a table and accumulate load
+                void ScanTable(string tableName, string patField, string[] valFields)
                 {
-                    result.Add(new PatternSummary { Name = kvp.Key, TotalEstimatedLoad = Math.Abs(kvp.Value) });
-                }
-
-                // Add các pattern có tên nhưng chưa detect được (để an toàn)
-                foreach(var n in names)
-                {
-                    if (!activePatterns.ContainsKey(n))
-                        result.Add(new PatternSummary { Name = n, TotalEstimatedLoad = 0 });
-                }
-            }
-            catch 
-            {
-                // Fallback: Return all names unsorted
-                int c = 0; string[] n = null;
-                model.LoadPatterns.GetNameList(ref c, ref n);
-                if(n!=null) result = n.Select(x => new PatternSummary { Name = x, TotalEstimatedLoad = 0 }).ToList();
-            }
-
-            return result.OrderByDescending(p => p.TotalEstimatedLoad).ToList();
-        }
-
-        private static void CheckTableForPatterns(cSapModel model, string tableName, string patField, string valField, Dictionary<string, double> dict)
-        {
-            try
-            {
-                int tableVer = 0;
-                string[] fields = null;
-                int numRec = 0;
-                string[] tableData = null;
-                string[] input = new string[] { "" };
-
-                int ret = model.DatabaseTables.GetTableForDisplayArray(tableName, ref input, "All", ref tableVer, ref fields, ref numRec, ref tableData);
-
-                if (ret == 0 && numRec > 0)
-                {
-                    int idxPat = Array.IndexOf(fields, patField);
-                    int idxVal = Array.IndexOf(fields, valField); // Dùng cột giá trị để tính tổng sơ bộ
-
-                    if (idxPat >= 0)
+                    try
                     {
-                        int cols = fields.Length;
-                        for (int i = 0; i < numRec; i++)
-                        {
-                            string p = tableData[i * cols + idxPat];
-                            double v = 0;
-                            if (idxVal >= 0) double.TryParse(tableData[i * cols + idxVal], NumberStyles.Any, CultureInfo.InvariantCulture, out v);
+                        int tableVer = 0;
+                        string[] fields = null;
+                        int numRec = 0;
+                        string[] tableData = null;
+                        string[] input = new string[] { "" };
 
-                            if (!dict.ContainsKey(p)) dict[p] = 0;
-                            dict[p] += Math.Abs(v);
+                        int ret = model.DatabaseTables.GetTableForDisplayArray(tableName, ref input, "All", ref tableVer, ref fields, ref numRec, ref tableData);
+
+                        if (ret == 0 && numRec > 0)
+                        {
+                            int idxPat = Array.IndexOf(fields, patField);
+                            if (idxPat < 0) return;
+
+                            var valIndices = valFields.Select(v => Array.IndexOf(fields, v)).Where(i => i >= 0).ToList();
+                            if (valIndices.Count == 0) return;
+
+                            int cols = fields.Length;
+                            for (int i = 0; i < numRec; i++)
+                            {
+                                string p = tableData[i * cols + idxPat];
+                                double rowSum = 0;
+                                
+                                foreach(var idx in valIndices)
+                                {
+                                    if (double.TryParse(tableData[i * cols + idx], NumberStyles.Any, CultureInfo.InvariantCulture, out double v))
+                                        rowSum += Math.Abs(v);
+                                }
+
+                                if (string.IsNullOrWhiteSpace(p)) continue;
+                                p = p.Trim();
+                                if (!loadSums.ContainsKey(p)) loadSums[p] = 0;
+                                loadSums[p] += rowSum;
+                            }
                         }
+                    }
+                    catch { }
+                }
+
+                // 3. Scan relevant tables
+                // Frame Distributed: Check Force per Length
+                ScanTable("Frame Loads - Distributed", "LoadPat", new[] { "FOverL", "FOverL1", "FOverL2" });
+                
+                // Frame Point: Check Force or Moment
+                ScanTable("Frame Loads - Point", "LoadPat", new[] { "Force", "Moment" });
+
+                // Area Uniform: Check Uniform Load
+                ScanTable("Area Loads - Uniform", "LoadPat", new[] { "UnifLoad" });
+                
+                // Area Uniform To Frame
+                ScanTable("Area Loads - Uniform To Frame", "LoadPat", new[] { "UnifLoad" });
+
+                // Joint Loads
+                ScanTable("Joint Loads - Force", "LoadPat", new[] { "F1", "F2", "F3", "M1", "M2", "M3" });
+
+                // 4. Build result
+                foreach (var kvp in loadSums)
+                {
+                    // Allow small tolerance, but if > 0 it exists
+                    if (kvp.Value > 0.0001)
+                    {
+                        result.Add(new PatternSummary { Name = kvp.Key, TotalEstimatedLoad = kvp.Value });
                     }
                 }
             }
-            catch { }
+            catch
+            {
+                // Fallback: return all names if scan fails
+                int c = 0; string[] n = null;
+                model.LoadPatterns.GetNameList(ref c, ref n);
+                if (n != null) result = n.Select(x => new PatternSummary { Name = x, TotalEstimatedLoad = 0 }).ToList();
+            }
+
+            return result.OrderByDescending(p => p.TotalEstimatedLoad).ToList();
         }
 
         #endregion

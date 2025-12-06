@@ -22,7 +22,7 @@ namespace DTS_Engine.Core.Engines
         #region Constants & Fields
 
         private const double STORY_TOLERANCE = 500.0; // mm
-        private const double GRID_SNAP_TOLERANCE = 200.0; // mm (giảm xuống cho chính xác)
+        private const double GRID_SNAP_TOLERANCE = 250.0; // mm (increased slightly for better snapping)
         private const double MIN_AREA_THRESHOLD_M2 = 0.05;
 
         // Cache grids tách biệt X và Y để tìm kiếm nhanh
@@ -122,7 +122,7 @@ namespace DTS_Engine.Core.Engines
                 if (storyLoads.Count == 0) continue;
 
                 var storyGroup = ProcessStory(storyInfo.Key, storyInfo.Value, storyLoads);
-                if (storyGroup.LoadTypeGroups.Count > 0)
+                if (storyGroup.LoadTypes.Count > 0)
                     report.Stories.Add(storyGroup);
             }
 
@@ -137,6 +137,9 @@ namespace DTS_Engine.Core.Engines
             {
                 report.SapBaseReaction = SapUtils.GetBaseReaction(loadPattern, "Z");
             }
+
+            // If reaction is zero (no analysis/results) mark as not analyzed
+            if (Math.Abs(report.SapBaseReaction) < 0.001) report.IsAnalyzed = false;
 
             return report;
         }
@@ -159,8 +162,8 @@ namespace DTS_Engine.Core.Engines
             foreach (var typeGroup in loadTypeGroups)
             {
                 var typeResult = ProcessLoadType(typeGroup.Key, typeGroup.ToList());
-                if (typeResult.ValueGroups.Count > 0)
-                    storyGroup.LoadTypeGroups.Add(typeResult);
+                if (typeResult.Entries != null && typeResult.Entries.Count > 0)
+                    storyGroup.LoadTypes.Add(typeResult);
             }
 
             return storyGroup;
@@ -170,44 +173,42 @@ namespace DTS_Engine.Core.Engines
         {
             var typeGroup = new AuditLoadTypeGroup
             {
-                LoadTypeName = GetLoadTypeDisplayName(loadType)
+                LoadTypeName = GetLoadTypeDisplayName(loadType),
+                Entries = new List<AuditEntry>(),
+                ValueGroups = new List<AuditValueGroup>()
             };
 
-            // Gom nhóm theo giá trị tải (Value1) và Hướng (Direction)
-            // Sử dụng Round để gom các giá trị xấp xỉ nhau
+            // Group internally for processing but produce a flat list of entries
             var valueGroups = loads.GroupBy(l => new { Val = Math.Round(l.Value1, 3), Dir = l.Direction });
 
             foreach (var group in valueGroups.OrderByDescending(g => g.Key.Val))
             {
-                var valueResult = new AuditValueGroup
-                {
-                    LoadValue = group.Key.Val,
-                    Direction = group.Key.Dir
-                };
+                double val = group.Key.Val;
+                string dir = group.Key.Dir;
+                var subLoads = group.ToList();
 
-                // Phân luồng xử lý hình học dựa trên loại tải
                 if (loadType.Contains("Area"))
                 {
-                    ProcessAreaLoads(group.ToList(), valueResult);
+                    ProcessAreaLoads(subLoads, val, dir, typeGroup.Entries);
                 }
                 else if (loadType.Contains("Frame"))
                 {
-                    ProcessFrameLoads(group.ToList(), valueResult);
+                    ProcessFrameLoads(subLoads, val, dir, typeGroup.Entries);
                 }
                 else
                 {
-                    ProcessPointLoads(group.ToList(), valueResult);
+                    ProcessPointLoads(subLoads, val, dir, typeGroup.Entries);
                 }
-
-                if (valueResult.Entries.Count > 0)
-                    typeGroup.ValueGroups.Add(valueResult);
             }
+
+            // Sort entries
+            typeGroup.Entries = typeGroup.Entries.OrderBy(e => e.GridLocation).ToList();
 
             return typeGroup;
         }
 
         // --- XỬ LÝ TẢI DIỆN TÍCH (AREA - SMART GEOMETRY RECOGNITION & DECOMPOSITION) ---
-        private void ProcessAreaLoads(List<RawSapLoad> loads, AuditValueGroup valueGroup)
+        private void ProcessAreaLoads(List<RawSapLoad> loads, double loadVal, string dir, List<AuditEntry> targetList)
         {
             var polygons = new List<(Polygon Poly, string Name)>();
             foreach (var load in loads)
@@ -242,15 +243,19 @@ namespace DTS_Engine.Core.Engines
 
                 var strategy = AnalyzeShapeStrategy(geom);
                 double areaM2 = geom.Area / 1.0e6;
-                double force = areaM2 * valueGroup.LoadValue;
+                double force = areaM2 * loadVal;
                 string location = GetGridRangeDescription(geom.EnvelopeInternal);
 
-                valueGroup.Entries.Add(new AuditEntry
+                targetList.Add(new AuditEntry
                 {
                     GridLocation = location,
                     Explanation = strategy.Formula,
                     Quantity = areaM2,
-                    Force = force,
+                    QuantityUnit = "m²",
+                    UnitLoad = loadVal,
+                    UnitLoadString = $"{loadVal:0.00} {UnitManager.Info.ForceUnit}/m²",
+                    TotalForce = force,
+                    Direction = dir,
                     ElementList = new List<string>()
                 });
             }
@@ -579,7 +584,7 @@ namespace DTS_Engine.Core.Engines
         }
 
         // --- XỬ LÝ TẢI THANH (FRAME - LINE UNION) ---
-        private void ProcessFrameLoads(List<RawSapLoad> loads, AuditValueGroup valueGroup)
+        private void ProcessFrameLoads(List<RawSapLoad> loads, double loadVal, string dir, List<AuditEntry> targetList)
         {
             var lines = new List<(LineString Line, string Name)>();
 
@@ -613,7 +618,7 @@ namespace DTS_Engine.Core.Engines
                 
                 // Chiều dài mm -> m
                 double lenM = geom.Length / 1000.0;
-                double force = lenM * valueGroup.LoadValue;
+                double force = lenM * loadVal;
 
                 string location = GetGridRangeDescription(geom.EnvelopeInternal);
                 string explanation = $"L = {lenM:0.00}m";
@@ -624,12 +629,16 @@ namespace DTS_Engine.Core.Engines
                     .Select(l => l.Name)
                     .ToList();
 
-                valueGroup.Entries.Add(new AuditEntry
+                targetList.Add(new AuditEntry
                 {
                     GridLocation = location,
                     Explanation = explanation,
                     Quantity = lenM,
-                    Force = force,
+                    QuantityUnit = "m",
+                    UnitLoad = loadVal,
+                    UnitLoadString = $"{loadVal:0.00} {UnitManager.Info.ForceUnit}/m",
+                    TotalForce = force,
+                    Direction = dir,
                     ElementList = containedElements
                 });
             }
@@ -637,63 +646,28 @@ namespace DTS_Engine.Core.Engines
 
         // --- XỬ LÝ TẢI ĐIỂM (POINT) ---
         // Cập nhật lại logic tìm trục cho điểm để fix lỗi "?"
-        private void ProcessPointLoads(List<RawSapLoad> loads, AuditValueGroup valueGroup)
+        private void ProcessPointLoads(List<RawSapLoad> loads, double loadVal, string dir, List<AuditEntry> targetList)
         {
-            var pointItems = new List<PointAuditItem>();
-            var allPoints = SapUtils.GetAllPoints(); 
+            var allPoints = SapUtils.GetAllPoints();
 
             foreach (var load in loads)
             {
                 var ptCoord = allPoints.FirstOrDefault(p => p.Name == load.ElementName);
                 if (ptCoord == null) continue;
 
-                // Sử dụng FindAxisRange để tìm trục gần nhất, kể cả offset
-                string xName = FindAxisRange(ptCoord.X, ptCoord.X, _xGrids, true); 
-                string yName = FindAxisRange(ptCoord.Y, ptCoord.Y, _yGrids, true);
+                string loc = GetGridLocationForPoint(ptCoord);
 
-                pointItems.Add(new PointAuditItem
+                targetList.Add(new AuditEntry
                 {
-                    Load = load,
-                    XName = xName,
-                    YName = yName
-                });
-            }
-
-            var processedItems = new HashSet<RawSapLoad>();
-
-            // Gom theo Y (Ngang)
-            var groupsY = pointItems.GroupBy(p => p.YName).OrderBy(g => g.Key);
-            foreach (var grp in groupsY)
-            {
-                var items = grp.ToList();
-                if (items.Count > 1) // Chỉ gom nếu > 1
-                {
-                    var xLocs = items.Select(i => i.XName).Distinct().OrderBy(s => s).ToList();
-                    string xDesc = xLocs.Count > 5 ? $"{xLocs.Count} vị trí" : string.Join(", ", xLocs);
-                    
-                    valueGroup.Entries.Add(new AuditEntry
-                    {
-                        GridLocation = $"Trục {grp.Key}",
-                        Explanation = $"Tại: {xDesc}",
-                        Quantity = items.Count,
-                        Force = items.Sum(i => i.Load.Value1),
-                        ElementList = items.Select(i => i.Load.ElementName).ToList()
-                    });
-                    foreach (var i in items) processedItems.Add(i.Load);
-                }
-            }
-
-            // Gom phần còn lại (lẻ)
-            var leftovers = pointItems.Where(p => !processedItems.Contains(p.Load));
-            foreach(var item in leftovers)
-            {
-                valueGroup.Entries.Add(new AuditEntry
-                {
-                    GridLocation = $"Giao {item.XName} / {item.YName}",
-                    Explanation = "1 vị trí riêng lẻ",
+                    GridLocation = loc,
+                    Explanation = load.ElementName,
                     Quantity = 1,
-                    Force = item.Load.Value1,
-                    ElementList = new List<string> { item.Load.ElementName }
+                    QuantityUnit = "ea",
+                    UnitLoad = loadVal,
+                    UnitLoadString = $"{loadVal:0.00} {UnitManager.Info.ForceUnit}",
+                    TotalForce = loadVal,
+                    Direction = dir,
+                    ElementList = new List<string> { load.ElementName }
                 });
             }
         }
@@ -758,14 +732,11 @@ namespace DTS_Engine.Core.Engines
             return $"{name}({offsetM:+0.#;-0.#}m)";
         }
 
-        private string GetGridLocationForPoint(string elementName)
+        private string GetGridLocationForPoint(SapUtils.SapPoint pt)
         {
-            var pt = SapUtils.GetAllPoints().FirstOrDefault(p => p.Name == elementName);
-            if (pt == null) return elementName;
-
-            string x = FindAxisRange(pt.X, pt.X, _xGrids);
-            string y = FindAxisRange(pt.Y, pt.Y, _yGrids);
-            return $"({x}, {y})";
+            string x = FindAxisRange(pt.X, pt.X, _xGrids, true);
+            string y = FindAxisRange(pt.Y, pt.Y, _yGrids, true);
+            return $"{x}/{y}";
         }
 
         #endregion
@@ -851,185 +822,103 @@ namespace DTS_Engine.Core.Engines
 
         #region Report Generation (With Unit Conversion)
 
-        public string GenerateTextReport(AuditReport report)
-        {
-            var sb = new StringBuilder();
-            var uInfo = UnitManager.Info; // Lấy thông tin đơn vị hiển thị
-
-            sb.AppendLine("===================================================================");
-            sb.AppendLine("   BÁO CÁO KIỂM TOÁN TẢI TRỌNG - DTS ENGINE");
-            sb.AppendLine($"   Ngày: {report.AuditDate:dd/MM/yyyy HH:mm}");
-            sb.AppendLine($"   Model: {report.ModelName}");
-            sb.AppendLine($"   Load Case: {report.LoadPattern}");
-            sb.AppendLine($"   Đơn vị hiển thị: {uInfo.ForceUnit}, {uInfo.LengthUnit}");
-            sb.AppendLine("===================================================================");
-            sb.AppendLine();
-
-            foreach (var story in report.Stories)
-            {
-                // Convert cao độ sang mét cho dễ đọc
-                double elevM = UnitManager.ToMeter(story.Elevation);
-                sb.AppendLine($"--- TẦNG: {story.StoryName} (Z = {elevM:0.00}m) ---");
-                sb.AppendLine();
-
-                foreach (var loadType in story.LoadTypeGroups)
-                {
-                    sb.AppendLine($"[{loadType.LoadTypeName}]");
-
-                    foreach (var valGroup in loadType.ValueGroups)
-                    {
-                        // Convert giá trị tải sang đơn vị hiển thị (ví dụ kN -> Tấn)
-                        // Lưu ý: Giá trị gốc trong AuditValueGroup đang là kN/m2 hoặc kN/m
-                        // Chỉ cần format lại string đơn vị, giá trị có thể giữ nguyên hoặc convert nếu cần.
-                        // Ở đây ta giả định hiển thị LoadValue theo đơn vị lực User chọn / mét.
-                        
-                        string unitStr = loadType.LoadTypeName.Contains("AREA") ? $"{uInfo.ForceUnit}/m²" :
-                                         loadType.LoadTypeName.Contains("FRAME") ? $"{uInfo.ForceUnit}/m" : uInfo.ForceUnit;
-
-                        double displayLoadVal = ConvertForce(valGroup.LoadValue);
-
-                        sb.AppendLine($"    > Nhóm giá trị: {displayLoadVal:0.00} {unitStr} ({valGroup.Direction})");
-                        sb.AppendLine(new string('-', 105));
-                        sb.AppendLine(string.Format("    | {0,-35} | {1,-30} | {2,12} | {3,12} |",
-                            "Vị trí (Trục)", "Diễn giải", "SL/DT(m/m2)", $"Lực ({uInfo.ForceUnit})"));
-                        sb.AppendLine(new string('-', 105));
-
-                        foreach (var entry in valGroup.Entries)
-                        {
-                            // Convert lực tổng (đang là kN) sang đơn vị hiển thị (Tấn, Kgf...)
-                            double displayForce = ConvertForce(entry.Force);
-
-                            string loc = entry.GridLocation.Length > 35 ? entry.GridLocation.Substring(0, 32) + "..." : entry.GridLocation;
-                            string exp = entry.Explanation.Length > 30 ? entry.Explanation.Substring(0, 27) + "..." : entry.Explanation;
-
-                            sb.AppendLine(string.Format("    | {0,-35} | {1,-30} | {2,12:0.00} | {3,12:0.00} |",
-                                loc, exp, entry.Quantity, displayForce));
-                        }
-
-                        double groupTotalForce = ConvertForce(valGroup.TotalForce);
-                        sb.AppendLine(new string('-', 105));
-                        sb.AppendLine(string.Format("    | {0,-81} | {1,12:n2} |", "TỔNG NHÓM", groupTotalForce));
-                        sb.AppendLine();
-                    }
-                }
-
-                double storyTotal = ConvertForce(story.SubTotalForce);
-                sb.AppendLine($">>> TỔNG TẦNG {story.StoryName}: {storyTotal:n2} {uInfo.ForceUnit}");
-                sb.AppendLine();
-            }
-
-            // Tổng kết
-            double totalCalc = ConvertForce(report.TotalCalculatedForce);
-            double baseReact = ConvertForce(report.SapBaseReaction);
-            double diff = totalCalc - Math.Abs(baseReact);
-
-            sb.AppendLine("===================================================================");
-            sb.AppendLine($"TỔNG CỘNG TÍNH TOÁN: {totalCalc:n2} {uInfo.ForceUnit}");
-            sb.AppendLine($"SAP2000 BASE REACTION: {baseReact:n2} {uInfo.ForceUnit}");
-            sb.AppendLine($"SAI LỆCH: {diff:n2} {uInfo.ForceUnit} ({report.DifferencePercent:0.00}%)");
-            
-            if (Math.Abs(report.DifferencePercent) < 5.0)
-                sb.AppendLine(">>> ĐÁNH GIÁ: OK / CHẤP NHẬN ĐƯỢC");
-            else
-                sb.AppendLine(">>> ĐÁNH GIÁ: CẦN KIỂM TRA LẠI (> 5%)");
-            
-            sb.AppendLine("===================================================================");
-
-            return sb.ToString();
-        }
-
-        /// <summary>
-        /// Generate text report with target force unit override (kN, Ton, kgf, lb)
-        /// </summary>
-        public string GenerateTextReport(AuditReport report, string targetUnit)
+        public string GenerateTextReport(AuditReport report, string targetUnit = "kN")
         {
             var sb = new StringBuilder();
             double forceFactor = 1.0;
-            // Normalize
-            if (string.IsNullOrWhiteSpace(targetUnit)) targetUnit = "kN";
-            targetUnit = targetUnit.Trim();
+            
+            // Determine conversion factor
+            if (string.IsNullOrWhiteSpace(targetUnit)) targetUnit = UnitManager.Info.ForceUnit;
+            if (targetUnit.Equals("Ton", StringComparison.OrdinalIgnoreCase)) forceFactor = 1.0 / 9.81;
+            else if (targetUnit.Equals("kgf", StringComparison.OrdinalIgnoreCase)) forceFactor = 101.97;
+            else if (targetUnit.Equals("lb", StringComparison.OrdinalIgnoreCase)) forceFactor = 224.8;
+            else { targetUnit = "kN"; forceFactor = 1.0; } // Default kN
 
-            switch (targetUnit)
-            {
-                case "Ton": forceFactor = 1.0 / 9.81; break;
-                case "kgf": forceFactor = 101.97; break;
-                case "lb": forceFactor = 224.8; break;
-                default: targetUnit = "kN"; forceFactor = 1.0; break;
-            }
-
-            sb.AppendLine("===================================================================");
-            sb.AppendLine("   BÁO CÁO KIỂM TOÁN TẢI TRỌNG - DTS ENGINE");
-            sb.AppendLine($"   Ngày: {report.AuditDate:dd/MM/yyyy HH:mm}");
-            sb.AppendLine($"   Model: {report.ModelName}");
-            sb.AppendLine($"   Load Case: {report.LoadPattern}");
-            sb.AppendLine($"   Đơn vị hiển thị: {targetUnit}");
-            sb.AppendLine("===================================================================");
+            sb.AppendLine("=========================================================================================================");
+            sb.AppendLine("   BÁO CÁO KIỂM TOÁN TẢI TRỌNG - DTS ENGINE (PROFESSIONAL)");
+            sb.AppendLine($"   Ngày: {report.AuditDate:dd/MM/yyyy HH:mm} | Model: {report.ModelName}");
+            sb.AppendLine($"   Load Case: {report.LoadPattern} | Đơn vị lực báo cáo: {targetUnit}");
+            sb.AppendLine("=========================================================================================================");
             sb.AppendLine();
 
             foreach (var story in report.Stories)
             {
                 double elevM = UnitManager.ToMeter(story.Elevation);
-                sb.AppendLine($"--- TẦNG: {story.StoryName} (Z = {elevM:0.00}m) ---");
-                sb.AppendLine();
+                double storyTotal = story.TotalForce * forceFactor;
 
-                foreach (var loadType in story.LoadTypeGroups)
+                sb.AppendLine($"---------------------------------------------------------------------------------------------------------");
+                sb.AppendLine($" TẦNG: {story.StoryName,-20} | Cao độ: {elevM,6:0.00}m | TỔNG LỰC TẦNG: {storyTotal,15:N2} {targetUnit}");
+                sb.AppendLine($"---------------------------------------------------------------------------------------------------------");
+
+                foreach (var loadType in story.LoadTypes)
                 {
-                    sb.AppendLine($"[{loadType.LoadTypeName}]");
+                    sb.AppendLine();
+                    sb.AppendLine($"  >>> {loadType.LoadTypeName}");
+                    
+                    // Header Table
+                    sb.AppendLine("  " + new string('-', 103));
+                    sb.AppendLine(string.Format("  | {0,-30} | {1,-25} | {2,10} | {3,15} | {4,10} |",
+                        "Vị Trí (Trục/Range)", "Diễn Giải / Kích Thước", "Kh.Lượng", "Giá Trị Tải", $"Lực ({targetUnit})"));
+                    sb.AppendLine("  " + new string('-', 103));
 
-                    foreach (var valGroup in loadType.ValueGroups)
+                    foreach (var entry in loadType.Entries)
                     {
-                        string unitStr = loadType.LoadTypeName.Contains("AREA") ? $"{targetUnit}/m²" :
-                                         loadType.LoadTypeName.Contains("FRAME") ? $"{targetUnit}/m" : targetUnit;
-
-                        double displayLoadVal = valGroup.LoadValue * forceFactor;
-
-                        sb.AppendLine($"    > Nhóm giá trị: {displayLoadVal:0.00} {unitStr} ({valGroup.Direction})");
-                        sb.AppendLine(new string('-', 105));
-                        sb.AppendLine(string.Format("    | {0,-35} | {1,-30} | {2,12} | {3,12} |",
-                            "Vị trí (Trục)", "Diễn giải", "SL/DT(m/m2)", $"Lực ({targetUnit})"));
-                        sb.AppendLine(new string('-', 105));
-
-                        foreach (var entry in valGroup.Entries)
+                        double displayForce = entry.TotalForce * forceFactor;
+                        double displayUnitLoad = entry.UnitLoad * forceFactor; // Convert load value to matching unit
+                        
+                        // Reconstruct Unit String based on target unit
+                        string unitStr = entry.UnitLoadString;
+                        if (forceFactor != 1.0)
                         {
-                            double displayForce = entry.Force * forceFactor;
-
-                            string loc = entry.GridLocation.Length > 35 ? entry.GridLocation.Substring(0, 32) + "..." : entry.GridLocation;
-                            string exp = entry.Explanation.Length > 30 ? entry.Explanation.Substring(0, 27) + "..." : entry.Explanation;
-
-                            sb.AppendLine(string.Format("    | {0,-35} | {1,-30} | {2,12:0.00} | {3,12:0.00} |",
-                                loc, exp, entry.Quantity, displayForce));
+                            if (unitStr.Contains("/m²")) unitStr = $"{displayUnitLoad:0.00} {targetUnit}/m²";
+                            else if (unitStr.Contains("/m")) unitStr = $"{displayUnitLoad:0.00} {targetUnit}/m";
+                            else unitStr = $"{displayUnitLoad:0.00} {targetUnit}";
                         }
 
-                        double groupTotalForce = valGroup.TotalForce * forceFactor;
-                        sb.AppendLine(new string('-', 105));
-                        sb.AppendLine(string.Format("    | {0,-81} | {1,12:n2} |", "TỔNG NHÓM", groupTotalForce));
-                        sb.AppendLine();
-                    }
-                }
+                        // Truncate if too long
+                        string loc = entry.GridLocation.Length > 28 ? entry.GridLocation.Substring(0, 25) + "..." : entry.GridLocation;
+                        string desc = entry.Explanation.Length > 23 ? entry.Explanation.Substring(0, 20) + "..." : entry.Explanation;
 
-                double storyTotal = story.SubTotalForce * forceFactor;
-                sb.AppendLine($">>> TỔNG TẦNG {story.StoryName}: {storyTotal:n2} {targetUnit}");
-                sb.AppendLine();
+                        sb.AppendLine(string.Format("  | {0,-30} | {1,-25} | {2,7:0.00} {3,-2} | {4,15} | {5,10:N2} |",
+                            loc, desc, entry.Quantity, entry.QuantityUnit, unitStr, displayForce));
+                    }
+                    sb.AppendLine("  " + new string('-', 103));
+                    double typeTotal = loadType.TotalForce * forceFactor;
+                    sb.AppendLine(string.Format("  | {0,87} | {1,10:N2} |", "TỔNG NHÓM:", typeTotal));
+                    sb.AppendLine();
+                }
             }
 
+            // Summary
             double totalCalc = report.TotalCalculatedForce * forceFactor;
             double baseReact = report.SapBaseReaction * forceFactor;
             double diff = totalCalc - Math.Abs(baseReact);
 
-            sb.AppendLine("===================================================================");
-            sb.AppendLine($"TỔNG CỘNG TÍNH TOÁN: {totalCalc:n2} {targetUnit}");
-            sb.AppendLine($"SAP2000 BASE REACTION: {baseReact:n2} {targetUnit}");
-            sb.AppendLine($"SAI LỆCH: {diff:n2} {targetUnit} ({report.DifferencePercent:0.00}%)");
+            sb.AppendLine("=========================================================================================================");
+            sb.AppendLine("   TỔNG HỢP & ĐÁNH GIÁ");
+            sb.AppendLine($"   1. TỔNG CỘNG TÍNH TOÁN (CAD):      {totalCalc,15:N2} {targetUnit}");
             
-            if (Math.Abs(report.DifferencePercent) < 5.0)
-                sb.AppendLine(">>> ĐÁNH GIÁ: OK / CHẤP NHẬN ĐƯỢC");
+            if (report.IsAnalyzed)
+            {
+                sb.AppendLine($"   2. SAP2000 BASE REACTION (Z):      {baseReact,15:N2} {targetUnit}");
+                sb.AppendLine($"   3. SAI LỆCH (DIFF):                {diff,15:N2} {targetUnit} ({report.DifferencePercent:0.00}%)");
+                sb.AppendLine();
+                if (Math.Abs(report.DifferencePercent) < 5.0)
+                    sb.AppendLine("   >>> KẾT LUẬN: ĐẠT YÊU CẦU (Sai số < 5%)");
+                else
+                    sb.AppendLine("   >>> KẾT LUẬN: CẦN KIỂM TRA LẠI (Sai số lớn)");
+            }
             else
-                sb.AppendLine(">>> ĐÁNH GIÁ: CẦN KIỂM TRA LẠI (> 5%)");
-            
-            sb.AppendLine("===================================================================");
+            {
+                sb.AppendLine($"   2. SAP2000 BASE REACTION:          [CHƯA PHÂN TÍCH NỘI LỰC]");
+                sb.AppendLine("   >>> Vui lòng chạy Run Analysis trong SAP2000 để so sánh chính xác.");
+            }
+            sb.AppendLine("=========================================================================================================");
 
             return sb.ToString();
         }
+
+        // Removed duplicate overload: GenerateTextReport(AuditReport, string) - use single method above with optional targetUnit
 
         private double ConvertForce(double forceInKn)
         {
