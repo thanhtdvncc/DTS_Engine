@@ -219,7 +219,7 @@ namespace DTS_Engine.Commands
                     return;
                 }
 
-                WriteMessage($"\nModel: {SapUtils.GetModelName()}");
+                WriteMessage($"\nModel: {SapUtils.GetModelName() ?? "Unknown"}");
                 WriteMessage($"Đơn vị: {UnitManager.Info}");
                 WriteMessage($"\nLoad Patterns ({patterns.Count}):");
 
