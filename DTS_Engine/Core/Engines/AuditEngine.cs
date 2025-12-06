@@ -896,10 +896,24 @@ namespace DTS_Engine.Core.Engines
             _areaGeometryCache.Clear();
 
             var frames = SapUtils.GetAllFramesGeometry();
-            foreach (var f in frames) _frameGeometryCache[f.Name] = f;
+            if (frames != null)
+            {
+                foreach (var f in frames)
+                {
+                    if (f == null || string.IsNullOrWhiteSpace(f.Name)) continue;
+                    _frameGeometryCache[f.Name.Trim()] = f;
+                }
+            }
 
             var areas = SapUtils.GetAllAreasGeometry();
-            foreach (var a in areas) _areaGeometryCache[a.Name] = a;
+            if (areas != null)
+            {
+                foreach (var a in areas)
+                {
+                    if (a == null || string.IsNullOrWhiteSpace(a.Name)) continue;
+                    _areaGeometryCache[a.Name.Trim()] = a;
+                }
+            }
         }
 
         private Polygon CreateNtsPolygon(List<Point2D> pts)
