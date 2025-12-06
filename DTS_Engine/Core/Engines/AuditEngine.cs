@@ -131,12 +131,39 @@ namespace DTS_Engine.Core.Engines
                 return report;
             }
 
-            // BƯỚC 3: TỔNG HỢP VECTOR - Tính tổng các component
-            double totalFx = allLoads.Sum(l => l.DirectionX);
-            double totalFy = allLoads.Sum(l => l.DirectionY);
-            double totalFz = allLoads.Sum(l => l.DirectionZ);
+            // --- BƯỚC TÍNH TOÁN CHÍNH XÁC (Dựa trên Inventory) ---
+            double sumFx = 0, sumFy = 0, sumFz = 0;
 
-            System.Diagnostics.Debug.WriteLine($"[AuditEngine] Total Force Vector: Fx={totalFx:F2}, Fy={totalFy:F2}, Fz={totalFz:F2} kN");
+            foreach (var load in allLoads)
+            {
+                double multiplier = 0;
+                var elemInfo = _inventory.GetElement(load.ElementName);
+                
+                if (elemInfo != null)
+                {
+                    if (load.LoadType.Contains("Area"))
+                        multiplier = elemInfo.Area / 1_000_000.0; // mm2 -> m2
+                    else if (load.LoadType.Contains("Frame") && !load.LoadType.Contains("Point"))
+                    {
+                        double len = elemInfo.Length / 1000.0; // mm -> m
+                        // Xử lý tải từng đoạn đơn giản
+                        if (!load.IsRelative && Math.Abs(load.DistEnd - load.DistStart) > 0.001)
+                            len = Math.Abs(load.DistEnd - load.DistStart) / 1000.0;
+                        multiplier = len;
+                    }
+                    else if (load.LoadType.Contains("Point"))
+                        multiplier = 1.0;
+                }
+
+                sumFx += load.DirectionX * multiplier;
+                sumFy += load.DirectionY * multiplier;
+                sumFz += load.DirectionZ * multiplier;
+            }
+
+            // GÁN KẾT QUẢ VÀO REPORT
+            report.CalculatedFx = sumFx;
+            report.CalculatedFy = sumFy;
+            report.CalculatedFz = sumFz;
 
             // BƯỚC 4: Group and process by story
             var storyBuckets = GroupLoadsByStory(allLoads);
@@ -284,53 +311,59 @@ namespace DTS_Engine.Core.Engines
         // --- XỬ LÝ TẢI DIỆN TÍCH (AREA - SMART GEOMETRY RECOGNITION & DECOMPOSITION) ---
         private void ProcessAreaLoads(List<RawSapLoad> loads, double loadVal, string dir, List<AuditEntry> targetList)
         {
-            var polygons = new List<(Polygon Poly, string Name)>();
+            var validLoads = new List<RawSapLoad>();
+            var geometries = new List<Geometry>();
+
+            // 1. Thu thập hình học
             foreach (var load in loads)
             {
                 if (_areaGeometryCache.TryGetValue(load.ElementName, out var area))
                 {
                     var poly = CreateNtsPolygon(area.BoundaryPoints);
                     if (poly != null && poly.IsValid)
-                        polygons.Add((poly, load.ElementName));
+                    {
+                        geometries.Add(poly);
+                        validLoads.Add(load);
+                    }
                 }
             }
-            if (polygons.Count == 0) return;
 
-            // UNION: Gộp các tấm liền kề
-            var geometries = polygons.Select(p => p.Poly).Cast<Geometry>().ToList();
-            Geometry unionResult;
+            if (geometries.Count == 0) return;
+
+            // 2. Thử Union (Gộp hình)
+            Geometry processedGeometry = null;
             try
             {
-                unionResult = UnaryUnionOp.Union(geometries);
+                processedGeometry = UnaryUnionOp.Union(geometries);
             }
             catch
             {
-                unionResult = _geometryFactory.CreateGeometryCollection(geometries.ToArray());
+                // Fallback: Nếu lỗi thư viện NTS, dùng GeometryCollection (không gộp nhưng không mất)
+                processedGeometry = _geometryFactory.CreateGeometryCollection(geometries.ToArray());
             }
 
-            // Duyệt và phân tích hình học
-            for (int i = 0; i < unionResult.NumGeometries; i++)
+            // 3. Tạo Audit Entry từ kết quả
+            for (int i = 0; i < processedGeometry.NumGeometries; i++)
             {
-                var geom = unionResult.GetGeometryN(i);
-                double thresholdMm2 = 0.05 * 1e6;
-                if (geom.Area < thresholdMm2) continue;
+                var geom = processedGeometry.GetGeometryN(i);
+                if (geom.Area < 1e-6) continue; // Bỏ qua rác
 
-                var strategy = AnalyzeShapeStrategy(geom);
                 double areaM2 = geom.Area / 1.0e6;
-                double force = areaM2 * loadVal;
-                string location = GetGridRangeDescription(geom.EnvelopeInternal);
-
+                
+                // Nếu NTS chia nát quá nhỏ (< 0.05m2), có thể gộp hiển thị
+                // Ở đây ta cứ hiển thị hết để đảm bảo tổng số đúng
+                
                 targetList.Add(new AuditEntry
                 {
-                    GridLocation = location,
-                    Explanation = strategy.Formula,
+                    GridLocation = GetGridRangeDescription(geom.EnvelopeInternal),
+                    Explanation = $"Area: {areaM2:0.00}m²", // Đơn giản hóa hiển thị
                     Quantity = areaM2,
                     QuantityUnit = "m²",
                     UnitLoad = loadVal,
                     UnitLoadString = $"{loadVal:0.00} {UnitManager.Info.ForceUnit}/m²",
-                    TotalForce = force,
+                    TotalForce = areaM2 * loadVal,
                     Direction = dir,
-                    ElementList = new List<string>()
+                    ElementList = new List<string>() // Có thể map lại tên nếu cần
                 });
             }
         }

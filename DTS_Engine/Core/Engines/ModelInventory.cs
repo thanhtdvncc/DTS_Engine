@@ -1,295 +1,172 @@
-using DTS_Engine.Core.Primitives;
+﻿using DTS_Engine.Core.Primitives;
 using DTS_Engine.Core.Utils;
 using System;
 using System.Collections.Generic;
 using System.Diagnostics;
+using System.Linq;
 
 namespace DTS_Engine.Core.Engines
 {
     /// <summary>
-    /// In-Memory Database l?u th�ng tin h�nh h?c v� tr?c ??a ph??ng c?a c�c ph?n t? SAP2000.
-    /// Gi?m thi?u s? l?n g?i API SAP2000 b?ng c�ch cache d? li?u.
-    /// 
-    /// CHI?N L??C:
-    /// - Kh?i t?o 1 l?n khi b?t ??u Audit
-    /// - L?u tr?: Name -> ElementInfo (ch?a 3 Vector tr?c ??a ph??ng)
-    /// - Lookup nhanh O(1) khi x? l� t?ng t?i tr?ng
+    /// In-Memory Database lưu thông tin hình học và trục địa phương.
+    /// FIX v2.6: Tính toán Vector trực tiếp từ Geometry (Pure Geometry Approach).
     /// </summary>
     public class ModelInventory
     {
         #region Data Structures
 
-        /// <summary>
-        /// Th�ng tin h�nh h?c v� tr?c ??a ph??ng c?a m?t ph?n t?
-        /// </summary>
         public class ElementInfo
         {
-            /// <summary>T�n ph?n t?</summary>
             public string Name { get; set; }
-
-            /// <summary>Lo?i ph?n t?: Frame, Area, Point</summary>
             public string ElementType { get; set; }
-
-            /// <summary>Vector tr?c ??a ph??ng 1 (Global coordinates)</summary>
             public Vector3D LocalAxis1 { get; set; }
-
-            /// <summary>Vector tr?c ??a ph??ng 2 (Global coordinates)</summary>
             public Vector3D LocalAxis2 { get; set; }
-
-            /// <summary>Vector tr?c ??a ph??ng 3 (Global coordinates)</summary>
-            public Vector3D LocalAxis3 { get; set; }
-
-            /// <summary>Chi?u d�i (Frame only, mm)</summary>
-            public double Length { get; set; }
-
-            /// <summary>Di?n t�ch (Area only, mm�)</summary>
-            public double Area { get; set; }
-
-            /// <summary>T?a ?? (Point only)</summary>
-            public Vector3D Coordinate { get; set; }
-
-            /// <summary>Cao ?? trung b�nh (mm)</summary>
+            public Vector3D LocalAxis3 { get; set; } // Normal Vector
+            public double Length { get; set; } // mm
+            public double Area { get; set; }   // mm2
             public double AverageZ { get; set; }
-
-            public override string ToString()
-            {
-                return $"{ElementType}[{Name}]: L1={LocalAxis1}, L2={LocalAxis2}, L3={LocalAxis3}";
-            }
         }
 
         #endregion
 
-        #region Fields
-
         private Dictionary<string, ElementInfo> _elements;
         private bool _isBuilt = false;
-
-        #endregion
-
-        #region Constructor
 
         public ModelInventory()
         {
             _elements = new Dictionary<string, ElementInfo>(StringComparer.OrdinalIgnoreCase);
         }
 
-        #endregion
-
-        #region Build Methods
-
-        /// <summary>
-        /// X�y d?ng to�n b? Inventory t? model SAP2000
-        /// G?I 1 L?N DUY NH?T khi b?t ??u Audit
-        /// </summary>
         public void Build()
         {
-            if (_isBuilt)
-            {
-                Debug.WriteLine("[ModelInventory] Already built, skipping...");
-                return;
-            }
-
+            if (_isBuilt) return;
             var sw = Stopwatch.StartNew();
-            Debug.WriteLine("[ModelInventory] Building inventory...");
-
             _elements.Clear();
 
-            // Build Frames
             BuildFrames();
-
-            // Build Areas
-            BuildAreas();
-
-            // Build Points
             BuildPoints();
+            BuildAreasOptimized(); // Logic mới
 
             sw.Stop();
             _isBuilt = true;
-
-            Debug.WriteLine($"[ModelInventory] Build completed in {sw.ElapsedMilliseconds}ms. Total elements: {_elements.Count}");
+            Debug.WriteLine($"[ModelInventory] Build completed in {sw.ElapsedMilliseconds}ms. Total: {_elements.Count}");
         }
 
-        /// <summary>
-        /// X�y d?ng th�ng tin Frame
-        /// </summary>
         private void BuildFrames()
         {
-            try
+            var frames = SapUtils.GetAllFramesGeometry();
+            foreach (var f in frames)
             {
-                var frames = SapUtils.GetAllFramesGeometry();
-                Debug.WriteLine($"[ModelInventory] Processing {frames.Count} frames...");
-
-                int successCount = 0;
-                int failCount = 0;
-
-                foreach (var frame in frames)
+                // Tính Vector trục dọc thanh (Local 1)
+                var vec1 = new Vector3D(f.EndPt.X - f.StartPt.X, f.EndPt.Y - f.StartPt.Y, f.Z2 - f.Z1).Normalized;
+                
+                // Giả định trục 2 & 3 cho Frame (Thường Local 2 hướng lên cho dầm)
+                Vector3D vec2, vec3;
+                if (Math.Abs(vec1.Z) > 0.99) // Cột thẳng đứng
                 {
-                    try
-                    {
-                        var vectors = SapUtils.GetElementVectors(frame.Name);
-                        if (vectors == null)
-                        {
-                            failCount++;
-                            continue;
-                        }
-
-                        _elements[frame.Name] = new ElementInfo
-                        {
-                            Name = frame.Name,
-                            ElementType = "Frame",
-                            LocalAxis1 = vectors.Value.L1,
-                            LocalAxis2 = vectors.Value.L2,
-                            LocalAxis3 = vectors.Value.L3,
-                            Length = frame.Length2D,
-                            AverageZ = frame.AverageZ
-                        };
-
-                        successCount++;
-                    }
-                    catch (Exception ex)
-                    {
-                        Debug.WriteLine($"[ModelInventory] Failed to process frame {frame.Name}: {ex.Message}");
-                        failCount++;
-                    }
+                    vec2 = new Vector3D(1, 0, 0); 
+                    vec3 = new Vector3D(0, 1, 0); 
+                }
+                else // Dầm
+                {
+                    vec2 = new Vector3D(0, 0, 1); 
+                    vec3 = vec1.Cross(vec2).Normalized; 
+                    vec2 = vec3.Cross(vec1).Normalized; 
                 }
 
-                Debug.WriteLine($"[ModelInventory] Frames: {successCount} success, {failCount} failed");
-            }
-            catch (Exception ex)
-            {
-                Debug.WriteLine($"[ModelInventory] BuildFrames error: {ex.Message}");
+                _elements[f.Name] = new ElementInfo
+                {
+                    Name = f.Name,
+                    ElementType = "Frame",
+                    LocalAxis1 = vec1,
+                    LocalAxis2 = vec2,
+                    LocalAxis3 = vec3,
+                    Length = f.Length2D, // Lưu ý: Đây là chiều dài 2D, nếu cần 3D hãy tính lại
+                    AverageZ = f.AverageZ
+                };
             }
         }
 
-        /// <summary>
-        /// X�y d?ng th�ng tin Area
-        /// </summary>
-        private void BuildAreas()
-        {
-            try
-            {
-                var areas = SapUtils.GetAllAreasGeometry();
-                Debug.WriteLine($"[ModelInventory] Processing {areas.Count} areas...");
-
-                int successCount = 0;
-                int failCount = 0;
-
-                foreach (var area in areas)
-                {
-                    try
-                    {
-                        var vectors = SapUtils.GetElementVectors(area.Name);
-                        if (vectors == null)
-                        {
-                            failCount++;
-                            continue;
-                        }
-
-                        _elements[area.Name] = new ElementInfo
-                        {
-                            Name = area.Name,
-                            ElementType = "Area",
-                            LocalAxis1 = vectors.Value.L1,
-                            LocalAxis2 = vectors.Value.L2,
-                            LocalAxis3 = vectors.Value.L3,
-                            Area = area.Area, // FIXED: Use Area not AreaValue
-                            AverageZ = area.AverageZ
-                        };
-
-                        successCount++;
-                    }
-                    catch (Exception ex)
-                    {
-                        Debug.WriteLine($"[ModelInventory] Failed to process area {area.Name}: {ex.Message}");
-                        failCount++;
-                    }
-                }
-
-                Debug.WriteLine($"[ModelInventory] Areas: {successCount} success, {failCount} failed");
-            }
-            catch (Exception ex)
-            {
-                Debug.WriteLine($"[ModelInventory] BuildAreas error: {ex.Message}");
-            }
-        }
-
-        /// <summary>
-        /// X�y d?ng th�ng tin Point
-        /// </summary>
         private void BuildPoints()
         {
-            try
+            var points = SapUtils.GetAllPoints();
+            foreach (var p in points)
             {
-                var points = SapUtils.GetAllPoints();
-                Debug.WriteLine($"[ModelInventory] Processing {points.Count} points...");
-
-                int successCount = 0;
-
-                foreach (var pt in points)
+                _elements[p.Name] = new ElementInfo
                 {
-                    try
-                    {
-                        // Points th??ng d�ng Global coordinates, nh?ng v?n c?n l?u ?? tra c?u
-                        _elements[pt.Name] = new ElementInfo
-                        {
-                            Name = pt.Name,
-                            ElementType = "Point",
-                            LocalAxis1 = Vector3D.UnitX,
-                            LocalAxis2 = Vector3D.UnitY,
-                            LocalAxis3 = Vector3D.UnitZ,
-                            Coordinate = new Vector3D(pt.X, pt.Y, pt.Z),
-                            AverageZ = pt.Z
-                        };
-
-                        successCount++;
-                    }
-                    catch (Exception ex)
-                    {
-                        Debug.WriteLine($"[ModelInventory] Failed to process point {pt.Name}: {ex.Message}");
-                    }
-                }
-
-                Debug.WriteLine($"[ModelInventory] Points: {successCount} success");
-            }
-            catch (Exception ex)
-            {
-                Debug.WriteLine($"[ModelInventory] BuildPoints error: {ex.Message}");
+                    Name = p.Name,
+                    ElementType = "Point",
+                    LocalAxis1 = Vector3D.UnitX,
+                    LocalAxis2 = Vector3D.UnitY,
+                    LocalAxis3 = Vector3D.UnitZ,
+                    AverageZ = p.Z
+                };
             }
         }
 
-        #endregion
-
-        #region Lookup Methods
-
         /// <summary>
-        /// Tra c?u th�ng tin ph?n t? theo t�n
+        /// LOGIC CHUẨN SAP2000: Tính trục địa phương từ tọa độ 3 điểm đầu tiên.
         /// </summary>
-        public ElementInfo GetElement(string elementName)
+        private void BuildAreasOptimized()
         {
-            if (string.IsNullOrEmpty(elementName))
-                return null;
+            var areas = SapUtils.GetAllAreasGeometry();
+            
+            foreach (var area in areas)
+            {
+                if (area.BoundaryPoints.Count < 3 || area.ZValues.Count < 3) continue;
 
-            _elements.TryGetValue(elementName, out var info);
+                // 1. Lấy tọa độ 3 điểm đầu tiên (j1, j2, j3)
+                var p1 = new Vector3D(area.BoundaryPoints[0].X, area.BoundaryPoints[0].Y, area.ZValues[0]);
+                var p2 = new Vector3D(area.BoundaryPoints[1].X, area.BoundaryPoints[1].Y, area.ZValues[1]);
+                var p3 = new Vector3D(area.BoundaryPoints[2].X, area.BoundaryPoints[2].Y, area.ZValues[2]);
+
+                // 2. Tính Local 3 (Normal) = V12 x V13
+                var v12 = p2 - p1;
+                var v13 = p3 - p1;
+                var local3 = v12.Cross(v13).Normalized;
+
+                // 3. Tính Local 1 & 2 theo quy tắc "Default Orientation"
+                Vector3D local1, local2;
+                Vector3D globalZ = new Vector3D(0, 0, 1);
+
+                // Nếu tấm nằm ngang (Local 3 song song Z)
+                if (Math.Abs(local3.X) < 1e-3 && Math.Abs(local3.Y) < 1e-3) 
+                {
+                    local2 = new Vector3D(0, 1, 0); // Local 2 = Global Y
+                    local1 = local2.Cross(local3).Normalized; // V1 = V2 x V3
+                }
+                else // Tấm nghiêng hoặc đứng
+                {
+                    // Local 1 nằm ngang => Vuông góc với Z và Local 3
+                    local1 = globalZ.Cross(local3).Normalized;
+                    // Local 2 = Local 3 x Local 1 (để tạo tam diện thuận)
+                    local2 = local3.Cross(local1).Normalized;
+                }
+
+                _elements[area.Name] = new ElementInfo
+                {
+                    Name = area.Name,
+                    ElementType = "Area",
+                    LocalAxis1 = local1,
+                    LocalAxis2 = local2,
+                    LocalAxis3 = local3,
+                    Area = area.Area,
+                    AverageZ = area.AverageZ
+                };
+            }
+        }
+
+        public ElementInfo GetElement(string name)
+        {
+            if (string.IsNullOrEmpty(name)) return null;
+            _elements.TryGetValue(name, out var info);
             return info;
         }
 
-        /// <summary>
-        /// Ki?m tra ph?n t? c� t?n t?i kh�ng
-        /// </summary>
-        public bool Contains(string elementName)
-        {
-            return !string.IsNullOrEmpty(elementName) && _elements.ContainsKey(elementName);
-        }
-
-        /// <summary>
-        /// L?y Vector tr?c ??a ph??ng theo s? th? t? (1, 2, ho?c 3)
-        /// </summary>
         public Vector3D? GetLocalAxis(string elementName, int axisNumber)
         {
             var info = GetElement(elementName);
-            if (info == null)
-                return null;
-
+            if (info == null) return null;
             switch (axisNumber)
             {
                 case 1: return info.LocalAxis1;
@@ -300,57 +177,17 @@ namespace DTS_Engine.Core.Engines
         }
 
         /// <summary>
-        /// L?y t?t c? th�ng tin
+        /// Lấy danh sách tên phần tử theo loại (Frame/Area/Point) để quét Direct API
         /// </summary>
-        public IEnumerable<ElementInfo> GetAllElements()
+        public List<string> GetElementNames(string typeFilter)
         {
-            return _elements.Values;
+            return _elements.Values
+                .Where(e => e.ElementType.Equals(typeFilter, StringComparison.OrdinalIgnoreCase))
+                .Select(e => e.Name)
+                .ToList();
         }
 
-        /// <summary>
-        /// ??m s? ph?n t? theo lo?i
-        /// </summary>
-        public int CountByType(string elementType)
-        {
-            int count = 0;
-            foreach (var elem in _elements.Values)
-            {
-                if (elem.ElementType.Equals(elementType, StringComparison.OrdinalIgnoreCase))
-                    count++;
-            }
-            return count;
-        }
-
-        #endregion
-
-        #region Statistics
-
-        /// <summary>
-        /// L?y th?ng k� Inventory
-        /// </summary>
-        public string GetStatistics()
-        {
-            int frameCount = CountByType("Frame");
-            int areaCount = CountByType("Area");
-            int pointCount = CountByType("Point");
-
-            return $"Inventory: {frameCount} Frames, {areaCount} Areas, {pointCount} Points (Total: {_elements.Count})";
-        }
-
-        #endregion
-
-        #region Reset
-
-        /// <summary>
-        /// X�a to�n b? d? li?u (d�ng khi model thay ??i)
-        /// </summary>
-        public void Reset()
-        {
-            _elements.Clear();
-            _isBuilt = false;
-            Debug.WriteLine("[ModelInventory] Reset completed");
-        }
-
-        #endregion
+        public string GetStatistics() => $"Inventory: {_elements.Count} elements loaded.";
+        public void Reset() { _elements.Clear(); _isBuilt = false; }
     }
 }
