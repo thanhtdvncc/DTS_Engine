@@ -101,6 +101,7 @@
     <Compile Include="Commands\PlotCommands.cs" />
     <Compile Include="Commands\ProcessCommands.cs" />
     <Compile Include="Commands\SapCommands.cs" />
+    <Compile Include="Commands\SapLoadDiagnostics.cs" />
     <Compile Include="Commands\ScanCommands.cs" />
     <Compile Include="Commands\SetTypeCommands.cs" />
     <Compile Include="Commands\UtilityCommands.cs" />

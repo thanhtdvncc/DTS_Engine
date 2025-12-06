@@ -33,6 +33,9 @@ namespace DTS_Engine.Core.Utils
     /// <summary>
     /// Thông tin chi ti?t v? ??n v? hi?n t?i.
     /// Cung c?p h? s? quy ??i và tên ??n v? ?? hi?n th?.
+    /// 
+    /// REFACTORED: Th?m h? s? quy ??i chu?n hóa cho Force và Pressure
+    /// ?? ??m b?o t?t c? các ph?n m?m ??c t?i t? SAP ??u nh?t quán.
     /// </summary>
     public class UnitInfo
     {
@@ -67,6 +70,41 @@ namespace DTS_Engine.Core.Utils
         /// </summary>
         public double LengthScaleToMm { get; private set; }
 
+        /// <summary>
+        /// H? s? nhân ?? ??i l?c t? ??n v? SAP sang kN (chu?n hóa).
+        /// Ví d?: SAP dùng Ton -> Scale = 9.80665
+        ///        SAP dùng kN  -> Scale = 1.0
+        /// 
+        /// CRITICAL: Dùng ?? chuy?n ??i t?i tr?ng t?p trung (Point Loads)
+        /// </summary>
+        public double ForceScaleToKn { get; private set; }
+
+        /// <summary>
+        /// H? s? quy ??i t?i phân b? (Force/Length) t? SAP sang kN/m.
+        /// = ForceScaleToKn / LengthScaleToMeter
+        /// 
+        /// Ví d?: SAP kN_mm_C:
+        /// - Value t? SAP: 0.008169 kN/mm
+        /// - LineLoadScaleToKnPerM = 1.0 / 0.001 = 1000
+        /// - Result: 0.008169 * 1000 = 8.169 kN/m
+        /// 
+        /// CRITICAL: S?a l?i "S? quá nh?" trong GetActiveLoadPatterns
+        /// </summary>
+        public double LineLoadScaleToKnPerM => ForceScaleToKn / LengthScaleToMeter;
+
+        /// <summary>
+        /// H? s? quy ??i áp su?t (Force/Area) t? SAP sang kN/m².
+        /// = ForceScaleToKn / (LengthScaleToMeter)²
+        /// 
+        /// Ví d?: SAP kN_mm_C:
+        /// - Value t? SAP: 8.169e-7 kN/mm²
+        /// - PressureScaleToKnPerM2 = 1.0 / (0.001)² = 1,000,000
+        /// - Result: 8.169e-7 * 1,000,000 = 0.8169 kN/m²
+        /// 
+        /// CRITICAL: S?a l?i "S? quá nh?" cho Area Loads
+        /// </summary>
+        public double PressureScaleToKnPerM2 => ForceScaleToKn / Math.Pow(LengthScaleToMeter, 2);
+
         public UnitInfo(DtsUnit unit)
         {
             Unit = unit;
@@ -76,6 +114,8 @@ namespace DTS_Engine.Core.Utils
         /// <summary>
         /// Phân tích chu?i enum ?? l?y ??n v? l?c và chi?u dài.
         /// Ví d?: "kN_mm_C" -> ForceUnit = "kN", LengthUnit = "mm"
+        /// 
+        /// REFACTORED: Th?m logic tính ForceScaleToKn cho t?t c? các ??n v? l?c.
         /// </summary>
         private void ParseUnit()
         {
@@ -94,7 +134,7 @@ namespace DTS_Engine.Core.Utils
                 LengthUnit = "mm";
             }
 
-            // Xác ??nh h? s? quy ??i d?a trên ??n v? chi?u dài
+            // 1. Xác ??nh h? s? quy ??i chi?u dài
             switch (LengthUnit.ToLowerInvariant())
             {
                 case "mm":
@@ -121,6 +161,32 @@ namespace DTS_Engine.Core.Utils
                     // Fallback: gi? ??nh mm (ph? bi?n nh?t ? VN)
                     LengthScaleToMeter = 0.001;
                     LengthScaleToMm = 1.0;
+                    break;
+            }
+
+            // 2. Xác ??nh h? s? quy ??i l?c (t? ??n v? SAP sang kN)
+            switch (ForceUnit.ToLowerInvariant())
+            {
+                case "kn":
+                    ForceScaleToKn = 1.0;
+                    break;
+                case "n":
+                    ForceScaleToKn = 0.001; // 1 N = 0.001 kN
+                    break;
+                case "kgf":
+                    ForceScaleToKn = 0.00980665; // 1 kgf = 0.00980665 kN
+                    break;
+                case "ton":
+                    ForceScaleToKn = 9.80665; // 1 Ton (metric) = 9.80665 kN
+                    break;
+                case "lb":
+                    ForceScaleToKn = 0.00444822; // 1 lb = 0.00444822 kN
+                    break;
+                case "kip":
+                    ForceScaleToKn = 4.44822; // 1 kip = 4.44822 kN
+                    break;
+                default:
+                    ForceScaleToKn = 1.0; // Fallback: gi? ??nh kN
                     break;
             }
         }

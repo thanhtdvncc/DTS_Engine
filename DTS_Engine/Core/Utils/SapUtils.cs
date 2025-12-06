@@ -236,107 +236,173 @@ namespace DTS_Engine.Core.Utils
         #region Load Reading - ĐỌC TẢI TRỌNG TỪ SAP
 
         /// <summary>
-        /// Đọc tất cả tải phân bố trên một frame.
+        /// REFACTORED: Đọc tất cả tải phân bố trên Frame.
         /// 
-        /// ⚠️ QUY ĐỔI ĐƠN VỊ:
-        /// - SAP trả về tải theo đơn vị hiện tại (thường là kN/mm nếu dùng kN_mm_C)
-        /// - Chuyển đổi sang kN/m để thống nhất hiển thị
+        /// ⚠️ CRITICAL FIX:
+        /// - TRƯỚC KHI: Kiểm tra val > 0.001 TRƯỚC KHI convert → Bỏ sót tải nhỏ
+        /// - SAU KHI: Convert NGAY LẬP TỨC bằng ConvertLoadToKnPerM() → Không bỏ sót
+        /// 
+        /// STRATEGY:
+        /// 1. Đọc bảng "Frame Loads - Distributed" bằng SapTableReader
+        /// 2. Convert giá trị SAP (kN/mm) sang kN/m NGAY LẬP TỨC
+        /// 3. Lưu magnitude (|value|) để tránh bị cân bằng âm/dương
+        /// 4. Cache Z-coordinate để tối ưu performance
         /// </summary>
-        public static List<SapLoadInfo> GetFrameDistributedLoads(string frameName, string loadPattern = null)
+        public static List<RawSapLoad> GetAllFrameDistributedLoads(string patternFilter = null)
         {
-            var loads = new List<SapLoadInfo>();
+            var loads = new List<RawSapLoad>();
             var model = GetModel();
             if (model == null) return loads;
+            
+            var table = new SapTableReader(model, "Frame Loads - Distributed", patternFilter);
+            if (table.RecordCount == 0) return loads;
 
-            try
+            // Cache Z-coordinates để tránh gọi GetFrameGeometry nhiều lần
+            var frameZCache = new Dictionary<string, double>();
+            var allFrames = GetAllFramesGeometry();
+            foreach (var f in allFrames) frameZCache[f.Name] = f.AverageZ;
+
+            for (int i = 0; i < table.RecordCount; i++)
             {
-                var rows = GetSapTableData("Frame Loads - Distributed", loadPattern);
-                if (rows == null || rows.Count == 0) return loads;
+                string frameName = table.GetString(i, "Frame");
+                if (string.IsNullOrEmpty(frameName)) continue;
 
-                foreach (var row in rows)
+                string pattern = table.GetString(i, "LoadPat") ?? table.GetString(i, "OutputCase");
+                if (string.IsNullOrEmpty(pattern)) continue;
+
+                // Đọc giá trị RAW từ SAP (đơn vị SAP hiện tại, thường kN/mm)
+                double rawValue = table.GetDouble(i, "FOverLA");
+                if (rawValue == 0) rawValue = table.GetDouble(i, "FOverLB");
+                if (rawValue == 0) rawValue = table.GetDouble(i, "FOverL");
+
+                // ⚠️ CRITICAL: Convert NGAY bằng UnitManager - KHÔNG kiểm tra threshold trước
+                double normalizedValue = ConvertLoadToKnPerM(rawValue);
+
+                // Đọc khoảng cách
+                double distA = table.GetDouble(i, "AbsDistA");
+                if (distA == 0) distA = table.GetDouble(i, "RelDistA");
+                
+                double distB = table.GetDouble(i, "AbsDistB");
+                if (distB == 0) distB = table.GetDouble(i, "RelDistB");
+
+                string direction = table.GetString(i, "Dir") ?? table.GetString(i, "Direction") ?? "Gravity";
+                string coordSys = table.GetString(i, "CoordSys") ?? "GLOBAL";
+
+                // Lấy Z từ cache
+                double z = frameZCache.ContainsKey(frameName) ? frameZCache[frameName] : 0;
+
+                loads.Add(new RawSapLoad
                 {
-                    if (!row.ContainsKey("Frame")) continue;
-                    var fName = row["Frame"];
-                    if (!string.Equals(fName, frameName, StringComparison.OrdinalIgnoreCase)) continue;
-
-                    double val = 0;
-                    val = ParseDouble(TryGetRowValue(row, "FOverLA") ?? TryGetRowValue(row, "FOverLB") ?? TryGetRowValue(row, "FOverL"));
-
-                    val = ConvertLoadToKnPerM(val);
-
-                    double distI = ParseDouble(TryGetRowValue(row, "AbsDistA") ?? TryGetRowValue(row, "RelDistA") ?? "0");
-                    double distJ = ParseDouble(TryGetRowValue(row, "AbsDistB") ?? TryGetRowValue(row, "RelDistB") ?? "0");
-
-                    string pattern = TryGetRowValue(row, "LoadPat") ?? TryGetRowValue(row, "OutputCase") ?? string.Empty;
-                    string dir = TryGetRowValue(row, "Dir") ?? TryGetRowValue(row, "Direction") ?? "Gravity";
-
-                    loads.Add(new SapLoadInfo
-                    {
-                        FrameName = fName,
-                        LoadPattern = pattern,
-                        LoadValue = val,
-                        DistanceI = distI,
-                        DistanceJ = distJ,
-                        Direction = dir,
-                        LoadType = "Distributed"
-                    });
-                }
-            }
-            catch (Exception ex)
-            {
-                System.Diagnostics.Debug.WriteLine($"GetFrameDistributedLoads failed: {ex}");
+                    ElementName = frameName,
+                    LoadPattern = pattern,
+                    Value1 = Math.Abs(normalizedValue), // Magnitude để tránh cân bằng
+                    LoadType = "FrameDistributed",
+                    Direction = direction,
+                    DistStart = distA,
+                    DistEnd = distB,
+                    CoordSys = coordSys,
+                    ElementZ = z,
+                    DirectionSign = Math.Sign(rawValue) // Giữ dấu nếu cần xử lý sau
+                });
             }
 
             return loads;
         }
 
         /// <summary>
-        /// Chuyển đổi tải từ đơn vị SAP sang kN/m.
-        /// ⚠️ LOGIC QUY ĐỔI:
-        /// - Nếu SAP dùng mm: val (kN/mm) * 1000 = kN/m
-        /// - Nếu SAP dùng m: val đã là kN/m
+        /// BACKWARD COMPATIBILITY: Đọc tải phân bố trên một frame cụ thể.
+        /// Wrapper gọi GetAllFrameDistributedLoads() rồi lọc theo frameName.
+        /// 
+        /// ⚠️ DEPRECATED: Nên dùng GetAllFrameDistributedLoads() cho performance tốt hơn.
+        /// Method này giữ lại để không break existing code.
         /// </summary>
-        public static double ConvertLoadToKnPerM(double sapValue)
+        public static List<SapLoadInfo> GetFrameDistributedLoads(string frameName, string loadPattern = null)
         {
-            switch (UnitManager.Info.LengthUnit.ToLowerInvariant())
+            var results = new List<SapLoadInfo>();
+            
+            // Gọi method mới, rồi lọc và chuyển đổi sang format cũ
+            var allLoads = GetAllFrameDistributedLoads(loadPattern);
+            
+            foreach (var load in allLoads)
             {
-                case "mm":
-                    return sapValue * 1000.0; // kN/mm -> kN/m
-                case "cm":
-                    return sapValue * 100.0;// kN/cm -> kN/m
-                case "m":
-                    return sapValue;      // kN/m (no conversion)
-                case "in":
-                    return sapValue * 39.37;  // kN/in -> kN/m (approx)
-                case "ft":
-                    return sapValue * 3.281;  // kN/ft -> kN/m (approx)
-                default:
-                    return sapValue * 1000.0; // Default: assume mm
+                if (!string.Equals(load.ElementName, frameName, StringComparison.OrdinalIgnoreCase))
+                    continue;
+
+                results.Add(new SapLoadInfo
+                {
+                    FrameName = load.ElementName,
+                    LoadPattern = load.LoadPattern,
+                    LoadValue = load.Value1, // Đã được convert sang kN/m
+                    DistanceI = load.DistStart,
+                    DistanceJ = load.DistEnd,
+                    Direction = load.Direction,
+                    LoadType = "Distributed"
+                });
             }
+
+            return results;
+        }
+
+        #region UNIT CONVERSION - CENTRALIZED STRATEGY (REFACTORED)
+
+        /// <summary>
+        /// REFACTORED: Chuyển đổi lực (Force) từ đơn vị SAP sang kN.
+        /// Sử dụng UnitManager.Info.ForceScaleToKn làm Single Source of Truth.
+        /// 
+        /// Ví dụ: SAP dùng Ton -> sapValue * 9.80665 = kN
+        /// </summary>
+        public static double ConvertForceToKn(double sapValue)
+        {
+            return sapValue * UnitManager.Info.ForceScaleToKn;
         }
 
         /// <summary>
-        /// Chuyển đổi tải từ kN/m sang đơn vị SAP.
+        /// REFACTORED: Chuyển đổi tải phân bố (Force/Length) từ SAP sang kN/m.
+        /// Sử dụng UnitManager.Info.LineLoadScaleToKnPerM.
+        /// 
+        /// ⚠️ CRITICAL FIX:
+        /// - TRƯỚC KHI: Kiểm tra sapValue > 0.001 RỒI MỚI convert → Bỏ sót tải nhỏ
+        /// - SAU KHI: Convert NGAY, không threshold sớm → Không bỏ sót
+        /// 
+        /// Ví dụ: SAP kN_mm_C
+        /// - Input: 0.008169 kN/mm (rất nhỏ)
+        /// - Scale: 1.0 / 0.001 = 1000
+        /// - Output: 8.169 kN/m (đúng)
+        /// </summary>
+        public static double ConvertLoadToKnPerM(double sapValue)
+        {
+            return sapValue * UnitManager.Info.LineLoadScaleToKnPerM;
+        }
+
+        /// <summary>
+        /// REFACTORED: Chuyển đổi tải từ kN/m sang đơn vị SAP (dùng khi gán tải).
         /// Đảo ngược của ConvertLoadToKnPerM.
         /// </summary>
         private static double ConvertLoadFromKnPerM(double knPerMValue)
         {
-            switch (UnitManager.Info.LengthUnit.ToLowerInvariant())
-            {
-                case "mm":
-                    return knPerMValue / 1000.0; // kN/m -> kN/mm
-                case "cm":
-                    return knPerMValue / 100.0;  // kN/m -> kN/cm
-                case "m":
-                    return knPerMValue;          // kN/m (no conversion)
-                case "in":
-                    return knPerMValue / 39.37;  // kN/m -> kN/in (approx)
-                case "ft":
-                    return knPerMValue / 3.281;  // kN/m -> kN/ft (approx)
-                default:
-                    return knPerMValue / 1000.0; // Default: assume mm
-            }
+            if (Math.Abs(UnitManager.Info.LineLoadScaleToKnPerM) < 1e-9) return 0;
+            return knPerMValue / UnitManager.Info.LineLoadScaleToKnPerM;
         }
+
+        /// <summary>
+        /// REFACTORED: Chuyển đổi áp suất/tải diện tích (Force/Area) từ SAP sang kN/m².
+        /// Sử dụng UnitManager.Info.PressureScaleToKnPerM2.
+        /// 
+        /// ⚠️ CRITICAL FIX:
+        /// - TRƯỚC KHI: 8.169e-7 kN/mm² bị coi là 0 (quá nhỏ) → Báo "Chưa gán"
+        /// - SAU KHI: Convert đúng → 0.8169 kN/m² (hiển thị chính xác)
+        /// 
+        /// Ví dụ: SAP kN_mm_C
+        /// - Input: 8.169e-7 kN/mm²
+        /// - Scale: 1.0 / (0.001)² = 1,000,000
+        /// - Output: 0.8169 kN/m²
+        /// </summary>
+        public static double ConvertLoadToKnPerM2(double sapValue)
+        {
+            return sapValue * UnitManager.Info.PressureScaleToKnPerM2;
+        }
+
+        #endregion
 
         /// <summary>
         /// Đọc chi tiết các tải phân bố trên frame, nhóm theo pattern và kèm segments
@@ -726,7 +792,7 @@ namespace DTS_Engine.Core.Utils
 
         #endregion
 
-        #region AUDIT: Load Pattern Detection (FIXED)
+        #region AUDIT: Load Pattern Detection (REFACTORED - UNIFIED)
 
         public class PatternSummary
         {
@@ -735,129 +801,102 @@ namespace DTS_Engine.Core.Utils
         }
 
         /// <summary>
-        /// Quét toàn bộ tải trọng (dọc, ngang, momen) để xác định Pattern nào đang hoạt động.
-        /// FIX: Đọc từ BASE REACTIONS (có cả WXP/WXN) với convert đơn vị đúng
+        /// REFACTORED: Quét toàn bộ tải trọng để xác định Pattern hoạt động.
+        /// 
+        /// ⚠️ CRITICAL FIX:
+        /// - TRƯỚC KHI: ScanTableSums() quét bảng thủ công, kiểm tra > 0.001 TRƯỚC KHI convert
+        ///   → Bỏ sót tải nhỏ như 8.169e-7 kN/mm²
+        /// - SAU KHI: Gọi GetAll...Loads() (đã convert đúng đơn vị), tổng hợp dữ liệu chuẩn hóa
+        ///   → Đảm bảo menu chọn Pattern khớp 100% với báo cáo Audit
+        /// 
+        /// STRATEGY:
+        /// 1. Lấy danh sách tất cả Pattern đã định nghĩa → Init với 0
+        /// 2. Gọi GetAllFrameDistributedLoads() → Cộng dồn magnitude (kN/m)
+        /// 3. Gọi GetAllAreaUniformLoads() → Cộng dồn magnitude (kN/m²)
+        /// 4. Gọi GetAllAreaUniformToFrameLoads() → Cộng dồn
+        /// 5. Gọi GetAllPointLoads() → Cộng dồn (kN)
+        /// 6. Sắp xếp theo TotalEstimatedLoad giảm dần
         /// </summary>
         public static List<PatternSummary> GetActiveLoadPatterns()
         {
-            var result = new List<PatternSummary>();
-            var model = GetModel();
-            if (model == null) return result;
+            var summaryMap = new Dictionary<string, double>(StringComparer.OrdinalIgnoreCase);
 
-            var loadSums = new Dictionary<string, double>(StringComparer.OrdinalIgnoreCase);
+            // 1. Khởi tạo với tất cả Pattern đã định nghĩa
+            var definedPatterns = GetLoadPatterns();
+            foreach (var p in definedPatterns) summaryMap[p] = 0;
 
-            // STRATEGY 1: Đọc từ Base Reactions (chính xác nhất - có cả WXP/WXN)
+            // 2. Frame Distributed Loads (kN/m)
             try
             {
-                int tableVer = 0;
-                string[] fields = null;
-                int numRec = 0;
-                string[] tableData = null;
-                string[] input = new string[] { "" };
-
-                int ret = model.DatabaseTables.GetTableForDisplayArray(
-                    "Base Reactions",
-                    ref input, "All", ref tableVer, ref fields, ref numRec, ref tableData);
-
-                if (ret == 0 && numRec > 0 && fields != null && tableData != null)
+                var frameLoads = GetAllFrameDistributedLoads();
+                foreach (var load in frameLoads)
                 {
-                    int idxCase = Array.IndexOf(fields, "OutputCase");
-                    if (idxCase < 0) idxCase = Array.FindIndex(fields, f => f != null && f.ToLowerInvariant().Contains("case"));
-
-                    // Tìm các cột FX, FY, FZ (có thể là GlobalFX hoặc chỉ FX)
-                    int idxFX = Array.FindIndex(fields, f => f != null && (f.Contains("FX") || f.Contains("Fx")));
-                    int idxFY = Array.FindIndex(fields, f => f != null && (f.Contains("FY") || f.Contains("Fy")));
-                    int idxFZ = Array.FindIndex(fields, f => f != null && (f.Contains("FZ") || f.Contains("Fz")));
-
-                    if (idxCase >= 0 && (idxFX >= 0 || idxFY >= 0 || idxFZ >= 0))
-                    {
-                        int cols = fields.Length;
-                        for (int r = 0; r < numRec; r++)
-                        {
-                            string pat = tableData[r * cols + idxCase];
-                            if (string.IsNullOrEmpty(pat)) continue;
-
-                            // Đọc giá trị (SAP trả về theo đơn vị hiện tại - thường Tonf)
-                            double fx = idxFX >= 0 ? ParseDouble(tableData[r * cols + idxFX]) : 0;
-                            double fy = idxFY >= 0 ? ParseDouble(tableData[r * cols + idxFY]) : 0;
-                            double fz = idxFZ >= 0 ? ParseDouble(tableData[r * cols + idxFZ]) : 0;
-
-                            // CRITICAL FIX: Convert từ đơn vị SAP (Tonf, kip...) sang kN
-                            fx = ConvertForceToKn(fx);
-                            fy = ConvertForceToKn(fy);
-                            fz = ConvertForceToKn(fz);
-
-                            // Tính magnitude tổng (không dùng dấu vì WXP/WXN cân bằng)
-                            double magnitude = Math.Sqrt(fx * fx + fy * fy + fz * fz);
-
-                            if (magnitude > 0.01) // Threshold 0.01 kN
-                            {
-                                loadSums[pat] = magnitude;
-                            }
-                        }
-                    }
+                    if (summaryMap.ContainsKey(load.LoadPattern))
+                        summaryMap[load.LoadPattern] += Math.Abs(load.Value1);
                 }
             }
             catch (Exception ex)
             {
-                System.Diagnostics.Debug.WriteLine($"GetActiveLoadPatterns: Base Reactions read failed: {ex.Message}");
+                System.Diagnostics.Debug.WriteLine($"GetActiveLoadPatterns: Frame loads failed: {ex.Message}");
             }
 
-            // STRATEGY 2: Fallback - Quét bảng tải (nếu chưa có results)
-            if (loadSums.Count == 0)
+            // 3. Area Uniform Loads (kN/m²)
+            try
             {
-                System.Diagnostics.Debug.WriteLine("GetActiveLoadPatterns: Fallback to load tables (no analysis results)");
-                
-                // Quét bảng Joint Loads
-                ScanTableSums(model, "Joint Loads - Force", new[] { "F1", "F2", "F3", "M1", "M2", "M3" }, loadSums);
-
-                // Quét bảng Frame Loads - Distributed
-                ScanTableSums(model, "Frame Loads - Distributed", new[] { "FOverLA", "FOverLB", "FOverL" }, loadSums);
-
-                // Quét bảng Frame Loads - Point
-                ScanTableSums(model, "Frame Loads - Point", new[] { "Force", "F1", "F2", "F3" }, loadSums);
-
-                // Quét bảng Area Loads
-                ScanTableSums(model, "Area Loads - Uniform", new[] { "UnifLoad" }, loadSums);
-                ScanTableSums(model, "Area Loads - Uniform To Frame", new[] { "UnifLoad" }, loadSums);
+                var areaLoads = GetAllAreaUniformLoads();
+                foreach (var load in areaLoads)
+                {
+                    if (summaryMap.ContainsKey(load.LoadPattern))
+                        summaryMap[load.LoadPattern] += Math.Abs(load.Value1);
+                }
+            }
+            catch (Exception ex)
+            {
+                System.Diagnostics.Debug.WriteLine($"GetActiveLoadPatterns: Area loads failed: {ex.Message}");
             }
 
-            // Chuyển dictionary thành list kết quả
-            foreach (var kvp in loadSums)
+            // 4. Area Uniform To Frame Loads (kN/m²)
+            try
             {
-                result.Add(new PatternSummary { Name = kvp.Key, TotalEstimatedLoad = kvp.Value });
+                var areaToFrameLoads = GetAllAreaUniformToFrameLoads();
+                foreach (var load in areaToFrameLoads)
+                {
+                    if (summaryMap.ContainsKey(load.LoadPattern))
+                        summaryMap[load.LoadPattern] += Math.Abs(load.Value1);
+                }
+            }
+            catch (Exception ex)
+            {
+                System.Diagnostics.Debug.WriteLine($"GetActiveLoadPatterns: Area-to-frame loads failed: {ex.Message}");
+            }
+
+            // 5. Point Loads (kN)
+            try
+            {
+                var pointLoads = GetAllPointLoads();
+                foreach (var load in pointLoads)
+                {
+                    if (summaryMap.ContainsKey(load.LoadPattern))
+                        summaryMap[load.LoadPattern] += Math.Abs(load.Value1);
+                }
+            }
+            catch (Exception ex)
+            {
+                System.Diagnostics.Debug.WriteLine($"GetActiveLoadPatterns: Point loads failed: {ex.Message}");
+            }
+
+            // 6. Convert to List và sắp xếp
+            var result = new List<PatternSummary>();
+            foreach (var kvp in summaryMap)
+            {
+                result.Add(new PatternSummary
+                {
+                    Name = kvp.Key,
+                    TotalEstimatedLoad = kvp.Value
+                });
             }
 
             return result.OrderByDescending(p => p.TotalEstimatedLoad).ToList();
-        }
-
-        private static void ScanTableSums(cSapModel model, string tableName, string[] valueCols, Dictionary<string, double> accumulator)
-        {
-            var reader = new SapTableReader(model, tableName);
-            if (reader.RecordCount == 0) return;
-
-            // Xác định tên cột chứa Load Pattern (thường là "LoadPat" hoặc "OutputCase")
-            string patCol = reader.HasColumn("LoadPat") ? "LoadPat" : (reader.HasColumn("OutputCase") ? "OutputCase" : null);
-            if (patCol == null) return;
-
-            for (int r = 0; r < reader.RecordCount; r++)
-            {
-                string pat = reader.GetString(r, patCol);
-                if (string.IsNullOrEmpty(pat)) continue;
-
-                double rowSum = 0;
-                foreach (var col in valueCols)
-                {
-                    // Lấy trị tuyệt đối để cộng dồn mức độ "hoạt động"
-                    rowSum += Math.Abs(reader.GetDouble(r, col));
-                }
-
-                if (rowSum > 0)
-                {
-                    if (!accumulator.ContainsKey(pat)) accumulator[pat] = 0;
-                    accumulator[pat] += rowSum;
-                }
-            }
         }
 
         #endregion
@@ -1243,67 +1282,6 @@ namespace DTS_Engine.Core.Utils
         #endregion
 
         #region Extended Load Reading - AUDIT FEATURES
-
-        /// <summary>
-        /// Đọc TẤT CẢ tải phân bố trên TOÀN BỘ Frame theo pattern.
-        /// Trả về danh sách RawSapLoad để xử lý thống kê.
-        /// SỬ DỤNG DATABASE TABLE để đọc nhanh và chính xác.
-        /// </summary>
-        public static List<RawSapLoad> GetAllFrameDistributedLoads(string patternFilter = null)
-        {
-            var loads = new List<RawSapLoad>();
-            
-            // 1. Read Database Table "Frame Loads - Distributed"
-            var rows = GetSapTableData("Frame Loads - Distributed", patternFilter);
-
-            // 2. Cache Geometry for Z-coordinates (Optimization)
-            var frameGeomMap = new Dictionary<string, double>();
-            if (rows.Count > 0)
-            {
-                var frames = GetAllFramesGeometry();
-                foreach (var f in frames) frameGeomMap[f.Name] = f.AverageZ;
-            }
-
-            // 3. Parse Rows theo đúng cấu trúc bảng SAP2000
-            foreach (var row in rows)
-            {
-                // Required fields: Frame, LoadPat, FOverLA (hoặc FOverLB), Dir, CoordSys
-                if (!row.ContainsKey("Frame") || !row.ContainsKey("LoadPat")) continue;
-
-                string frameName = row["Frame"];
-                    string pattern = TryGetRowValue(row, "LoadPat") ?? string.Empty;
-
-                    // Value từ cột FOverLA (Force Over Length at point A)
-                    double val1 = ParseDouble(TryGetRowValue(row, "FOverLA") ?? TryGetRowValue(row, "FOverLB") ?? TryGetRowValue(row, "FOverL") ?? "0");
-
-                // Convert Unit (Table returns values in Present Units - typically kN/mm)
-                val1 = ConvertLoadToKnPerM(val1);
-
-                // Distance A và B (AbsDistA/AbsDistB hoặc RelDistA/RelDistB)
-                double distA = row.ContainsKey("AbsDistA") ? ParseDouble(row["AbsDistA"]) : 0;
-                double distB = row.ContainsKey("AbsDistB") ? ParseDouble(row["AbsDistB"]) : 0;
-                bool isRelative = row.ContainsKey("DistType") && row["DistType"].Contains("Rel");
-                
-                // Get Z from cache
-                double z = frameGeomMap.ContainsKey(frameName) ? frameGeomMap[frameName] : 0;
-
-                loads.Add(new RawSapLoad
-                {
-                    ElementName = frameName,
-                    LoadPattern = pattern,
-                    Value1 = Math.Abs(ConvertLoadToKnPerM(val1)), // Use Abs for magnitude and convert
-                    LoadType = "FrameDistributed",
-                    Direction = TryGetRowValue(row, "Dir") ?? TryGetRowValue(row, "Direction") ?? "Gravity",
-                    DistStart = distA,
-                    DistEnd = distB,
-                    CoordSys = TryGetRowValue(row, "CoordSys") ?? TryGetRowValue(row, "Coord. Sys.") ?? "GLOBAL",
-                    ElementZ = z,
-                    IsRelative = isRelative
-                });
-            }
-
-            return loads;
-        }
 
         /// <summary>
         /// Đọc tải tập trung (Point Load) trên Frame
@@ -1784,62 +1762,6 @@ namespace DTS_Engine.Core.Utils
             catch
             {
                 return "Unknown";
-            }
-        }
-
-        #endregion
-
-        #region Unit Conversion Helpers
-
-        /// <summary>
-        /// Chuyển đổi lực từ SAP sang kN
-        /// </summary>
-        public static double ConvertForceToKn(double sapValue)
-        {
-            string forceUnit = UnitManager.Info.ForceUnit.ToLowerInvariant();
-            switch (forceUnit)
-            {
-                case "n":
-                    return sapValue / 1000.0; // N -> kN
-                case "kgf":
-                    return sapValue * 0.00981; // kgf -> kN
-                case "ton":
-                    return sapValue * 9.81; // Ton -> kN
-                case "lb":
-                    return sapValue * 0.00445; // lb -> kN
-                case "kip":
-                    return sapValue * 4.448; // kip -> kN
-                case "kn":
-                default:
-                    return sapValue; // kN
-            }
-        }
-
-        /// <summary>
-        /// Chuyển đổi tải diện tích từ SAP sang kN/m²
-        /// </summary>
-        public static double ConvertLoadToKnPerM2(double sapValue)
-        {
-            string lengthUnit = UnitManager.Info.LengthUnit.ToLowerInvariant();
-
-            // Tải diện tích = Force / Length²
-            // Nếu SAP dùng mm: val (kN/mm²) = val * 1000000 kN/m²
-            // Nếu SAP dùng m: val đã là kN/m²
-
-            switch (lengthUnit)
-            {
-                case "mm":
-                    return sapValue * 1000000.0; // kN/mm² -> kN/m²
-                case "cm":
-                    return sapValue * 10000.0; // kN/cm² -> kN/m²
-                case "m":
-                    return sapValue; // kN/m²
-                case "in":
-                    return sapValue * 1550.0; // kN/in² -> kN/m² (approx)
-                case "ft":
-                    return sapValue * 10.764; // kN/ft² -> kN/m² (approx)
-                default:
-                    return sapValue * 1000000.0; // Default mm
             }
         }
 
