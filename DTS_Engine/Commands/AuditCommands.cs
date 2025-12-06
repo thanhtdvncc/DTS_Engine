@@ -63,44 +63,56 @@ namespace DTS_Engine.Commands
                 }
 
                 // 4. Xây dựng Menu chọn thông minh
-                var pko = new PromptKeywordOptions("\nChọn Load Case (Click chọn hoặc nhập danh sách cách nhau dấu phẩy): ");
-                pko.AllowArbitraryInput = true; // <--- CẢI TIẾN: Cho phép nhập chuỗi bất kỳ
-                pko.AllowNone = false;
-
-                // Thêm top 15 pattern có tải làm Keyword để click nhanh
-                var displayList = activePatterns.Take(15).ToList();
+                // FIX: Lấy TẤT CẢ patterns từ API, không chỉ những cái có tải
+                // Tạo lookup map để hiển thị thông tin tải
+                var loadSummaryMap = activePatterns.ToDictionary(p => p.Name, p => p.TotalEstimatedLoad, StringComparer.OrdinalIgnoreCase);
                 
-                // Nếu ít pattern quá, điền thêm từ danh sách all cho đủ 5 (để menu đỡ trống)
-                if (displayList.Count < 5)
+                // Merge: Lấy tất cả pattern + thông tin tải (nếu có)
+                var displayList = allPatterns.Select(name => new SapUtils.PatternSummary
                 {
-                    foreach(var p in allPatterns)
+                    Name = name,
+                    TotalEstimatedLoad = loadSummaryMap.ContainsKey(name) ? loadSummaryMap[name] : 0
+                }).OrderByDescending(p => p.TotalEstimatedLoad).ToList();
+
+                WriteMessage("\n--- CÁC LOAD PATTERN TRONG MODEL ---");
+                
+                // FIX CRITICAL BUG: AutoCAD PromptKeywordOptions PARSE KEYWORDS TRONG CONSTRUCTOR!
+                // Không thể thêm keywords sau khi init → Phải build string trước
+                // Giới hạn: Chỉ top 5 patterns để tránh crash (string quá dài)
+                var topPatterns = displayList.Take(5).ToList();
+                var keywordList = new List<string>();
+                
+                foreach (var pat in topPatterns)
+                {
+                    if (string.IsNullOrWhiteSpace(pat.Name)) continue;
+                    
+                    // Sanitize: Replace _ with - (AutoCAD không chấp nhận _)
+                    string sanitized = pat.Name.Replace("_", "-").Replace(" ", "");
+                    if (!string.IsNullOrEmpty(sanitized) && sanitized.Length <= 31)
                     {
-                        if (displayList.Count >= 5) break;
-                        if (!displayList.Any(dp => string.Equals(dp.Name, p, StringComparison.OrdinalIgnoreCase)))
-                            displayList.Add(new SapUtils.PatternSummary { Name = p, TotalEstimatedLoad = 0 });
+                        keywordList.Add(sanitized);
                     }
                 }
-
-                WriteMessage("\n--- CÁC LOAD PATTERN GỢI Ý ---");
+                
+                // Luôn thêm "All"
+                keywordList.Add("All");
+                
+                // Build keyword string: "kw1/kw2/kw3/All"
+                string keywordsStr = string.Join("/", keywordList);
+                
+                // FIX: Tạo PromptKeywordOptions với keywords trong constructor (không add sau!)
+                var pko = new PromptKeywordOptions($"\nNhập tên Load Pattern (hoặc chọn): [{keywordsStr}]");
+                pko.AllowArbitraryInput = true; // Cho phép nhập tên pattern khác ngoài menu
+                pko.AllowNone = false;
+                
+                // Hiển thị TẤT CẢ patterns trong console
                 foreach (var pat in displayList)
                 {
-                    try
-                    {
-                        // Guard empty/null names
-                        if (string.IsNullOrWhiteSpace(pat.Name)) continue;
-
-                        // Thêm vào keyword để user có thể click chuột
-                        pko.Keywords.Add(pat.Name);
-
-                        string status = pat.TotalEstimatedLoad > 0.001 ? $"[Tải: ~{pat.TotalEstimatedLoad:N0}]" : "[Trống]";
-                        WriteMessage($" - {pat.Name} {status}");
-                    }
-                    catch
-                    {
-                        // Bỏ qua nếu tên pattern chứa ký tự đặc biệt mà AutoCAD không chấp nhận làm keyword
-                        // User vẫn có thể nhập tay pattern này
-                    }
+                    string status = pat.TotalEstimatedLoad > 0.001 ? $"[Tải: ~{pat.TotalEstimatedLoad:N0}]" : "[Chưa gán]";
+                    WriteMessage($" - {pat.Name} {status}");
                 }
+                
+                WriteMessage($"\n(Hiển thị {displayList.Count} patterns. Nhập tên hoặc chọn từ menu)");
 
                 // Thêm lựa chọn All
                 bool hasAllKeyword = false;
@@ -125,10 +137,8 @@ namespace DTS_Engine.Commands
                 // 6. Xử lý input (Keyword hoặc Chuỗi nhập tay)
                 if (string.Equals(inputResult, "All", StringComparison.OrdinalIgnoreCase))
                 {
-                    // Nếu chọn All -> Lấy tất cả pattern có tải thực tế
-                    selectedPatterns = activePatterns.Select(p => p.Name).ToList();
-                    // Nếu không có pattern nào có tải, lấy toàn bộ danh sách
-                    if (selectedPatterns.Count == 0) selectedPatterns = allPatterns;
+                    // FIX: Nếu chọn All -> Lấy TẤT CẢ patterns, không chỉ những cái có tải
+                    selectedPatterns = allPatterns.ToList();
                 }
                 else
                 {
@@ -141,8 +151,15 @@ namespace DTS_Engine.Commands
                         string cleanPat = part.Trim();
                         if (string.IsNullOrEmpty(cleanPat)) continue;
 
+                        // FIX: Reverse sanitization - convert keyword back to original pattern name
+                        // User có thể nhập: "DL-AG" (sanitized) hoặc "DL_AG" (original)
+                        string originalName = cleanPat.Replace("-", "_");
+
                         // Try to find canonical name from allPatterns (case-insensitive)
-                        var canonical = allPatterns.FirstOrDefault(a => a.Equals(cleanPat, StringComparison.OrdinalIgnoreCase));
+                        var canonical = allPatterns.FirstOrDefault(a => 
+                            a.Equals(cleanPat, StringComparison.OrdinalIgnoreCase) ||
+                            a.Equals(originalName, StringComparison.OrdinalIgnoreCase));
+                        
                         string useName = canonical ?? cleanPat;
 
                         // Kiểm tra tồn tại trong SAP (không phân biệt hoa thường)

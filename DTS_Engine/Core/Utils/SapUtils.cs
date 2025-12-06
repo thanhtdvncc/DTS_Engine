@@ -296,7 +296,7 @@ namespace DTS_Engine.Core.Utils
         /// - Nếu SAP dùng mm: val (kN/mm) * 1000 = kN/m
         /// - Nếu SAP dùng m: val đã là kN/m
         /// </summary>
-        private static double ConvertLoadToKnPerM(double sapValue)
+        public static double ConvertLoadToKnPerM(double sapValue)
         {
             switch (UnitManager.Info.LengthUnit.ToLowerInvariant())
             {
@@ -736,7 +736,7 @@ namespace DTS_Engine.Core.Utils
 
         /// <summary>
         /// Quét toàn bộ tải trọng (dọc, ngang, momen) để xác định Pattern nào đang hoạt động.
-        /// Fix lỗi: Đã bao gồm F1, F2 (ngang) và M1, M2, M3 (momen).
+        /// FIX: Đọc từ BASE REACTIONS (có cả WXP/WXN) với convert đơn vị đúng
         /// </summary>
         public static List<PatternSummary> GetActiveLoadPatterns()
         {
@@ -746,27 +746,86 @@ namespace DTS_Engine.Core.Utils
 
             var loadSums = new Dictionary<string, double>(StringComparer.OrdinalIgnoreCase);
 
-            // 1. Quét bảng Joint Loads (Quan trọng nhất cho tải ngang/gió/động đất gán vào tâm)
-            // Cột cần quét: F1, F2, F3, M1, M2, M3
-            ScanTableSums(model, "Joint Loads - Force", new[] { "F1", "F2", "F3", "M1", "M2", "M3" }, loadSums);
+            // STRATEGY 1: Đọc từ Base Reactions (chính xác nhất - có cả WXP/WXN)
+            try
+            {
+                int tableVer = 0;
+                string[] fields = null;
+                int numRec = 0;
+                string[] tableData = null;
+                string[] input = new string[] { "" };
 
-            // 2. Quét bảng Frame Loads - Distributed
-            // Cột cần quét: FOverLA, FOverLB (và các biến thể tên cột nếu SAP đổi version)
-            ScanTableSums(model, "Frame Loads - Distributed", new[] { "FOverLA", "FOverLB", "FOverL" }, loadSums);
+                int ret = model.DatabaseTables.GetTableForDisplayArray(
+                    "Base Reactions",
+                    ref input, "All", ref tableVer, ref fields, ref numRec, ref tableData);
 
-            // 3. Quét bảng Frame Loads - Point
-            // Cột cần quét: Force, F1, F2...
-            ScanTableSums(model, "Frame Loads - Point", new[] { "Force", "F1", "F2", "F3" }, loadSums);
+                if (ret == 0 && numRec > 0 && fields != null && tableData != null)
+                {
+                    int idxCase = Array.IndexOf(fields, "OutputCase");
+                    if (idxCase < 0) idxCase = Array.FindIndex(fields, f => f != null && f.ToLowerInvariant().Contains("case"));
 
-            // 4. Quét bảng Area Loads
-            ScanTableSums(model, "Area Loads - Uniform", new[] { "UnifLoad" }, loadSums);
-            ScanTableSums(model, "Area Loads - Uniform To Frame", new[] { "UnifLoad" }, loadSums);
+                    // Tìm các cột FX, FY, FZ (có thể là GlobalFX hoặc chỉ FX)
+                    int idxFX = Array.FindIndex(fields, f => f != null && (f.Contains("FX") || f.Contains("Fx")));
+                    int idxFY = Array.FindIndex(fields, f => f != null && (f.Contains("FY") || f.Contains("Fy")));
+                    int idxFZ = Array.FindIndex(fields, f => f != null && (f.Contains("FZ") || f.Contains("Fz")));
+
+                    if (idxCase >= 0 && (idxFX >= 0 || idxFY >= 0 || idxFZ >= 0))
+                    {
+                        int cols = fields.Length;
+                        for (int r = 0; r < numRec; r++)
+                        {
+                            string pat = tableData[r * cols + idxCase];
+                            if (string.IsNullOrEmpty(pat)) continue;
+
+                            // Đọc giá trị (SAP trả về theo đơn vị hiện tại - thường Tonf)
+                            double fx = idxFX >= 0 ? ParseDouble(tableData[r * cols + idxFX]) : 0;
+                            double fy = idxFY >= 0 ? ParseDouble(tableData[r * cols + idxFY]) : 0;
+                            double fz = idxFZ >= 0 ? ParseDouble(tableData[r * cols + idxFZ]) : 0;
+
+                            // CRITICAL FIX: Convert từ đơn vị SAP (Tonf, kip...) sang kN
+                            fx = ConvertForceToKn(fx);
+                            fy = ConvertForceToKn(fy);
+                            fz = ConvertForceToKn(fz);
+
+                            // Tính magnitude tổng (không dùng dấu vì WXP/WXN cân bằng)
+                            double magnitude = Math.Sqrt(fx * fx + fy * fy + fz * fz);
+
+                            if (magnitude > 0.01) // Threshold 0.01 kN
+                            {
+                                loadSums[pat] = magnitude;
+                            }
+                        }
+                    }
+                }
+            }
+            catch (Exception ex)
+            {
+                System.Diagnostics.Debug.WriteLine($"GetActiveLoadPatterns: Base Reactions read failed: {ex.Message}");
+            }
+
+            // STRATEGY 2: Fallback - Quét bảng tải (nếu chưa có results)
+            if (loadSums.Count == 0)
+            {
+                System.Diagnostics.Debug.WriteLine("GetActiveLoadPatterns: Fallback to load tables (no analysis results)");
+                
+                // Quét bảng Joint Loads
+                ScanTableSums(model, "Joint Loads - Force", new[] { "F1", "F2", "F3", "M1", "M2", "M3" }, loadSums);
+
+                // Quét bảng Frame Loads - Distributed
+                ScanTableSums(model, "Frame Loads - Distributed", new[] { "FOverLA", "FOverLB", "FOverL" }, loadSums);
+
+                // Quét bảng Frame Loads - Point
+                ScanTableSums(model, "Frame Loads - Point", new[] { "Force", "F1", "F2", "F3" }, loadSums);
+
+                // Quét bảng Area Loads
+                ScanTableSums(model, "Area Loads - Uniform", new[] { "UnifLoad" }, loadSums);
+                ScanTableSums(model, "Area Loads - Uniform To Frame", new[] { "UnifLoad" }, loadSums);
+            }
 
             // Chuyển dictionary thành list kết quả
             foreach (var kvp in loadSums)
             {
-                if (kvp.Value > 0.001) // Chỉ lấy pattern có tải đáng kể
-                    result.Add(new PatternSummary { Name = kvp.Key, TotalEstimatedLoad = kvp.Value });
+                result.Add(new PatternSummary { Name = kvp.Key, TotalEstimatedLoad = kvp.Value });
             }
 
             return result.OrderByDescending(p => p.TotalEstimatedLoad).ToList();
@@ -1735,7 +1794,7 @@ namespace DTS_Engine.Core.Utils
         /// <summary>
         /// Chuyển đổi lực từ SAP sang kN
         /// </summary>
-        private static double ConvertForceToKn(double sapValue)
+        public static double ConvertForceToKn(double sapValue)
         {
             string forceUnit = UnitManager.Info.ForceUnit.ToLowerInvariant();
             switch (forceUnit)
@@ -1759,7 +1818,7 @@ namespace DTS_Engine.Core.Utils
         /// <summary>
         /// Chuyển đổi tải diện tích từ SAP sang kN/m²
         /// </summary>
-        private static double ConvertLoadToKnPerM2(double sapValue)
+        public static double ConvertLoadToKnPerM2(double sapValue)
         {
             string lengthUnit = UnitManager.Info.LengthUnit.ToLowerInvariant();
 

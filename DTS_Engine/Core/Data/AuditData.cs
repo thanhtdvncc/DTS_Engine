@@ -6,6 +6,7 @@ namespace DTS_Engine.Core.Data
 {
     /// <summary>
     /// Raw data from SAP2000
+    /// NEW: Hỗ trợ Global Axis và Direction Sign để phân biệt chính xác X/Y/Z
     /// </summary>
     public class RawSapLoad
     {
@@ -14,7 +15,12 @@ namespace DTS_Engine.Core.Data
         public double Value1 { get; set; }
         public double Value2 { get; set; }
         public string LoadType { get; set; } // FrameDistributed, FramePoint, AreaUniform, PointForce
-        public string Direction { get; set; }
+        public string Direction { get; set; } // Legacy: "Gravity", "Local 1"...
+        
+        // NEW: Global Axis resolution
+        public string GlobalAxis { get; set; } // "X", "Y", "Z" after local→global conversion
+        public double DirectionSign { get; set; } = -1.0; // +1 or -1 (direction của lực)
+        
         public string DistributionType { get; set; }
         public double DistStart { get; set; }
         public double DistEnd { get; set; }
@@ -33,7 +39,14 @@ namespace DTS_Engine.Core.Data
             }
         }
 
-        public override string ToString() => $"{LoadPattern}|{ElementName}|{LoadType}|{Value1:0.00}|{Direction}";
+        /// <summary>
+        /// Kiểm tra xem tải có theo phương Global nào không
+        /// </summary>
+        public bool IsGlobalX => !string.IsNullOrEmpty(GlobalAxis) && GlobalAxis.Equals("X", StringComparison.OrdinalIgnoreCase);
+        public bool IsGlobalY => !string.IsNullOrEmpty(GlobalAxis) && GlobalAxis.Equals("Y", StringComparison.OrdinalIgnoreCase);
+        public bool IsGlobalZ => !string.IsNullOrEmpty(GlobalAxis) && GlobalAxis.Equals("Z", StringComparison.OrdinalIgnoreCase);
+
+        public override string ToString() => $"{LoadPattern}|{ElementName}|{LoadType}|{Value1:0.00}|{GlobalAxis ?? Direction}";
     }
 
     /// <summary>
