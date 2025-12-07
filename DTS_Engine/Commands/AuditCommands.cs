@@ -94,13 +94,22 @@ namespace DTS_Engine.Commands
                 
                 var pso = new PromptStringOptions("\nNhập số thứ tự (VD: 1, 3) hoặc tên Pattern (hoặc 'A' cho tất cả, '0' để hủy): ");
                 pso.AllowSpaces = true;
-                pso.DefaultValue = "A";
-                pso.UseDefaultValue = true;
 
                 PromptResult pres = Ed.GetString(pso);
-                if (pres.Status != PromptStatus.OK) return;
+                if (pres.Status != PromptStatus.OK) 
+                {
+                    WriteMessage("Đã hủy do không nhận được input.");
+                    return;
+                }
 
-                string input = pres.StringResult.Trim();
+                string input = (pres.StringResult ?? "").Trim();
+                
+                // Handle empty input
+                if (string.IsNullOrEmpty(input))
+                {
+                    WriteMessage("Không có input. Vui lòng nhập số thứ tự hoặc tên pattern.");
+                    return;
+                }
                 
                 // Xử lý cancel
                 if (input == "0")
