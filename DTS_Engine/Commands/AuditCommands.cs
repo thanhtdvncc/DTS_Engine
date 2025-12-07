@@ -194,17 +194,30 @@ namespace DTS_Engine.Commands
 
                 // STEP 3: Initialize Load Reader (Data Access Layer)
                 WriteMessage("   [2/3] Initializing Load Reader...");
-                ISapLoadReader loadReader = new SapDatabaseReader(model, inventory);
-                
-                // STEP 4: Initialize Audit Engine (Business Logic Layer)
-                WriteMessage("   [3/3] Initializing Audit Engine...");
-                var engine = new AuditEngine(loadReader);
+                ISapLoadReader loadReader = CreateApiFirstReader(inventory);
+                if (loadReader == null)
+                {
+                    WriteError("Không thể khởi tạo SapDatabaseReader (API). Kiểm tra kết nối SAP.");
+                    return;
+                }
+                 
+                 // STEP 4: Initialize Audit Engine (Business Logic Layer)
+                 WriteMessage("   [3/3] Initializing Audit Engine...");
+                 var engine = new AuditEngine(loadReader);
 
                 WriteMessage("   >> System ready. Processing patterns...\n");
 
                 // ===============================================================
                 // END OF COMPOSITION ROOT
                 // ===============================================================
+
+                // Quick helper: create ModelInventory + SapDatabaseReader (API-first)
+                Func<ISapLoadReader> createReader = () =>
+                {
+                    var inv = new ModelInventory();
+                    inv.Build();
+                    return new SapDatabaseReader(model, inv);
+                };
 
                 // 9. Chạy Audit cho từng Pattern
                 string tempFolder = Path.GetTempPath();
@@ -230,10 +243,6 @@ namespace DTS_Engine.Commands
                 if (!string.IsNullOrEmpty(firstFilePath))
                 {
                     WriteSuccess($"\nHoàn thành! Đã tạo {fileCounter} báo cáo tại {tempFolder}");
-                    WriteMessage("\n⚠️ LƯU Ý QUAN TRỌNG:");
-                    WriteMessage("Base Reaction KHÔNG được tự động tính nữa.");
-                    WriteMessage("Vui lòng so sánh Vector trong báo cáo với Base Reactions trong SAP2000.");
-                    WriteMessage("Đường dẫn: Display > Show Tables > Analysis Results > Base Reactions");
                     
                     try { Process.Start(firstFilePath); } catch { }
                 }
@@ -243,6 +252,20 @@ namespace DTS_Engine.Commands
         #endregion
 
         #region Quick Summary Command
+
+        // Helper: create API-first load reader
+        private ISapLoadReader CreateApiFirstReader(ModelInventory inventory = null)
+        {
+            var model = SapUtils.GetModel();
+            if (model == null) return null;
+            if (inventory != null)
+            {
+                return new SapDatabaseReader(model, inventory);
+            }
+            var inv = new ModelInventory();
+            inv.Build();
+            return new SapDatabaseReader(model, inv);
+        }
 
         /// <summary>
         /// Lệnh xem tóm tắt nhanh tải trọng theo Load Pattern
@@ -261,7 +284,7 @@ namespace DTS_Engine.Commands
                 var patterns = SapUtils.GetLoadPatterns();
                 if (patterns.Count == 0)
                 {
-                WriteError("Không tìm thấy Load Pattern nào.");
+                    WriteError("Không tìm thấy Load Pattern nào.");
                     return;
                 }
 
@@ -269,12 +292,38 @@ namespace DTS_Engine.Commands
                 WriteMessage($"Đơn vị: {UnitManager.Info}");
                 WriteMessage($"\nLoad Patterns ({patterns.Count}):");
 
+                // Use API-first reader to count loads
+                var reader = CreateApiFirstReader();
+
                 foreach (var pattern in patterns)
                 {
-                    // Đếm số tải theo loại
-                    int frameLoadCount = SapUtils.GetAllFrameDistributedLoads(pattern).Count;
-                    int areaLoadCount = SapUtils.GetAllAreaUniformLoads(pattern).Count;
-                    int pointLoadCount = SapUtils.GetAllPointLoads(pattern).Count;
+                    int frameLoadCount = 0;
+                    int areaLoadCount = 0;
+                    int pointLoadCount = 0;
+
+                    if (reader != null)
+                    {
+                        try
+                        {
+                            var loads = reader.ReadAllLoads(pattern);
+                            frameLoadCount = loads.Count(l => l.LoadType != null && l.LoadType.IndexOf("Frame", StringComparison.OrdinalIgnoreCase) >= 0);
+                            areaLoadCount = loads.Count(l => l.LoadType != null && l.LoadType.IndexOf("Area", StringComparison.OrdinalIgnoreCase) >= 0);
+                            pointLoadCount = loads.Count(l => l.LoadType != null && l.LoadType.IndexOf("Point", StringComparison.OrdinalIgnoreCase) >= 0);
+                        }
+                        catch
+                        {
+                            // fallback to SapUtils if reader fails
+                            frameLoadCount = SapUtils.GetAllFrameDistributedLoads(pattern).Count;
+                            areaLoadCount = SapUtils.GetAllAreaUniformLoads(pattern).Count;
+                            pointLoadCount = SapUtils.GetAllPointLoads(pattern).Count;
+                        }
+                    }
+                    else
+                    {
+                        frameLoadCount = SapUtils.GetAllFrameDistributedLoads(pattern).Count;
+                        areaLoadCount = SapUtils.GetAllAreaUniformLoads(pattern).Count;
+                        pointLoadCount = SapUtils.GetAllPointLoads(pattern).Count;
+                    }
 
                     int total = frameLoadCount + areaLoadCount + pointLoadCount;
 
@@ -325,14 +374,27 @@ namespace DTS_Engine.Commands
                     return;
                 }
 
-                // Lấy tải
-                var frameLoads = SapUtils.GetAllFrameDistributedLoads(pattern);
-                var areaLoads = SapUtils.GetAllAreaUniformLoads(pattern);
-                var pointLoads = SapUtils.GetAllPointLoads(pattern);
+                // Use API-first reader
+                var reader = CreateApiFirstReader();
+                List<RawSapLoad> allLoads;
+
+                if (reader != null)
+                {
+                    try { allLoads = reader.ReadAllLoads(pattern); }
+                    catch { allLoads = new List<RawSapLoad>(); }
+                }
+                else
+                {
+                    allLoads = new List<RawSapLoad>();
+                    allLoads.AddRange(SapUtils.GetAllFrameDistributedLoads(pattern));
+                    allLoads.AddRange(SapUtils.GetAllAreaUniformLoads(pattern));
+                    allLoads.AddRange(SapUtils.GetAllPointLoads(pattern));
+                }
 
                 WriteMessage($"\n--- {pattern} ---");
 
                 // Frame loads
+                var frameLoads = allLoads.Where(l => l.LoadType != null && l.LoadType.IndexOf("Frame", StringComparison.OrdinalIgnoreCase) >= 0).ToList();
                 if (frameLoads.Count > 0)
                 {
                     WriteMessage($"\nFRAME DISTRIBUTED ({frameLoads.Count}):");
@@ -340,11 +402,12 @@ namespace DTS_Engine.Commands
                     foreach (var g in grouped.Take(10))
                     {
                         var names = g.Select(l => l.ElementName).Take(10);
-                        WriteMessage($"  {g.Key:0.00} kN/m: {string.Join(", ", names)}{(g.Count() > 10 ? "..." : "")}");
+                        WriteMessage($"  {g.Key:0.00} kN/m: {string.Join(", ", names)}{(g.Count() > 10 ? "..." : "")} ");
                     }
                 }
 
                 // Area loads
+                var areaLoads = allLoads.Where(l => l.LoadType != null && l.LoadType.IndexOf("Area", StringComparison.OrdinalIgnoreCase) >= 0).ToList();
                 if (areaLoads.Count > 0)
                 {
                     WriteMessage($"\nAREA UNIFORM ({areaLoads.Count}):");
@@ -352,11 +415,12 @@ namespace DTS_Engine.Commands
                     foreach (var g in grouped.Take(10))
                     {
                         var names = g.Select(l => l.ElementName).Take(10);
-                        WriteMessage($"  {g.Key:0.00} kN/m²: {string.Join(", ", names)}{(g.Count() > 10 ? "..." : "")}");
+                        WriteMessage($"  {g.Key:0.00} kN/m²: {string.Join(", ", names)}{(g.Count() > 10 ? "..." : "")} ");
                     }
                 }
 
                 // Point loads
+                var pointLoads = allLoads.Where(l => l.LoadType != null && l.LoadType.IndexOf("Point", StringComparison.OrdinalIgnoreCase) >= 0).ToList();
                 if (pointLoads.Count > 0)
                 {
                     WriteMessage($"\nPOINT FORCE ({pointLoads.Count}):");
@@ -364,7 +428,7 @@ namespace DTS_Engine.Commands
                     foreach (var g in grouped.Take(10))
                     {
                         var names = g.Select(l => l.ElementName).Take(10);
-                        WriteMessage($"  {g.Key:0.00} kN: {string.Join(", ", names)}{(g.Count() > 10 ? "..." : "")}");
+                        WriteMessage($"  {g.Key:0.00} kN: {string.Join(", ", names)}{(g.Count() > 10 ? "..." : "")} ");
                     }
                 }
 
@@ -401,20 +465,56 @@ namespace DTS_Engine.Commands
                 string patternInput = patternRes.StringResult.Trim();
                 bool exportAll = patternInput == "*";
 
-                // Thu thập dữ liệu
+                // Use API-first reader
+                var reader = CreateApiFirstReader();
                 var allLoads = new List<RawSapLoad>();
 
-                if (exportAll)
+                if (reader != null)
                 {
-                    allLoads.AddRange(SapUtils.GetAllFrameDistributedLoads());
-                    allLoads.AddRange(SapUtils.GetAllAreaUniformLoads());
-                    allLoads.AddRange(SapUtils.GetAllPointLoads());
+                    try
+                    {
+                        if (exportAll)
+                        {
+                            // Read patterns then aggregate
+                            var patterns = SapUtils.GetLoadPatterns();
+                            foreach (var p in patterns) allLoads.AddRange(reader.ReadAllLoads(p));
+                        }
+                        else
+                        {
+                            allLoads.AddRange(reader.ReadAllLoads(patternInput));
+                        }
+                    }
+                    catch
+                    {
+                        // fallback to SapUtils
+                        if (exportAll)
+                        {
+                            allLoads.AddRange(SapUtils.GetAllFrameDistributedLoads());
+                            allLoads.AddRange(SapUtils.GetAllAreaUniformLoads());
+                            allLoads.AddRange(SapUtils.GetAllPointLoads());
+                        }
+                        else
+                        {
+                            allLoads.AddRange(SapUtils.GetAllFrameDistributedLoads(patternInput));
+                            allLoads.AddRange(SapUtils.GetAllAreaUniformLoads(patternInput));
+                            allLoads.AddRange(SapUtils.GetAllPointLoads(patternInput));
+                        }
+                    }
                 }
                 else
                 {
-                    allLoads.AddRange(SapUtils.GetAllFrameDistributedLoads(patternInput));
-                    allLoads.AddRange(SapUtils.GetAllAreaUniformLoads(patternInput));
-                    allLoads.AddRange(SapUtils.GetAllPointLoads(patternInput));
+                    if (exportAll)
+                    {
+                        allLoads.AddRange(SapUtils.GetAllFrameDistributedLoads());
+                        allLoads.AddRange(SapUtils.GetAllAreaUniformLoads());
+                        allLoads.AddRange(SapUtils.GetAllPointLoads());
+                    }
+                    else
+                    {
+                        allLoads.AddRange(SapUtils.GetAllFrameDistributedLoads(patternInput));
+                        allLoads.AddRange(SapUtils.GetAllAreaUniformLoads(patternInput));
+                        allLoads.AddRange(SapUtils.GetAllPointLoads(patternInput));
+                    }
                 }
 
                 if (allLoads.Count == 0)

@@ -270,20 +270,32 @@ namespace DTS_Engine.Core.Engines
         /// </summary>
         private List<TempStoryBucket> GroupLoadsByStory(List<RawSapLoad> loads)
         {
+            // Build story buckets based on load Z distribution first (preferred).
+            // This ensures we use the same Z references as the reader/inventory that produced RawSapLoad.ElementZ.
             var buckets = new List<TempStoryBucket>();
 
-            // Use story Elevation information from _stories (IsElevation flag)
-            var activeStories = _stories.Where(s => s.IsElevation).OrderBy(s => s.Elevation).ToList();
+            var derived = DetermineStoryElevations(loads);
 
-            // If no stories found, create a base bucket at Z=0
-            if (activeStories.Count == 0)
+            if (derived != null && derived.Count > 0)
             {
-                buckets.Add(new TempStoryBucket { StoryName = "Base", Elevation = 0.0 });
+                foreach (var kv in derived.OrderBy(k => k.Value))
+                {
+                    buckets.Add(new TempStoryBucket { StoryName = kv.Key, Elevation = kv.Value });
+                }
             }
             else
             {
-                foreach (var s in activeStories)
-                    buckets.Add(new TempStoryBucket { StoryName = s.Name, Elevation = s.Elevation });
+                // Fallback: use _stories from SapUtils (if any)
+                var activeStories = _stories.Where(s => s.IsElevation).OrderBy(s => s.Elevation).ToList();
+                if (activeStories.Count == 0)
+                {
+                    buckets.Add(new TempStoryBucket { StoryName = "Base", Elevation = 0.0 });
+                }
+                else
+                {
+                    foreach (var s in activeStories)
+                        buckets.Add(new TempStoryBucket { StoryName = s.Name, Elevation = s.Elevation });
+                }
             }
 
             // Sort descending for assignment (highest story first)
@@ -1137,7 +1149,7 @@ namespace DTS_Engine.Core.Engines
 
                     sb.AppendLine(" ---------------------------------------------------------------------------------------------------------");
                     if (isVietnamese)
-                        sb.AppendLine($" | {"Vị Trí (Trục/Vùng)",-26} | {"Diễn Giải / Kích Thước (m)",-30} | {"Kh.Lượng",-10} | {"Giá Trị Tải",-12} | {"Tổng (" + targetUnit + ")",12} |");
+                        sb.AppendLine($" | {"Vị Trí (Trục/Vùng)",-26} | {"Diễn Giả / Kích Thước (m)",-30} | {"Kh.Lượng",-10} | {"Giá Trị Tải",-12} | {"Tổng (" + targetUnit + ")",12} |");
                     else
                         sb.AppendLine($" | {"Location (Grid/Zone)",-26} | {"Calculation / Formula (m)",-30} | {"Qty",-10} | {"Unit Load",-12} | {"Total (" + targetUnit + ")",12} |");
                     sb.AppendLine(" ---------------------------------------------------------------------------------------------------------");

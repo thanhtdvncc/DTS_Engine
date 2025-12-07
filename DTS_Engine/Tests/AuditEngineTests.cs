@@ -27,13 +27,13 @@ namespace DTS_Engine.Tests
 
             // Test 2: Dot product
             double dot = v1.Dot(v2);
-            Debug.WriteLine($"Test2: v1·v2={dot:F3} (expected 0.000)");
+            Debug.WriteLine($"Test2: v1ï¿½v2={dot:F3} (expected 0.000)");
             if (Math.Abs(dot) > 0.001)
                 throw new Exception("Vector3D.Dot failed");
 
             // Test 3: Cross product
             var cross = v1.Cross(v2);
-            Debug.WriteLine($"Test3: v1×v2={cross} (expected (20, -15, 0))");
+            Debug.WriteLine($"Test3: v1ï¿½v2={cross} (expected (20, -15, 0))");
             if (Math.Abs(cross.X - 20) > 0.001 || Math.Abs(cross.Y + 15) > 0.001)
                 throw new Exception("Vector3D.Cross failed");
 
