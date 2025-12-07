@@ -215,93 +215,78 @@ namespace DTS_Engine.Core.Utils
 
 		#region Vector Calculation Helpers - FIX BUG #4
 
-		/// <summary>
-		/// FIX BUG #4: Calculate Force Vector with CORRECT sign handling
-		/// 
-		/// CRITICAL FIXES:
-		/// 1. Preserve original sign from SAP2000 value for correct direction
-		/// 2. Check Local directions FIRST (1, 2, 3) before Global
-		/// 3. Handle explicit signs in direction strings (-X, +Y, etc.)
-		/// 
-		/// SAP2000 CONVENTIONS:
-		/// - Gravity loads: Positive value = downward = -Z
-		/// - Force loads: Sign indicates actual direction
-		/// </summary>
-		private Vector3D CalculateForceVector(string elementName, double magnitude, string direction, string coordSys)
+		private int NormalizeDirectionCode(string directionText, int fallback = 10)
 		{
-			var dirUpper = string.IsNullOrWhiteSpace(direction) ? "GRAVITY" : direction.Trim().ToUpperInvariant();
-			var csUpper = string.IsNullOrWhiteSpace(coordSys) ? "GLOBAL" : coordSys.Trim().ToUpperInvariant();
+			if (int.TryParse(directionText, out var code)) return code;
 
-			// FIX BUG #4: Preserve original sign from SAP2000
-			// SAP returns signed values where sign indicates actual direction
-			double signedMag = magnitude; // Keep original sign
+			var dirUpper = directionText?.Trim().ToUpperInvariant();
+			if (string.IsNullOrEmpty(dirUpper)) return fallback;
+			if (dirUpper.Contains("GRAV")) return 10;
+			if (dirUpper.Contains("LOCAL 1") || dirUpper.Contains("LOCAL-1") || dirUpper == "1") return 1;
+			if (dirUpper.Contains("LOCAL 2") || dirUpper.Contains("LOCAL-2") || dirUpper == "2") return 2;
+			if (dirUpper.Contains("LOCAL 3") || dirUpper.Contains("LOCAL-3") || dirUpper == "3") return 3;
+			if (dirUpper.Contains("X")) return 4;
+			if (dirUpper.Contains("Y")) return 5;
+			if (dirUpper.Contains("Z")) return 6;
+			return fallback;
+		}
 
-			// Parse explicit sign from direction string (override SAP sign if specified)
-			int directionSign = 0;
-			if (dirUpper.Contains("-")) directionSign = -1;
-			else if (dirUpper.Contains("+")) directionSign = 1;
-
-			// CASE 1: GRAVITY - Always downward Z
-			// SAP2000 convention: Positive gravity load value means downward force
-			if (dirUpper.Contains("GRAVITY") || dirUpper == "10" || dirUpper == "11")
+		private string GetDirectionDisplayName(int directionCode)
+		{
+			switch (directionCode)
 			{
-				// Gravity loads: magnitude is intensity, direction is always -Z
-				return new Vector3D(0, 0, -Math.Abs(magnitude));
+				case 1: return "Local 1";
+				case 2: return "Local 2";
+				case 3: return "Local 3";
+				case 4: return "X";
+				case 5: return "Y";
+				case 6: return "Z";
+				case 10:
+				case 11: return "Gravity";
+				default: return "Unknown";
 			}
+		}
 
-			// CASE 2: LOCAL COORDINATE SYSTEM - Check for numeric directions (1, 2, 3)
-			bool isLocalNumeric = dirUpper == "1" || dirUpper == "2" || dirUpper == "3" ||
-								  dirUpper.Contains("LOCAL-1") || dirUpper.Contains("LOCAL-2") || dirUpper.Contains("LOCAL-3") ||
-								  dirUpper.Contains("LOCAL 1") || dirUpper.Contains("LOCAL 2") || dirUpper.Contains("LOCAL 3");
+		/// <summary>
+		/// Calculate force vector using SAP direction codes with sign preservation.
+		/// ⚠️ CRITICAL FIX: PRESERVE SIGN from rawValue (don't use Math.Abs)
+		/// </summary>
+		private Vector3D CalculateForceVector(string elementName, double rawValue, int directionCode, string coordSys)
+		{
+			// CRITICAL: Use rawValue directly, preserve sign
+			double signedVal = rawValue;
 
-			bool wantsLocal = csUpper.Contains("LOCAL") || isLocalNumeric;
-
-			if (wantsLocal && _inventory != null)
+			switch (directionCode)
 			{
-				int axis = 3;
-				if (dirUpper.Contains("1")) axis = 1;
-				else if (dirUpper.Contains("2")) axis = 2;
-				else if (dirUpper.Contains("3")) axis = 3;
+				case 10:
+				case 11:
+					return new Vector3D(0, 0, -Math.Abs(signedVal)); // Gravity always negative Z
+				case 4:
+					return new Vector3D(signedVal, 0, 0);
+				case 5:
+					return new Vector3D(0, signedVal, 0);
+				case 6:
+					return new Vector3D(0, 0, signedVal);
+				case 1:
+				case 2:
+				case 3:
+					if (_inventory != null)
+					{
+						var localAxisVec = _inventory.GetLocalAxis(elementName, directionCode);
+						if (localAxisVec.HasValue && !localAxisVec.Value.IsZero)
+						{
+							return localAxisVec.Value * signedVal;
+						}
+					}
 
-				var localAxisVec = _inventory.GetLocalAxis(elementName, axis);
-				if (localAxisVec.HasValue && !localAxisVec.Value.IsZero)
-				{
-					var axisVec = localAxisVec.Value;
-					// FIX: Use signed magnitude, apply direction override if present
-					double effectiveMag = directionSign != 0 ? Math.Abs(signedMag) * directionSign : signedMag;
-					return axisVec * effectiveMag;
-				}
+					// Fallback: approximate local axis with global cardinal directions
+					if (directionCode == 1) return new Vector3D(signedVal, 0, 0);
+					if (directionCode == 2) return new Vector3D(0, signedVal, 0);
+					return new Vector3D(0, 0, signedVal);
+				default:
+					System.Diagnostics.Debug.WriteLine($"[SapDatabaseReader] Unknown direction code '{directionCode}' for {elementName}. Defaulting to Gravity.");
+					return new Vector3D(0, 0, -Math.Abs(signedVal));
 			}
-
-			// CASE 3: EXPLICIT GLOBAL AXES (X, Y, Z)
-			// FIX BUG #4: Properly handle signed magnitudes
-			if (dirUpper.Contains("X") || dirUpper == "4")
-			{
-				double val = directionSign != 0 ? Math.Abs(signedMag) * directionSign : signedMag;
-				if (dirUpper.Contains("-X")) val = -Math.Abs(signedMag);
-				else if (dirUpper.Contains("+X")) val = Math.Abs(signedMag);
-				return new Vector3D(val, 0, 0);
-			}
-
-			if (dirUpper.Contains("Y") || dirUpper == "5")
-			{
-				double val = directionSign != 0 ? Math.Abs(signedMag) * directionSign : signedMag;
-				if (dirUpper.Contains("-Y")) val = -Math.Abs(signedMag);
-				else if (dirUpper.Contains("+Y")) val = Math.Abs(signedMag);
-				return new Vector3D(0, val, 0);
-			}
-
-			if (dirUpper.Contains("Z") || dirUpper == "6")
-			{
-				double val = directionSign != 0 ? Math.Abs(signedMag) * directionSign : signedMag;
-				if (dirUpper.Contains("-Z")) val = -Math.Abs(signedMag);
-				else if (dirUpper.Contains("+Z")) val = Math.Abs(signedMag);
-				return new Vector3D(0, 0, val);
-			}
-
-			// CASE 4: Fallback to Gravity (downward)
-			System.Diagnostics.Debug.WriteLine($"[SapDatabaseReader] Unknown direction '{direction}' for {elementName}. Defaulting to Gravity.");
-			return new Vector3D(0, 0, -Math.Abs(magnitude));
 		}
 
 		/// <summary>
@@ -386,6 +371,10 @@ namespace DTS_Engine.Core.Utils
 			string colCoordSys = schema.FindColumn("CoordSys");
 			string colFOverLA = schema.FindColumn("FOverLA", "FOverL");
 			string colFOverLB = schema.FindColumn("FOverLB");
+			string colAbsA = schema.FindColumn("AbsDistA");
+			string colAbsB = schema.FindColumn("AbsDistB");
+			string colRelA = schema.FindColumn("RelDistA");
+			string colRelB = schema.FindColumn("RelDistB");
 
 			if (colFrame == null || colPattern == null || colDir == null)
 			{
@@ -403,22 +392,40 @@ namespace DTS_Engine.Core.Utils
 				double valA = colFOverLA != null ? schema.GetDouble(r, colFOverLA) : 0.0;
 				double valB = colFOverLB != null ? schema.GetDouble(r, colFOverLB) : valA;
 				double avgVal = (valA + valB) / 2.0;
+				// CRITICAL FIX: Store magnitude WITH sign preserved (no Math.Abs)
 				double magnitude = SapUtils.ConvertLoadToKnPerM(avgVal);
 
 				string dir = schema.GetString(r, colDir) ?? "Gravity";
 				string sys = schema.GetString(r, colCoordSys) ?? "Global";
 
-				var vec = CalculateForceVector(frameName, magnitude, dir, sys);
+				double absA = colAbsA != null ? schema.GetDouble(r, colAbsA) : 0.0;
+				double absB = colAbsB != null ? schema.GetDouble(r, colAbsB) : 0.0;
+				double relA = colRelA != null ? schema.GetDouble(r, colRelA) : 0.0;
+				double relB = colRelB != null ? schema.GetDouble(r, colRelB) : 0.0;
+
+				bool hasAbs = Math.Abs(absA) > 1e-9 || Math.Abs(absB) > 1e-9;
+				bool isRelative = !hasAbs && (Math.Abs(relA) > 1e-9 || Math.Abs(relB) > 1e-9);
+				double distStart = hasAbs ? absA : relA;
+				double distEnd = hasAbs ? absB : relB;
+
+				int dirCode = NormalizeDirectionCode(dir);
+				string dirDisplay = GetDirectionDisplayName(dirCode);
+
+				var vec = CalculateForceVector(frameName, magnitude, dirCode, sys);
 				double z = GetElementElevation(frameName, "Frame");
 
 				var raw = new RawSapLoad
 				{
 					ElementName = frameName,
 					LoadPattern = pattern,
-					Value1 = magnitude,
+					Value1 = magnitude, // Preserve sign from SAP
 					LoadType = "FrameDistributed",
-					Direction = dir,
+					Direction = dirDisplay,
+					DirectionCode = dirCode,
 					CoordSys = sys,
+					DistStart = distStart,
+					DistEnd = distEnd,
+					IsRelative = isRelative,
 					ElementZ = z
 				};
 				raw.SetForceVector(vec);
@@ -465,20 +472,24 @@ namespace DTS_Engine.Core.Utils
 				if (!string.IsNullOrEmpty(patternFilter) && !pat.Equals(patternFilter, StringComparison.OrdinalIgnoreCase)) continue;
 
 				double val = schema.GetDouble(r, colVal);
+				// CRITICAL FIX: Store magnitude WITH sign preserved
 				double magnitude = SapUtils.ConvertLoadToKnPerM2(val);
 				string dir = schema.GetString(r, colDir) ?? "Gravity";
 				string sys = schema.GetString(r, colCoordSys) ?? "Local";
 
-				var vec = CalculateForceVector(area, magnitude, dir, sys);
+				int dirCode = NormalizeDirectionCode(dir);
+				string dirDisplay = GetDirectionDisplayName(dirCode);
+				var vec = CalculateForceVector(area, magnitude, dirCode, sys);
 				double z = GetElementElevation(area, "Area");
 
 				var raw = new RawSapLoad
 				{
 					ElementName = area,
 					LoadPattern = pat,
-					Value1 = magnitude,
+					Value1 = magnitude, // Preserve sign
 					LoadType = "AreaUniform",
-					Direction = dir,
+					Direction = dirDisplay,
+					DirectionCode = dirCode,
 					CoordSys = sys,
 					ElementZ = z
 				};
@@ -523,20 +534,24 @@ namespace DTS_Engine.Core.Utils
 				if (!string.IsNullOrEmpty(patternFilter) && !pat.Equals(patternFilter, StringComparison.OrdinalIgnoreCase)) continue;
 
 				double val = schema.GetDouble(r, colVal);
+				// CRITICAL FIX: Store magnitude WITH sign preserved
 				double magnitude = SapUtils.ConvertLoadToKnPerM2(val);
 				string dir = schema.GetString(r, colDir) ?? "Gravity";
 				string sys = schema.GetString(r, colCoordSys) ?? "Global";
 
-				var vec = CalculateForceVector(area, magnitude, dir, sys);
+				int dirCode = NormalizeDirectionCode(dir);
+				string dirDisplay = GetDirectionDisplayName(dirCode);
+				var vec = CalculateForceVector(area, magnitude, dirCode, sys);
 				double z = GetElementElevation(area, "Area");
 
 				var raw = new RawSapLoad
 				{
 					ElementName = area,
 					LoadPattern = pat,
-					Value1 = magnitude,
+					Value1 = magnitude, // Preserve sign
 					LoadType = "AreaUniformToFrame",
-					Direction = dir,
+					Direction = dirDisplay,
+					DirectionCode = dirCode,
 					CoordSys = sys,
 					DistributionType = schema.GetString(r, colDist),
 					ElementZ = z
@@ -587,15 +602,18 @@ namespace DTS_Engine.Core.Utils
 				{
 					if (Math.Abs(val) < 1e-6) return;
 					double mag = SapUtils.ConvertForceToKn(val);
-					var vec = CalculateForceVector(joint, mag, localAxis, sys);
+					int dirCode = NormalizeDirectionCode(localAxis);
+					var vec = CalculateForceVector(joint, mag, dirCode, sys);
+					string dirDisplay = string.IsNullOrEmpty(dirName) ? GetDirectionDisplayName(dirCode) : dirName;
 
 					var raw = new RawSapLoad
 					{
 						ElementName = joint,
 						LoadPattern = pat,
-						Value1 = Math.Abs(mag),
+						Value1 = mag,
 						LoadType = "PointForce",
-						Direction = dirName,
+						Direction = dirDisplay,
+						DirectionCode = dirCode,
 						CoordSys = sys,
 						ElementZ = z
 					};
@@ -672,22 +690,42 @@ namespace DTS_Engine.Core.Utils
 
 						double v1 = (val1Arr != null && i < val1Arr.Length) ? val1Arr[i] : 0.0;
 						double v2 = (val2Arr != null && i < val2Arr.Length) ? val2Arr[i] : v1;
+						// CRITICAL FIX: Store magnitude WITH sign preserved
 						double magnitude = SapUtils.ConvertLoadToKnPerM((v1 + v2) / 2.0);
 
-						string dirStr = GetApiDirectionString((dirArr != null && i < dirArr.Length) ? dirArr[i] : 10);
+						double distStart = (dist1Arr != null && i < dist1Arr.Length) ? dist1Arr[i] : 0.0;
+						double distEnd = (dist2Arr != null && i < dist2Arr.Length) ? dist2Arr[i] : distStart;
+						bool isRelative = false;
+						if (rd1Arr != null && i < rd1Arr.Length && Math.Abs(rd1Arr[i]) > 1e-9)
+						{
+							distStart = rd1Arr[i];
+							isRelative = true;
+						}
+						if (rd2Arr != null && i < rd2Arr.Length && Math.Abs(rd2Arr[i]) > 1e-9)
+						{
+							distEnd = rd2Arr[i];
+							isRelative = true;
+						}
+
+						int dirCode = (dirArr != null && i < dirArr.Length) ? dirArr[i] : 10;
+						string dirStr = GetDirectionDisplayName(dirCode);
 						string csys = (csysArr != null && i < csysArr.Length) ? csysArr[i] : "Global";
 
-						var vec = CalculateForceVector(name, magnitude, dirStr, csys);
+						var vec = CalculateForceVector(name, magnitude, dirCode, csys);
 						double z = GetElementElevation(name, "Frame");
 
 						var raw = new RawSapLoad
 						{
 							ElementName = name,
 							LoadPattern = patArr[i],
-							Value1 = magnitude,
+							Value1 = magnitude, // Preserve sign
 							LoadType = "FrameDistributed",
 							Direction = dirStr,
+							DirectionCode = dirCode,
 							CoordSys = csys,
+							DistStart = distStart,
+							DistEnd = distEnd,
+							IsRelative = isRelative,
 							ElementZ = z
 						};
 						raw.SetForceVector(vec);
@@ -723,20 +761,23 @@ namespace DTS_Engine.Core.Utils
 					{
 						if (!string.IsNullOrEmpty(patternFilter) && !patArr[i].Equals(patternFilter, StringComparison.OrdinalIgnoreCase)) continue;
 
+						// CRITICAL FIX: Store magnitude WITH sign preserved
 						double magnitude = SapUtils.ConvertLoadToKnPerM2(valArr[i]);
-						string dirStr = GetApiDirectionString((dirArr != null && i < dirArr.Length) ? dirArr[i] : 10);
+							int dirCode = (dirArr != null && i < dirArr.Length) ? dirArr[i] : 10;
+							string dirStr = GetDirectionDisplayName(dirCode);
 						string csys = (csysArr != null && i < csysArr.Length) ? csysArr[i] : "Local";
 
-						var vec = CalculateForceVector(name, magnitude, dirStr, csys);
+							var vec = CalculateForceVector(name, magnitude, dirCode, csys);
 						double z = GetElementElevation(name, "Area");
 
 						var raw = new RawSapLoad
 						{
 							ElementName = name,
 							LoadPattern = patArr[i],
-							Value1 = magnitude,
+							Value1 = magnitude, // Preserve sign
 							LoadType = "AreaUniform",
-							Direction = dirStr,
+								Direction = dirStr,
+								DirectionCode = dirCode,
 							CoordSys = csys,
 							ElementZ = z
 						};
@@ -774,11 +815,12 @@ namespace DTS_Engine.Core.Utils
 						if (!string.IsNullOrEmpty(patternFilter) && !patArr[i].Equals(patternFilter, StringComparison.OrdinalIgnoreCase)) continue;
 
 						double magnitude = SapUtils.ConvertLoadToKnPerM2(valArr[i]);
-						string dirStr = GetApiDirectionString((dirArr != null && i < dirArr.Length) ? dirArr[i] : 10);
+								int dirCode = (dirArr != null && i < dirArr.Length) ? dirArr[i] : 10;
+								string dirStr = GetDirectionDisplayName(dirCode);
 						string csys = (csysArr != null && i < csysArr.Length) ? csysArr[i] : "Global";
 						string distStr = (distTypeArr != null && i < distTypeArr.Length && distTypeArr[i] == 1) ? "One Way" : "Two Way";
 
-						var vec = CalculateForceVector(name, magnitude, dirStr, csys);
+								var vec = CalculateForceVector(name, magnitude, dirCode, csys);
 						double z = GetElementElevation(name, "Area");
 
 						var raw = new RawSapLoad
@@ -787,7 +829,8 @@ namespace DTS_Engine.Core.Utils
 							LoadPattern = patArr[i],
 							Value1 = magnitude,
 							LoadType = "AreaUniformToFrame",
-							Direction = dirStr,
+									Direction = dirStr,
+									DirectionCode = dirCode,
 							CoordSys = csys,
 							DistributionType = distStr,
 							ElementZ = z
@@ -840,15 +883,18 @@ namespace DTS_Engine.Core.Utils
 						{
 							if (Math.Abs(v) < 1e-6) return;
 							double mag = SapUtils.ConvertForceToKn(v);
-							var vec = CalculateForceVector(name, mag, dir, csys);
+							int dirCode = NormalizeDirectionCode(dir);
+							var vec = CalculateForceVector(name, mag, dirCode, csys);
+							string dirDisplay = GetDirectionDisplayName(dirCode);
 
 							var raw = new RawSapLoad
 							{
 								ElementName = name,
 								LoadPattern = patArr[i],
-								Value1 = Math.Abs(mag),
+								Value1 = mag,
 								LoadType = "PointForce",
-								Direction = dir,
+								Direction = dirDisplay,
+								DirectionCode = dirCode,
 								CoordSys = csys,
 								ElementZ = z
 							};
@@ -864,22 +910,6 @@ namespace DTS_Engine.Core.Utils
 				}
 			}
 			return list;
-		}
-
-		private string GetApiDirectionString(int dirCode)
-		{
-			switch (dirCode)
-			{
-				case 1: return "1";
-				case 2: return "2";
-				case 3: return "3";
-				case 4: return "X";
-				case 5: return "Y";
-				case 6: return "Z";
-				case 10: return "Gravity";
-				case 11: return "GravityProj";
-				default: return "Gravity";
-			}
 		}
 
 		#endregion

@@ -63,86 +63,139 @@ namespace DTS_Engine.Commands
                     return;
                 }
 
-                // ✅ FIX: Sử dụng PromptKeywordOptions với pagination
+                // ✅ FIX: Sort patterns by estimated load (descending)
+                var sortedActivePatterns = activePatterns.OrderByDescending(p => p.TotalEstimatedLoad).ToList();
+
+                // ✅ FIX: Improved pattern selection UI
                 var selectedPatterns = new List<string>();
-                int pageSize = 10;
+                int pageSize = 30;
                 int pageIndex = 0;
-                int totalPages = (int)Math.Ceiling(allPatterns.Count / (double)pageSize);
+                int totalPages = (int)Math.Ceiling(sortedActivePatterns.Count / (double)pageSize);
 
                 while (true)
                 {
-                    WriteMessage($"\n--- LOAD PATTERNS (Page {pageIndex + 1}/{totalPages}) ---");
-                    
-                    var patOpt = new PromptKeywordOptions("\nChọn Pattern (hoặc Next/Prev/All/Done): ");
-                    patOpt.AllowNone = false;
-                    
-                    // Thêm patterns của trang hiện tại
+                    WriteMessage($"\n--- LOAD PATTERNS (Page {pageIndex + 1}/{totalPages}, sorted by estimated load) ---");
+
                     int start = pageIndex * pageSize;
-                    int end = Math.Min(allPatterns.Count, start + pageSize);
-                    
+                    int end = Math.Min(sortedActivePatterns.Count, start + pageSize);
+
+                    // Display with 1-based numbering
                     for (int i = start; i < end; i++)
                     {
-                        string patName = allPatterns[i];
-                        patOpt.Keywords.Add(patName);
-                        
-                        // Hiển thị info
-                        double loadVal = activePatterns.FirstOrDefault(p => p.Name == patName)?.TotalEstimatedLoad ?? 0;
-                        string info = loadVal > 0.001 ? $"[~{loadVal:N0} kN]" : "[-]";
-                        WriteMessage($" {i + 1,2}. {patName,-15} {info}");
+                        var pattern = sortedActivePatterns[i];
+                        string info = pattern.TotalEstimatedLoad > 0.001 ? $"(~{pattern.TotalEstimatedLoad:N0} kN)" : string.Empty;
+                        WriteMessage($"[{i + 1}] {pattern.Name} {info}");
                     }
-                    
-                    // Navigation keywords
-                    if (pageIndex < totalPages - 1) patOpt.Keywords.Add("Next");
-                    if (pageIndex > 0) patOpt.Keywords.Add("Prev");
-                    patOpt.Keywords.Add("All");
-                    patOpt.Keywords.Add("Done");
-                    
-                    patOpt.Keywords.Default = end < allPatterns.Count ? "Next" : "Done";
-                    
-                    var patRes = Ed.GetKeywords(patOpt);
-                    
+
+                    WriteMessage("\nOptions:");
+                    WriteMessage("  - Enter number(s): e.g. '1' or '1,2,3'");
+                    WriteMessage("  - Enter pattern name directly");
+                    WriteMessage("  - 'All' to select all patterns");
+                    WriteMessage("  - 'Next'/'Prev' to navigate pages");
+                    WriteMessage("  - Press ENTER when done (must select at least 1)");
+
+                    var patOpt = new PromptStringOptions("\nLựa chọn: ") { AllowSpaces = true };
+                    var patRes = Ed.GetString(patOpt);
+
                     if (patRes.Status != PromptStatus.OK)
                     {
                         WriteMessage("Đã hủy.");
                         return;
                     }
+
+                    string choice = patRes.StringResult?.Trim();
                     
-                    string choice = patRes.StringResult;
-                    
-                    if (choice == "Next" && pageIndex < totalPages - 1)
-                    {
-                        pageIndex++;
-                    }
-                    else if (choice == "Prev" && pageIndex > 0)
-                    {
-                        pageIndex--;
-                    }
-                    else if (choice == "All")
-                    {
-                        selectedPatterns = allPatterns.ToList();
-                        break;
-                    }
-                    else if (choice == "Done")
+                    // ✅ FIX: Empty input = done (if at least one selected)
+                    if (string.IsNullOrEmpty(choice))
                     {
                         if (selectedPatterns.Count == 0)
                         {
-                            WriteWarning("Chưa chọn pattern nào.");
+                            WriteWarning("Chưa chọn pattern nào. Vui lòng chọn ít nhất 1 pattern.");
                             continue;
                         }
+                        break; // Done
+                    }
+
+                    // Navigation commands
+                    if (choice.Equals("Next", StringComparison.OrdinalIgnoreCase))
+                    {
+                        if (pageIndex < totalPages - 1) pageIndex++;
+                        continue;
+                    }
+                    if (choice.Equals("Prev", StringComparison.OrdinalIgnoreCase))
+                    {
+                        if (pageIndex > 0) pageIndex--;
+                        continue;
+                    }
+                    if (choice.Equals("All", StringComparison.OrdinalIgnoreCase))
+                    {
+                        selectedPatterns = sortedActivePatterns.Select(p => p.Name).ToList();
+                        WriteSuccess($"Đã chọn tất cả {selectedPatterns.Count} patterns.");
                         break;
                     }
-                    else
+
+                    // ✅ FIX: Support comma-separated numbers
+                    if (choice.Contains(","))
                     {
-                        // Pattern được chọn
-                        if (!selectedPatterns.Contains(choice))
+                        var parts = choice.Split(new[] { ',', ';', ' ' }, StringSplitOptions.RemoveEmptyEntries);
+                        foreach (var part in parts)
                         {
-                            selectedPatterns.Add(choice);
-                            WriteSuccess($"Đã thêm: {choice} (Tổng: {selectedPatterns.Count})");
+                            if (int.TryParse(part.Trim(), out int idx))
+                            {
+                                if (idx >= 1 && idx <= sortedActivePatterns.Count)
+                                {
+                                    string patName = sortedActivePatterns[idx - 1].Name;
+                                    if (!selectedPatterns.Contains(patName, StringComparer.OrdinalIgnoreCase))
+                                    {
+                                        selectedPatterns.Add(patName);
+                                    }
+                                }
+                            }
+                        }
+                        WriteSuccess($"Đã thêm. Tổng: {selectedPatterns.Count} patterns");
+                        continue;
+                    }
+
+                    // Single number input
+                    if (int.TryParse(choice, out int singleIdx))
+                    {
+                        if (singleIdx >= 1 && singleIdx <= sortedActivePatterns.Count)
+                        {
+                            string patName = sortedActivePatterns[singleIdx - 1].Name;
+                            if (!selectedPatterns.Contains(patName, StringComparer.OrdinalIgnoreCase))
+                            {
+                                selectedPatterns.Add(patName);
+                                WriteSuccess($"Đã thêm: {patName} (Tổng: {selectedPatterns.Count})");
+                            }
+                            else
+                            {
+                                WriteWarning($"{patName} đã được chọn.");
+                            }
                         }
                         else
                         {
-                            WriteWarning($"{choice} đã được chọn rồi.");
+                            WriteWarning("Số thứ tự không hợp lệ.");
                         }
+                        continue;
+                    }
+
+                    // Direct pattern name input
+                    var matched = sortedActivePatterns.FirstOrDefault(p => p.Name.Equals(choice, StringComparison.OrdinalIgnoreCase));
+                    if (matched != null)
+                    {
+                        if (!selectedPatterns.Contains(matched.Name, StringComparer.OrdinalIgnoreCase))
+                        {
+                            selectedPatterns.Add(matched.Name);
+                            WriteSuccess($"Đã thêm: {matched.Name} (Tổng: {selectedPatterns.Count})");
+                        }
+                        else
+                        {
+                            WriteWarning($"{matched.Name} đã được chọn.");
+                        }
+                    }
+                    else
+                    {
+                        WriteWarning($"Không tìm thấy pattern: {choice}");
                     }
                 }
                 

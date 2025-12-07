@@ -54,9 +54,20 @@ namespace DTS_Engine.Core.Utils
 					_sapModel = _sapObject.SapModel;
 
 					// 4. Đồng bộ đơn vị với UnitManager (THAY ĐỔI QUAN TRỌNG)
-					if (SyncUnits())
+					bool unitSet = false;
+					try
 					{
-						// Lấy tên file để confirm
+						eUnits sapUnit = (eUnits)(int)UnitManager.CurrentUnit;
+						unitSet = _sapModel.SetPresentUnits(sapUnit) == 0;
+					}
+					catch (Exception ex)
+					{
+						System.Diagnostics.Debug.WriteLine($"SetPresentUnits failed: {ex.Message}");
+					}
+
+					bool syncOk = SyncUnits();
+					if (unitSet || syncOk)
+					{
 						string modelName = "Unknown";
 						try { modelName = System.IO.Path.GetFileName(_sapModel.GetModelFilename()); } catch { }
 
@@ -359,7 +370,7 @@ namespace DTS_Engine.Core.Utils
 				{
 					ElementName = frameName,
 					LoadPattern = pattern,
-					Value1 = Math.Abs(normalizedValue), // Magnitude để tránh cân bằng
+					Value1 = normalizedValue, // Preserve sign from SAP
 					LoadType = "FrameDistributed",
 					Direction = direction,
 					DistStart = distA,
