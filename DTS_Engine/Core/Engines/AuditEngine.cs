@@ -196,22 +196,37 @@ namespace DTS_Engine.Core.Engines
 
         /// <summary>
         /// Helper: Tính hệ số nhân cho tải trọng (Area, Length, hoặc Point)
-        /// Extracted để tuân thủ Single Responsibility Principle
+        /// FIX BUG #5: Sử dụng case-insensitive lookup và fallback
         /// </summary>
         private double CalculateLoadMultiplier(RawSapLoad load)
         {
+            // FIX BUG #5: Normalize element name for lookup
+            string elementName = load.ElementName?.Trim();
+            if (string.IsNullOrEmpty(elementName)) return 0.0;
+            
             // Area loads: Nhân với diện tích (m²)
             if (load.LoadType.Contains("Area"))
             {
-                var areaGeom = GetAreaGeometry(load.ElementName);
+                var areaGeom = GetAreaGeometry(elementName);
                 if (areaGeom != null)
                     return areaGeom.Area / 1_000_000.0; // mm² -> m²
+                
+                // FIX: Try case-insensitive search if direct lookup fails
+                foreach (var kvp in _areaGeometryCache)
+                {
+                    if (kvp.Key.Equals(elementName, StringComparison.OrdinalIgnoreCase))
+                        return kvp.Value.Area / 1_000_000.0;
+                }
+                
+                // Still not found - return 1.0 as fallback (count-based)
+                System.Diagnostics.Debug.WriteLine($"[AuditEngine] Warning: Area geometry not found for '{elementName}'. Using count=1.");
+                return 1.0;
             }
             
             // Frame distributed loads: Nhân với chiều dài (m)
             if (load.LoadType.Contains("Frame") && !load.LoadType.Contains("Point"))
             {
-                var frameGeom = GetFrameGeometry(load.ElementName);
+                var frameGeom = GetFrameGeometry(elementName);
                 if (frameGeom != null)
                 {
                     double len = frameGeom.Length2D / 1000.0; // mm -> m
@@ -222,33 +237,157 @@ namespace DTS_Engine.Core.Engines
                     
                     return len;
                 }
+                
+                // FIX: Try case-insensitive search
+                foreach (var kvp in _frameGeometryCache)
+                {
+                    if (kvp.Key.Equals(elementName, StringComparison.OrdinalIgnoreCase))
+                    {
+                        double len = kvp.Value.Length2D / 1000.0;
+                        if (!load.IsRelative && Math.Abs(load.DistEnd - load.DistStart) > 0.001)
+                            len = Math.Abs(load.DistEnd - load.DistStart) / 1000.0;
+                        return len;
+                    }
+                }
+                
+                System.Diagnostics.Debug.WriteLine($"[AuditEngine] Warning: Frame geometry not found for '{elementName}'. Using length=1m.");
+                return 1.0;
             }
             
             // Point loads: Hệ số = 1
             if (load.LoadType.Contains("Point"))
                 return 1.0;
 
-            return 0.0; // Fallback
+            return 1.0; // FIX: Changed from 0.0 to 1.0 as safe fallback
         }
 
         /// <summary>
-        /// Helper: Lấy geometry của Area (với cache)
+        /// Helper: Lấy geometry của Area (với cache) - FIX case-insensitive
         /// </summary>
         private SapArea GetAreaGeometry(string areaName)
         {
+            if (string.IsNullOrEmpty(areaName)) return null;
+            
             if (_areaGeometryCache.TryGetValue(areaName, out var area))
                 return area;
+            
+            // Try trimmed version
+            string trimmed = areaName.Trim();
+            if (_areaGeometryCache.TryGetValue(trimmed, out area))
+                return area;
+                
             return null;
         }
 
         /// <summary>
-        /// Helper: Lấy geometry của Frame (với cache)
+        /// Helper: Lấy geometry của Frame (với cache) - FIX case-insensitive
         /// </summary>
         private SapFrame GetFrameGeometry(string frameName)
         {
+            if (string.IsNullOrEmpty(frameName)) return null;
+            
             if (_frameGeometryCache.TryGetValue(frameName, out var frame))
                 return frame;
+            
+            // Try trimmed version
+            string trimmed = frameName.Trim();
+            if (_frameGeometryCache.TryGetValue(trimmed, out frame))
+                return frame;
+                
             return null;
+        }
+
+        #endregion
+
+        #region Main Audit Workflows (Backup)
+
+        /// <summary>
+        /// Chạy kiểm toán cho danh sách Load Patterns
+        /// BACKUP: Phiên bản cũ chưa refactor
+        /// </summary>
+        public List<AuditReport> RunAuditBackup(string loadPatterns)
+        {
+            var reports = new List<AuditReport>();
+            if (string.IsNullOrEmpty(loadPatterns)) return reports;
+
+            var patterns = loadPatterns.Split(new[] { ',', ';', ' ' }, StringSplitOptions.RemoveEmptyEntries)
+                                       .Select(p => p.Trim().ToUpper())
+                                       .Distinct()
+                                       .ToList();
+
+            // Cache geometry một lần dùng chung
+            CacheGeometry();
+
+            foreach (var pattern in patterns)
+            {
+                var report = RunSingleAuditBackup(pattern);
+                if (report != null) reports.Add(report);
+            }
+
+            return reports;
+        }
+
+        /// <summary>
+        /// Chạy kiểm toán cho một Load Pattern cụ thể
+        /// BACKUP: Phiên bản cũ chưa refactor
+        /// </summary>
+        public AuditReport RunSingleAuditBackup(string loadPattern)
+        {
+            // Refresh geometry cache
+            CacheGeometry();
+
+            var report = new AuditReport
+            {
+                LoadPattern = loadPattern,
+                AuditDate = DateTime.Now,
+                ModelName = SapUtils.GetModelName(),
+                UnitInfo = UnitManager.Info.ToString()
+            };
+
+            // CRITICAL: Đọc tải trọng qua Interface (Dependency Injection)
+            // LoadReader đã có sẵn ModelInventory → Vector đã được tính chính xác
+            var allLoads = _loadReader.ReadAllLoads(loadPattern);
+            
+            if (allLoads.Count == 0) 
+            {
+                report.IsAnalyzed = false;
+                report.SapBaseReaction = 0;
+                return report;
+            }
+
+            // --- BƯỚC TÍNH TOÁN CHÍNH XÁC (Dựa trên Vector từ Reader) ---
+            // OPTIMIZATION: Single-pass calculation
+            double sumFx = 0, sumFy = 0, sumFz = 0;
+
+            foreach (var load in allLoads)
+            {
+                // Vector đã được Reader tính toán sẵn → Chỉ cần nhân với multiplier
+                double multiplier = CalculateLoadMultiplier(load);
+                
+                sumFx += load.DirectionX * multiplier;
+                sumFy += load.DirectionY * multiplier;
+                sumFz += load.DirectionZ * multiplier;
+            }
+
+            // GÁN KẾT QUẢ VÀO REPORT
+            report.CalculatedFx = sumFx;
+            report.CalculatedFy = sumFy;
+            report.CalculatedFz = sumFz;
+
+            // BƯỚC 4: Group and process by story
+            var storyBuckets = GroupLoadsByStory(allLoads);
+            foreach (var bucket in storyBuckets.OrderByDescending(b => b.Elevation))
+            {
+                var storyGroup = ProcessStory(bucket.StoryName, bucket.Elevation, bucket.Loads);
+                if (storyGroup.LoadTypes.Count > 0)
+                    report.Stories.Add(storyGroup);
+            }
+
+            // Base Reaction = 0 (người dùng check thủ công)
+            report.SapBaseReaction = 0;
+            report.IsAnalyzed = false;
+
+            return report;
         }
 
         #endregion
@@ -264,67 +403,72 @@ namespace DTS_Engine.Core.Engines
         }
 
         /// <summary>
-        /// Group loads by story using logic:
-        /// Each load belongs to the highest story where load.Z >= story.Elevation - 50mm tolerance.
-        /// If no story matched (below lowest), assign to lowest story.
+        /// Nhóm tải theo tầng (Story) dựa trên cao độ Z của phần tử.
+        /// FIX BUG #6: Sửa logic phân tầng - duyệt từ THẤP LÊN CAO
         /// </summary>
         private List<TempStoryBucket> GroupLoadsByStory(List<RawSapLoad> loads)
         {
-            // Build story buckets based on load Z distribution first (preferred).
-            // This ensures we use the same Z references as the reader/inventory that produced RawSapLoad.ElementZ.
-            var buckets = new List<TempStoryBucket>();
-
-            var derived = DetermineStoryElevations(loads);
-
-            if (derived != null && derived.Count > 0)
+            // Bước 1: Xác định cao độ của các tầng từ SAP
+            var stories = SapUtils.GetStories()
+                .Where(s => s.IsElevation)
+                .OrderBy(s => s.Coordinate)
+                .ToList();
+            
+            if (stories.Count == 0)
             {
-                foreach (var kv in derived.OrderBy(k => k.Value))
+                // Fallback: Tạo một tầng duy nhất nếu không có thông tin
+                var singleBucket = new TempStoryBucket
                 {
-                    buckets.Add(new TempStoryBucket { StoryName = kv.Key, Elevation = kv.Value });
-                }
-            }
-            else
-            {
-                // Fallback: use _stories from SapUtils (if any)
-                var activeStories = _stories.Where(s => s.IsElevation).OrderBy(s => s.Elevation).ToList();
-                if (activeStories.Count == 0)
-                {
-                    buckets.Add(new TempStoryBucket { StoryName = "Base", Elevation = 0.0 });
-                }
-                else
-                {
-                    foreach (var s in activeStories)
-                        buckets.Add(new TempStoryBucket { StoryName = s.Name, Elevation = s.Elevation });
-                }
+                    StoryName = "All",
+                    Elevation = 0,
+                    Loads = loads.ToList()
+                };
+                return new List<TempStoryBucket> { singleBucket };
             }
 
-            // Sort descending for assignment (highest story first)
-            var sortedBuckets = buckets.OrderByDescending(b => b.Elevation).ToList();
+            // Bước 2: Tạo buckets cho từng tầng
+            var buckets = stories.Select(s => new TempStoryBucket
+            {
+                StoryName = s.Name ?? s.StoryName ?? $"Z={s.Coordinate}",
+                Elevation = s.Coordinate,
+                Loads = new List<RawSapLoad>()
+            }).ToList();
+
+            // FIX BUG #6: Sort buckets từ CAO xuống THẤP để phân tải đúng
+            // Logic: Một phần tử thuộc tầng nào nếu Z của nó >= Elevation của tầng đó 
+            //        nhưng < Elevation của tầng trên
+            var sortedBuckets = buckets.OrderBy(b => b.Elevation).ToList();
 
             foreach (var load in loads)
             {
-                var z = load.ElementZ;
+                double z = load.ElementZ;
                 bool assigned = false;
 
-                foreach (var bucket in sortedBuckets)
+                // FIX: Duyệt từ tầng CAO NHẤT xuống để tìm tầng phù hợp
+                // Tải thuộc tầng N nếu: Elevation[N] <= Z < Elevation[N+1]
+                for (int i = sortedBuckets.Count - 1; i >= 0; i--)
                 {
-                    // tolerance 50mm to attach loads sitting exactly on slab
-                    if (z >= bucket.Elevation - 50.0)
+                    double thisElevation = sortedBuckets[i].Elevation;
+                    double tolerance = 500.0; // 500mm tolerance
+                    
+                    // Điều kiện: Z >= Elevation - tolerance
+                    if (z >= thisElevation - tolerance)
                     {
-                        bucket.Loads.Add(load);
+                        sortedBuckets[i].Loads.Add(load);
                         assigned = true;
                         break;
                     }
                 }
 
-                // if still not assigned, add to lowest bucket
+                // Fallback: Gán vào tầng thấp nhất nếu Z quá thấp
                 if (!assigned && sortedBuckets.Count > 0)
                 {
-                    sortedBuckets.Last().Loads.Add(load);
+                    sortedBuckets[0].Loads.Add(load);
                 }
             }
 
-            return sortedBuckets.Where(b => b.Loads.Count > 0).ToList();
+            // Trả về theo thứ tự từ thấp lên cao
+            return sortedBuckets;
         }
 
         #endregion
@@ -1005,30 +1149,39 @@ namespace DTS_Engine.Core.Engines
 
         #region Geometry Helpers
 
+        /// <summary>
+        /// Cache geometry từ SAP2000 để tránh gọi API nhiều lần.
+        /// FIX: Sử dụng case-insensitive dictionary
+        /// </summary>
         private void CacheGeometry()
         {
-            _frameGeometryCache.Clear();
-            _areaGeometryCache.Clear();
+            if (_frameGeometryCache == null)
+                _frameGeometryCache = new Dictionary<string, SapFrame>(StringComparer.OrdinalIgnoreCase);
+            else
+                _frameGeometryCache.Clear();
+                
+            if (_areaGeometryCache == null)
+                _areaGeometryCache = new Dictionary<string, SapArea>(StringComparer.OrdinalIgnoreCase);
+            else
+                _areaGeometryCache.Clear();
 
+            // Cache Frames
             var frames = SapUtils.GetAllFramesGeometry();
-            if (frames != null)
+            foreach (var f in frames)
             {
-                foreach (var f in frames)
-                {
-                    if (f == null || string.IsNullOrWhiteSpace(f.Name)) continue;
-                    _frameGeometryCache[f.Name.Trim()] = f;
-                }
+                if (f == null || string.IsNullOrWhiteSpace(f.Name)) continue;
+                _frameGeometryCache[f.Name.Trim()] = f;
             }
 
+            // Cache Areas
             var areas = SapUtils.GetAllAreasGeometry();
-            if (areas != null)
+            foreach (var a in areas)
             {
-                foreach (var a in areas)
-                {
-                    if (a == null || string.IsNullOrWhiteSpace(a.Name)) continue;
-                    _areaGeometryCache[a.Name.Trim()] = a;
-                }
+                if (a == null || string.IsNullOrWhiteSpace(a.Name)) continue;
+                _areaGeometryCache[a.Name.Trim()] = a;
             }
+            
+            System.Diagnostics.Debug.WriteLine($"[AuditEngine] Cached {_frameGeometryCache.Count} frames, {_areaGeometryCache.Count} areas");
         }
 
         private Polygon CreateNtsPolygon(List<Point2D> pts)

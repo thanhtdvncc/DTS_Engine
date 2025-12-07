@@ -54,8 +54,8 @@ namespace DTS_Engine.Commands
 
                 // 3. Lấy dữ liệu Pattern
                 WriteMessage("\nĐang quét dữ liệu Load Patterns...");
-                var activePatterns = SapUtils.GetActiveLoadPatterns(); // Danh sách có tải (để sắp xếp)
-                var allPatterns = SapUtils.GetLoadPatterns();          // Toàn bộ danh sách (để validate)
+                var activePatterns = SapUtils.GetActiveLoadPatterns();
+                var allPatterns = SapUtils.GetLoadPatterns();
 
                 if (allPatterns.Count == 0)
                 {
@@ -89,88 +89,63 @@ namespace DTS_Engine.Commands
                 WriteMessage(" A. All (Chọn tất cả)");
                 WriteMessage(" 0. Cancel");
 
-                // prepare selection container
+                // 5. Yêu cầu nhập (sử dụng string input đơn giản - FIX BUG #1)
                 var selectedPatterns = new List<string>();
+                
+                var pso = new PromptStringOptions("\nNhập số thứ tự (VD: 1, 3) hoặc tên Pattern (hoặc 'A' cho tất cả, '0' để hủy): ");
+                pso.AllowSpaces = true;
+                pso.DefaultValue = "A";
+                pso.UseDefaultValue = true;
 
-                // 5. Quick keyword picker: show up to 20 patterns as clickable keywords (fallback to typed input)
-                var quickPick = new PromptKeywordOptions("\nChọn nhanh Pattern (hoặc chọn 'More' để nhập thủ công): ");
-                int maxQuick = Math.Min(displayList.Count, 20);
-                for (int k = 0; k < maxQuick; k++) quickPick.Keywords.Add(displayList[k]);
-                quickPick.Keywords.Add("All");
-                quickPick.Keywords.Add("More");
-                quickPick.Keywords.Add("Cancel");
-                quickPick.AllowNone = true;
-                quickPick.Keywords.Default = maxQuick > 0 ? displayList[0] : "All";
+                PromptResult pres = Ed.GetString(pso);
+                if (pres.Status != PromptStatus.OK) return;
 
-                var quickRes = Ed.GetKeywords(quickPick);
-                bool usedQuick = false;
-                if (quickRes.Status == PromptStatus.OK)
+                string input = pres.StringResult.Trim();
+                
+                // Xử lý cancel
+                if (input == "0")
                 {
-                    string choice = quickRes.StringResult?.Trim();
-                    if (string.Equals(choice, "Cancel", StringComparison.OrdinalIgnoreCase)) return;
-                    if (string.Equals(choice, "All", StringComparison.OrdinalIgnoreCase))
-                    {
-                        selectedPatterns = allPatterns.ToList();
-                        usedQuick = true;
-                    }
-                    else if (!string.Equals(choice, "More", StringComparison.OrdinalIgnoreCase))
-                    {
-                        // Single quick choice
-                        var match = allPatterns.FirstOrDefault(x => x.Equals(choice, StringComparison.OrdinalIgnoreCase));
-                        if (match != null)
-                        {
-                            selectedPatterns.Add(match);
-                            usedQuick = true;
-                        }
-                    }
+                    WriteMessage("Đã hủy.");
+                    return;
                 }
 
-                if (!usedQuick)
+                var parts = input.Split(new[] { ',', ';', ' ' }, StringSplitOptions.RemoveEmptyEntries);
+                foreach (var part in parts)
                 {
-                    // 5. Yêu cầu nhập (dùng string để tránh parser issues)
-                    var pso = new PromptStringOptions("\nNhập số thứ tự (ví dụ: 1, 3) hoặc tên Pattern [All]: ");
-                    pso.AllowSpaces = true;
-                    pso.DefaultValue = "All";
-                    pso.UseDefaultValue = true;
+                    string p = part.Trim();
+                    if (string.IsNullOrEmpty(p)) continue;
 
-                    PromptResult pres = Ed.GetString(pso);
-                    if (pres.Status != PromptStatus.OK) return;
-
-                    string input = pres.StringResult.Trim();
-                    var parts = input.Split(new[] { ',', ';', ' ' }, StringSplitOptions.RemoveEmptyEntries);
-                    foreach (var part in parts)
+                    if (p.Equals("All", StringComparison.OrdinalIgnoreCase) || p.Equals("A", StringComparison.OrdinalIgnoreCase))
                     {
-                        string p = part.Trim();
-                        if (string.IsNullOrEmpty(p)) continue;
-
-                        if (p.Equals("All", StringComparison.OrdinalIgnoreCase) || p.Equals("A", StringComparison.OrdinalIgnoreCase))
+                        selectedPatterns = allPatterns.ToList();
+                        break;
+                    }
+                    else if (int.TryParse(p, out int idx))
+                    {
+                        if (idx == 0) 
                         {
-                            selectedPatterns = allPatterns.ToList();
-                            break;
+                            WriteMessage("Đã hủy.");
+                            return;
                         }
-                        else if (int.TryParse(p, out int idx))
+                        if (idx > 0 && idx <= displayList.Count)
                         {
-                            if (idx == 0) return; // cancel
-                            if (idx > 0 && idx <= displayList.Count)
-                            {
-                                selectedPatterns.Add(displayList[idx - 1]);
-                            }
-                            else
-                            {
-                                WriteWarning($"Số {idx} không hợp lệ (Max: {displayList.Count})");
-                            }
+                            selectedPatterns.Add(displayList[idx - 1]);
                         }
                         else
                         {
-                            var match = allPatterns.FirstOrDefault(x => x.Equals(p, StringComparison.OrdinalIgnoreCase));
-                            if (match != null) selectedPatterns.Add(match);
-                            else
-                            {
-                                string sanitizedInput = p.Replace("-", "").Replace("_", "");
-                                var fuzzyMatch = allPatterns.FirstOrDefault(x => x.Replace("_", "").Replace("-", "").Equals(sanitizedInput, StringComparison.OrdinalIgnoreCase));
-                                if (fuzzyMatch != null) selectedPatterns.Add(fuzzyMatch);
-                                else WriteWarning($"Không tìm thấy pattern '{p}'");
-                            }
+                            WriteWarning($"Số {idx} không hợp lệ (Max: {displayList.Count})");
+                        }
+                    }
+                    else
+                    {
+                        var match = allPatterns.FirstOrDefault(x => x.Equals(p, StringComparison.OrdinalIgnoreCase));
+                        if (match != null) selectedPatterns.Add(match);
+                        else
+                        {
+                            string sanitizedInput = p.Replace("-", "").Replace("_", "");
+                            var fuzzyMatch = allPatterns.FirstOrDefault(x => x.Replace("_", "").Replace("-", "").Equals(sanitizedInput, StringComparison.OrdinalIgnoreCase));
+                            if (fuzzyMatch != null) selectedPatterns.Add(fuzzyMatch);
+                            else WriteWarning($"Không tìm thấy pattern '{p}'");
                         }
                     }
                 }
@@ -184,7 +159,7 @@ namespace DTS_Engine.Commands
                 selectedPatterns = selectedPatterns.Distinct(StringComparer.OrdinalIgnoreCase).ToList();
                 WriteMessage($"\n>> Đã chọn {selectedPatterns.Count} patterns: {string.Join(", ", selectedPatterns.Take(5))}{(selectedPatterns.Count > 5 ? "..." : "")}\n");
 
-                // 7. Chọn đơn vị (sử dụng Keywords.Add để tránh lỗi parser)
+                // 6. Chọn đơn vị
                 var unitOpt = new PromptKeywordOptions("\nChọn đơn vị xuất báo cáo [Ton/kN/kgf]: ");
                 unitOpt.AllowNone = false;
                 unitOpt.Keywords.Add("Ton");

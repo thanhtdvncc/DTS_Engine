@@ -15,6 +15,9 @@ namespace DTS_Engine.Core.Engines
     {
         #region Data Structures
 
+        /// <summary>
+        /// Element info với thông tin cao độ chi tiết hơn
+        /// </summary>
         public class ElementInfo
         {
             public string Name { get; set; }
@@ -25,6 +28,21 @@ namespace DTS_Engine.Core.Engines
             public double Length { get; set; } // mm
             public double Area { get; set; }   // mm2
             public double AverageZ { get; set; }
+            
+            // FIX BUG #3: Thêm thông tin cao độ chi tiết cho vertical elements
+            public double MinZ { get; set; }  // Cao độ thấp nhất (cho columns)
+            public double MaxZ { get; set; }  // Cao độ cao nhất
+            public bool IsVertical { get; set; }
+            
+            /// <summary>
+            /// Lấy cao độ phù hợp cho việc phân tầng
+            /// - Với cột/tường đứng: Dùng MinZ (chân cột)
+            /// - Với dầm/sàn ngang: Dùng AverageZ
+            /// </summary>
+            public double GetStoryElevation()
+            {
+                return IsVertical ? MinZ : AverageZ;
+            }
         }
 
         #endregion
@@ -62,7 +80,9 @@ namespace DTS_Engine.Core.Engines
                 
                 // Giả định trục 2 & 3 cho Frame (Thường Local 2 hướng lên cho dầm)
                 Vector3D vec2, vec3;
-                if (Math.Abs(vec1.Z) > 0.99) // Cột thẳng đứng
+                bool isVertical = Math.Abs(vec1.Z) > 0.99; // Cột thẳng đứng
+                
+                if (isVertical)
                 {
                     vec2 = new Vector3D(1, 0, 0); 
                     vec3 = new Vector3D(0, 1, 0); 
@@ -81,8 +101,12 @@ namespace DTS_Engine.Core.Engines
                     LocalAxis1 = vec1,
                     LocalAxis2 = vec2,
                     LocalAxis3 = vec3,
-                    Length = f.Length2D, // Lưu ý: Đây là chiều dài 2D, nếu cần 3D hãy tính lại
-                    AverageZ = f.AverageZ
+                    Length = f.Length2D,
+                    AverageZ = f.AverageZ,
+                    // FIX BUG #3: Thêm thông tin cao độ chi tiết
+                    MinZ = Math.Min(f.Z1, f.Z2),
+                    MaxZ = Math.Max(f.Z1, f.Z2),
+                    IsVertical = isVertical
                 };
             }
         }
