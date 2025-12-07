@@ -176,17 +176,6 @@ namespace DTS_Engine.Core.Engines
             }
         }
 
-        /// <summary>
-        /// Lấy danh sách tên phần tử theo loại (Frame/Area/Point) để quét Direct API
-        /// </summary>
-        public List<string> GetElementNames(string typeFilter)
-        {
-            return _elements.Values
-                .Where(e => e.ElementType.Equals(typeFilter, StringComparison.OrdinalIgnoreCase))
-                .Select(e => e.Name)
-                .ToList();
-        }
-
         public string GetStatistics() => $"Inventory: {_elements.Count} elements loaded.";
         public void Reset() { _elements.Clear(); _isBuilt = false; }
     }
