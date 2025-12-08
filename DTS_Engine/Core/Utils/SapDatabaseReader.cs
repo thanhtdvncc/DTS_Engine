@@ -124,54 +124,117 @@ namespace DTS_Engine.Core.Utils
 			return loads;
 		}
 
-		#region STAGE 1: Data Enrichment (NEW v4.5)
+        #region STAGE 1: Data Enrichment (NEW v4.5)
 
-		/// <summary>
-		/// STAGE 1 ENRICHMENT: Calculate GlobalCenter, PreCalculatedGridLoc, VectorKey
-		/// This happens IMMEDIATELY after reading raw data from SAP, BEFORE any grouping
-		/// 
-		/// RATIONALE:
-		/// - Every load knows "where it is" and "what direction" before being grouped
-		/// - Enables accurate Location→Vector grouping strategy
-		/// - Eliminates "same location but different vector" confusion
-		/// </summary>
-		private void EnrichLoadsWithGeometryAndLocation(List<RawSapLoad> loads)
-		{
-			if (loads == null || loads.Count == 0) return;
+        /// <summary>
+        /// STAGE 1 ENRICHMENT: Calculate GlobalCenter, PreCalculatedGridLoc, VectorKey
+        /// This happens IMMEDIATELY after reading raw data from SAP, BEFORE any grouping
+        /// 
+        /// RATIONALE:
+        /// - Every load knows "where it is" and "what direction" before being grouped
+        /// - Enables accurate Location→Vector grouping strategy
+        /// - Eliminates "same location but different vector" confusion
+        /// </summary>
+        // Trong SapDatabaseReader.cs
 
-			// Get grid system once for all loads
-			var allGrids = SapUtils.GetGridLines();
-			var xGrids = allGrids.Where(g => g.Orientation == "X").OrderBy(g => g.Coordinate).ToList();
-			var yGrids = allGrids.Where(g => g.Orientation == "Y").OrderBy(g => g.Coordinate).ToList();
+        private void EnrichLoadsWithGeometryAndLocation(List<RawSapLoad> loads)
+        {
+            if (loads == null || loads.Count == 0) return;
 
-			foreach (var load in loads)
-			{
-				// 1. Calculate GlobalCenter based on load type
-				load.GlobalCenter = CalculateGlobalCenter(load);
+            // --- BƯỚC 1: CACHE DỮ LIỆU (CHỈ LÀM 1 LẦN DUY NHẤT) ---
+            // Lấy toàn bộ lưới
+            var allGrids = SapUtils.GetGridLines();
+            var xGrids = allGrids.Where(g => g.Orientation == "X").OrderBy(g => g.Coordinate).ToList();
+            var yGrids = allGrids.Where(g => g.Orientation == "Y").OrderBy(g => g.Coordinate).ToList();
 
-				// 2. Calculate PreCalculatedGridLoc using GlobalCenter
-				if (load.GlobalCenter.X != 0 || load.GlobalCenter.Y != 0)
-				{
-					load.PreCalculatedGridLoc = GetGridRangeDescription(load.GlobalCenter, xGrids, yGrids);
-				}
-				else
-				{
-					load.PreCalculatedGridLoc = "Unknown";
-				}
+            // Lấy toàn bộ Geometry và đưa vào Dictionary để tra cứu nhanh (O(1))
+            // Sử dụng StringComparer.OrdinalIgnoreCase để không phân biệt hoa thường
+            var areaCache = SapUtils.GetAllAreasGeometry()
+                                    .GroupBy(a => a.Name) // Group để tránh lỗi duplicate keys
+                                    .ToDictionary(g => g.Key, g => g.First(), StringComparer.OrdinalIgnoreCase);
 
-				// 3. VectorKey is already calculated by SetForceVector() via UpdateVectorKey()
-				// But ensure it's set (defensive programming)
-				if (string.IsNullOrEmpty(load.VectorKey))
-				{
-					load.UpdateVectorKey();
-				}
-			}
-		}
+            var frameCache = SapUtils.GetAllFramesGeometry()
+                                     .GroupBy(f => f.Name)
+                                     .ToDictionary(g => g.Key, g => g.First(), StringComparer.OrdinalIgnoreCase);
 
-		/// <summary>
-		/// Calculate global center (centroid) for load element
-		/// </summary>
-		private Point2D CalculateGlobalCenter(RawSapLoad load)
+            var pointCache = SapUtils.GetAllPoints()
+                                     .GroupBy(p => p.Name)
+                                     .ToDictionary(g => g.Key, g => g.First(), StringComparer.OrdinalIgnoreCase);
+
+            // --- BƯỚC 2: DUYỆT QUA TẢI TRỌNG ---
+            // Có thể dùng Parallel.ForEach để tăng tốc nếu danh sách > 10,000 phần tử
+            foreach (var load in loads)
+            {
+                // Truyền Cache vào hàm tính toán
+                load.GlobalCenter = CalculateGlobalCenterWithCache(load, areaCache, frameCache, pointCache);
+
+                // Tính Grid Location
+                if (Math.Abs(load.GlobalCenter.X) > 1e-6 || Math.Abs(load.GlobalCenter.Y) > 1e-6)
+                {
+                    load.PreCalculatedGridLoc = GetGridRangeDescription(load.GlobalCenter, xGrids, yGrids);
+                }
+                else
+                {
+                    load.PreCalculatedGridLoc = "Unknown";
+                }
+
+                // Cập nhật Vector Key
+                if (string.IsNullOrEmpty(load.VectorKey))
+                {
+                    load.UpdateVectorKey();
+                }
+            }
+        }
+
+        /// <summary>
+        /// Phiên bản tối ưu tốc độ, sử dụng Cache Dictionary
+        /// </summary>
+        private Point2D CalculateGlobalCenterWithCache(
+            RawSapLoad load,
+            Dictionary<string, SapArea> areaCache,
+            Dictionary<string, SapFrame> frameCache,
+            Dictionary<string, SapUtils.SapPoint> pointCache)
+        {
+            if (load == null) return new Point2D(0, 0);
+            string name = load.ElementName;
+
+            switch (load.LoadType)
+            {
+                case "AreaUniform":
+                case "AreaUniformToFrame":
+                    if (areaCache.TryGetValue(name, out var area))
+                    {
+                        // Tính tâm nhanh từ Cache
+                        if (area.BoundaryPoints == null || area.BoundaryPoints.Count == 0) return new Point2D(0, 0);
+                        double sumX = 0, sumY = 0;
+                        foreach (var p in area.BoundaryPoints) { sumX += p.X; sumY += p.Y; }
+                        return new Point2D(sumX / area.BoundaryPoints.Count, sumY / area.BoundaryPoints.Count);
+                    }
+                    break;
+
+                case "FrameDistributed":
+                case "FramePoint":
+                    if (frameCache.TryGetValue(name, out var frame))
+                    {
+                        return frame.Midpoint;
+                    }
+                    break;
+
+                case "PointForce":
+                    if (pointCache.TryGetValue(name, out var pt))
+                    {
+                        return new Point2D(pt.X, pt.Y);
+                    }
+                    break;
+            }
+
+            return new Point2D(0, 0);
+        }
+
+        /// <summary>
+        /// Calculate global center (centroid) for load element
+        /// </summary>
+        private Point2D CalculateGlobalCenter(RawSapLoad load)
 		{
 			if (load == null) return new Point2D(0, 0);
 
@@ -251,31 +314,48 @@ namespace DTS_Engine.Core.Utils
 			}
 		}
 
-		/// <summary>
-		/// Get grid range description for a single point (simplified version for enrichment)
-		/// </summary>
-		private string GetGridRangeDescription(Point2D center, 
-			List<SapUtils.GridLineRecord> xGrids, 
-			List<SapUtils.GridLineRecord> yGrids)
-		{
-			if (xGrids.Count == 0 || yGrids.Count == 0) return "No Grid";
+        /// <summary>
+        /// Get grid range description for a single point (simplified version for enrichment)
+        /// </summary>
+        private string GetGridRangeDescription(Point2D center,
+            List<SapUtils.GridLineRecord> xGrids,
+            List<SapUtils.GridLineRecord> yGrids)
+        {
+            if (xGrids.Count == 0 || yGrids.Count == 0) return "No Grid";
+            const double SNAP_TOLERANCE = 250.0; // mm
 
-			const double SNAP_TOLERANCE = 250.0; // mm
+            // Tìm trục gần nhất bằng cách duyệt tuyến tính (Nhanh hơn OrderBy với list nhỏ)
+            var xGrid = FindClosestGrid(xGrids, center.X);
+            string xRange = xGrid != null ? FormatGridWithOffset(xGrid.Name, center.X - xGrid.Coordinate, SNAP_TOLERANCE) : "?";
 
-			// Find closest X grid
-			var xGrid = xGrids.OrderBy(g => Math.Abs(g.Coordinate - center.X)).FirstOrDefault();
-			string xRange = xGrid != null ? FormatGridWithOffset(xGrid.Name, center.X - xGrid.Coordinate, SNAP_TOLERANCE) : "?";
+            var yGrid = FindClosestGrid(yGrids, center.Y);
+            string yRange = yGrid != null ? FormatGridWithOffset(yGrid.Name, center.Y - yGrid.Coordinate, SNAP_TOLERANCE) : "?";
 
-// Find closest Y grid
-			var yGrid = yGrids.OrderBy(g => Math.Abs(g.Coordinate - center.Y)).FirstOrDefault();
-			string yRange = yGrid != null ? FormatGridWithOffset(yGrid.Name, center.Y - yGrid.Coordinate, SNAP_TOLERANCE) : "?";
-			return $"Grid {xRange} x {yRange}";
-		}
+            return $"Grid {xRange} x {yRange}";
+        }
 
-		/// <summary>
-		/// Format grid with offset (helper for enrichment)
-		/// </summary>
-		private string FormatGridWithOffset(string name, double offsetMm, double tolerance)
+        // Helper tìm trục gần nhất (O(N) thay vì O(N log N))
+        private SapUtils.GridLineRecord FindClosestGrid(List<SapUtils.GridLineRecord> grids, double value)
+        {
+            SapUtils.GridLineRecord best = null;
+            double minDiff = double.MaxValue;
+
+            foreach (var g in grids)
+            {
+                double diff = Math.Abs(g.Coordinate - value);
+                if (diff < minDiff)
+                {
+                    minDiff = diff;
+                    best = g;
+                }
+            }
+            return best;
+        }
+
+        /// <summary>
+        /// Format grid with offset (helper for enrichment)
+        /// </summary>
+        private string FormatGridWithOffset(string name, double offsetMm, double tolerance)
 		{
 			if (Math.Abs(offsetMm) < tolerance) return name;
 			double offsetM = offsetMm / 1000.0;
