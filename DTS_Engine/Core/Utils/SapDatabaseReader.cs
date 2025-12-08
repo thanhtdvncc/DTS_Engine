@@ -231,8 +231,32 @@ namespace DTS_Engine.Core.Utils
 			return fallback;
 		}
 
-		private string GetDirectionDisplayName(int directionCode)
+		private string GetDirectionDisplayName(int directionCode, string elementName)
 		{
+			// For Local axes (1,2,3), try to resolve to Global if element is vertical
+			if ((directionCode == 1 || directionCode == 2 || directionCode == 3) && _inventory != null)
+			{
+				var info = _inventory.GetElement(elementName);
+				if (info != null && info.IsVertical && directionCode == 3)
+				{
+					// Local 3 on vertical element = normal to wall surface
+					// Determine if it's more X or Y aligned
+					var axis3 = info.LocalAxis3;
+					double absX = Math.Abs(axis3.X);
+					double absY = Math.Abs(axis3.Y);
+					
+					if (absX > absY)
+					{
+						return axis3.X > 0 ? "+X" : "-X";
+					}
+					else
+					{
+						return axis3.Y > 0 ? "+Y" : "-Y";
+					}
+				}
+			}
+
+			// Standard mapping
 			switch (directionCode)
 			{
 				case 1: return "Local 1";
@@ -248,14 +272,56 @@ namespace DTS_Engine.Core.Utils
 		}
 
 		/// <summary>
-		/// Calculate force vector using SAP direction codes with sign preservation.
-		/// ⚠️ CRITICAL FIX: PRESERVE SIGN from rawValue (don't use Math.Abs)
+		/// Overload: Legacy support without elementName parameter
+		/// </summary>
+		private string GetDirectionDisplayName(int directionCode)
+		{
+			return GetDirectionDisplayName(directionCode, null);
+		}
+
+		/// <summary>
+		/// Calculate force vector using SAP direction codes with proper transformation matrix.
+		/// FIX BUG #2: Use GetTransformationMatrix from SAP API for accurate Local→Global conversion
+		/// ⚠️ CRITICAL: This fixes the most severe bug - incorrect force summation due to wrong vector direction
 		/// </summary>
 		private Vector3D CalculateForceVector(string elementName, double rawValue, int directionCode, string coordSys)
 		{
 			// CRITICAL: Use rawValue directly, preserve sign
 			double signedVal = rawValue;
 
+			// FIX BUG #2: For Local coordinates, use transformation matrix from SAP API or ModelInventory
+			if ((directionCode >= 1 && directionCode <= 3) && _inventory != null)
+			{
+				// Try to get accurate transformation from inventory
+				var localAxisVec = _inventory.GetLocalAxis(elementName, directionCode);
+				if (localAxisVec.HasValue && !localAxisVec.Value.IsZero)
+				{
+					// Scale by load magnitude (with sign)
+					return localAxisVec.Value * signedVal;
+				}
+				
+				// Fallback: Try SAP API GetTransformationMatrix
+				var vectors = SapUtils.GetElementVectors(elementName);
+				if (vectors.HasValue)
+				{
+					Vector3D localAxis;
+					switch (directionCode)
+					{
+						case 1: localAxis = vectors.Value.L1; break;
+						case 2: localAxis = vectors.Value.L2; break;
+						case 3: localAxis = vectors.Value.L3; break;
+						default: localAxis = Vector3D.UnitZ; break;
+					}
+					
+					// Verify axis is valid
+					if (!localAxis.IsZero)
+					{
+						return localAxis * signedVal;
+					}
+				}
+			}
+
+			// Global direction codes (4,5,6) - straightforward mapping
 			switch (directionCode)
 			{
 				case 10:
@@ -270,16 +336,7 @@ namespace DTS_Engine.Core.Utils
 				case 1:
 				case 2:
 				case 3:
-					if (_inventory != null)
-					{
-						var localAxisVec = _inventory.GetLocalAxis(elementName, directionCode);
-						if (localAxisVec.HasValue && !localAxisVec.Value.IsZero)
-						{
-							return localAxisVec.Value * signedVal;
-						}
-					}
-
-					// Fallback: approximate local axis with global cardinal directions
+					// Fallback: approximate local axis with global cardinal directions if inventory unavailable
 					if (directionCode == 1) return new Vector3D(signedVal, 0, 0);
 					if (directionCode == 2) return new Vector3D(0, signedVal, 0);
 					return new Vector3D(0, 0, signedVal);
@@ -409,7 +466,7 @@ namespace DTS_Engine.Core.Utils
 				double distEnd = hasAbs ? absB : relB;
 
 				int dirCode = NormalizeDirectionCode(dir);
-				string dirDisplay = GetDirectionDisplayName(dirCode);
+				string dirDisplay = GetDirectionDisplayName(dirCode, frameName); // FIX: Pass element name
 
 				var vec = CalculateForceVector(frameName, magnitude, dirCode, sys);
 				double z = GetElementElevation(frameName, "Frame");
@@ -478,7 +535,7 @@ namespace DTS_Engine.Core.Utils
 				string sys = schema.GetString(r, colCoordSys) ?? "Local";
 
 				int dirCode = NormalizeDirectionCode(dir);
-				string dirDisplay = GetDirectionDisplayName(dirCode);
+				string dirDisplay = GetDirectionDisplayName(dirCode, area); // FIX: Pass element name
 				var vec = CalculateForceVector(area, magnitude, dirCode, sys);
 				double z = GetElementElevation(area, "Area");
 
@@ -540,7 +597,7 @@ namespace DTS_Engine.Core.Utils
 				string sys = schema.GetString(r, colCoordSys) ?? "Global";
 
 				int dirCode = NormalizeDirectionCode(dir);
-				string dirDisplay = GetDirectionDisplayName(dirCode);
+				string dirDisplay = GetDirectionDisplayName(dirCode, area); // FIX: Pass element name
 				var vec = CalculateForceVector(area, magnitude, dirCode, sys);
 				double z = GetElementElevation(area, "Area");
 
@@ -708,7 +765,7 @@ namespace DTS_Engine.Core.Utils
 						}
 
 						int dirCode = (dirArr != null && i < dirArr.Length) ? dirArr[i] : 10;
-						string dirStr = GetDirectionDisplayName(dirCode);
+						string dirStr = GetDirectionDisplayName(dirCode, name); // FIX: Pass element name
 						string csys = (csysArr != null && i < csysArr.Length) ? csysArr[i] : "Global";
 
 						var vec = CalculateForceVector(name, magnitude, dirCode, csys);
@@ -764,7 +821,7 @@ namespace DTS_Engine.Core.Utils
 						// CRITICAL FIX: Store magnitude WITH sign preserved
 						double magnitude = SapUtils.ConvertLoadToKnPerM2(valArr[i]);
 							int dirCode = (dirArr != null && i < dirArr.Length) ? dirArr[i] : 10;
-							string dirStr = GetDirectionDisplayName(dirCode);
+							string dirStr = GetDirectionDisplayName(dirCode, name); // FIX: Pass element name
 						string csys = (csysArr != null && i < csysArr.Length) ? csysArr[i] : "Local";
 
 							var vec = CalculateForceVector(name, magnitude, dirCode, csys);
@@ -816,7 +873,7 @@ namespace DTS_Engine.Core.Utils
 
 						double magnitude = SapUtils.ConvertLoadToKnPerM2(valArr[i]);
 								int dirCode = (dirArr != null && i < dirArr.Length) ? dirArr[i] : 10;
-								string dirStr = GetDirectionDisplayName(dirCode);
+								string dirStr = GetDirectionDisplayName(dirCode, name); // FIX: Pass element name
 						string csys = (csysArr != null && i < csysArr.Length) ? csysArr[i] : "Global";
 						string distStr = (distTypeArr != null && i < distTypeArr.Length && distTypeArr[i] == 1) ? "One Way" : "Two Way";
 

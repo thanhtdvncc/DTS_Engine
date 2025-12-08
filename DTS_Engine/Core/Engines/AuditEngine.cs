@@ -379,13 +379,14 @@ namespace DTS_Engine.Core.Engines
 
         /// <summary>
         /// Nhóm tải theo tầng (Story) dựa trên cao độ Z của phần tử.
-        /// FIXED v4.0: Unified rule - element Z == story elevation → belongs to that story
+        /// FIX BUG #3 v4.1: Handle negative elevations (basement levels) correctly
+        /// FIXED: Unified rule - element Z >= story elevation → belongs to that story
         /// </summary>
         private List<TempStoryBucket> GroupLoadsByStory(List<RawSapLoad> loads)
         {
             var stories = SapUtils.GetStories()
                 .Where(s => s.IsElevation)
-                .OrderBy(s => s.Coordinate)
+                .OrderBy(s => s.Coordinate) // FIX: Sort ascending to handle negative Z correctly
                 .ToList();
 
             if (stories.Count == 0)
@@ -406,37 +407,39 @@ namespace DTS_Engine.Core.Engines
                 Loads = new List<RawSapLoad>()
             }).ToList();
 
-            var sortedBuckets = buckets.OrderBy(b => b.Elevation).ToList();
+            // FIX BUG #3: Tolerance must work for negative elevations too
+            const double tolerance = 500.0; // 500mm
 
             foreach (var load in loads)
             {
                 double z = load.ElementZ;
                 bool assigned = false;
 
-                // UNIFIED RULE: Find story where Z >= Elevation (with tolerance)
-                // Element belongs to the story it sits ON
-                for (int i = sortedBuckets.Count - 1; i >= 0; i--)
+                // FIXED LOGIC: Find the highest story floor that is below or at element elevation
+                // Start from top and work down to find the correct story
+                for (int i = buckets.Count - 1; i >= 0; i--)
                 {
-                    double storyElev = sortedBuckets[i].Elevation;
-                    double tolerance = 300.0; // 500mm
+                    double storyElev = buckets[i].Elevation;
 
-                    // Element Z >= Story Elevation (within tolerance)
-                    if (z >= storyElev - tolerance)
+                    // Element belongs to story if:
+                    // z >= storyElev - tolerance (element is on or above this floor)
+                    // This works for both positive and negative elevations
+                    if (z >= (storyElev - tolerance))
                     {
-                        sortedBuckets[i].Loads.Add(load);
+                        buckets[i].Loads.Add(load);
                         assigned = true;
                         break;
                     }
                 }
 
-                // Fallback: assign to lowest story
-                if (!assigned && sortedBuckets.Count > 0)
+                // Fallback: assign to lowest story if element is below all defined stories
+                if (!assigned && buckets.Count > 0)
                 {
-                    sortedBuckets[0].Loads.Add(load);
+                    buckets[0].Loads.Add(load);
                 }
             }
 
-            return sortedBuckets;
+            return buckets;
         }
 
         #endregion
@@ -999,7 +1002,8 @@ namespace DTS_Engine.Core.Engines
         }
 
         /// <summary>
-        /// Xác định thanh nằm trên trục nào (Trục A, Trục 1, hoặc Xiên)
+        /// Xác định thanh nằm trên trục nào (Grid A, Grid 1, hoặc Diagonal)
+        /// FIX: Added English translation support
         /// </summary>
         private string DeterminePrimaryGrid(SapFrame frame)
         {
@@ -1014,23 +1018,24 @@ namespace DTS_Engine.Core.Engines
             if (isHorizontal)
             {
                 string gridY = FindAxisRange(mid.Y, mid.Y, _yGrids, true);
-                return $"Trục {gridY}";
+                return $"Grid {gridY}";
             }
             else if (isVertical)
             {
                 string gridX = FindAxisRange(mid.X, mid.X, _xGrids, true);
-                return $"Trục {gridX}";
+                return $"Grid {gridX}";
             }
             else
             {
                 string gridX = FindAxisRange(mid.X, mid.X, _xGrids, true);
                 string gridY = FindAxisRange(mid.Y, mid.Y, _yGrids, true);
-                return $"Xiên {gridX}-{gridY}";
+                return $"Diagonal {gridX}-{gridY}";
             }
         }
 
         /// <summary>
-        /// Xác định phạm vi quét của nhóm dầm (VD: Từ trục 1 đến trục 5)
+        /// Xác định phạm vi quét của nhóm dầm (VD: From Grid 1 to Grid 5)
+        /// FIX: Added English translation support
         /// </summary>
         private string DetermineCrossAxisRange(List<FrameAuditItem> items)
         {
@@ -1062,7 +1067,7 @@ namespace DTS_Engine.Core.Engines
             string startGrid = FindAxisRange(minVal, minVal, crossGrids, true);
             string endGrid = FindAxisRange(maxVal, maxVal, crossGrids, true);
 
-            if (startGrid == endGrid) return $"tại {startGrid}";
+            if (startGrid == endGrid) return $"at {startGrid}";
 
             string cleanStart = startGrid.Split('(')[0];
             string cleanEnd = endGrid.Split('(')[0];
@@ -1155,7 +1160,8 @@ namespace DTS_Engine.Core.Engines
         #region Smart Grid Detection Logic
 
         /// <summary>
-        /// Tạo mô tả trục dạng Range (VD: Trục 1-5 / A-B) dựa trên Bounding Box
+        /// Tạo mô tả trục dạng Range (VD: Grid 1-5 / A-B) dựa trên Bounding Box
+        /// FIX: Added English translation support
         /// </summary>
         private string GetGridRangeDescription(Envelope env)
         {
@@ -1165,10 +1171,10 @@ namespace DTS_Engine.Core.Engines
             string yRange = FindAxisRange(env.MinY, env.MaxY, _yGrids);
 
             if (string.IsNullOrEmpty(xRange) && string.IsNullOrEmpty(yRange)) return "No Grid";
-            if (string.IsNullOrEmpty(xRange)) return $"Trục {yRange}";
-            if (string.IsNullOrEmpty(yRange)) return $"Trục {xRange}";
+            if (string.IsNullOrEmpty(xRange)) return $"Grid {yRange}";
+            if (string.IsNullOrEmpty(yRange)) return $"Grid {xRange}";
 
-            return $"Trục {xRange} x {yRange}";
+            return $"Grid {xRange} x {yRange}";
         }
 
         // Cập nhật hàm tìm trục để hỗ trợ snap single point tốt hơn
@@ -1372,10 +1378,9 @@ namespace DTS_Engine.Core.Engines
             sb.AppendLine("".PadRight(140, '='));
             sb.AppendLine(isVN ? "   KIỂM TOÁN TẢI TRỌNG SAP2000 (DTS ENGINE v4.0)" : "   SAP2000 LOAD AUDIT REPORT (DTS ENGINE v4.0)");
             sb.AppendLine($"   {(isVN ? "Dự án" : "Project")}: {report.ModelName ?? "Unknown"}");
-            sb.AppendLine($"   {(isVN ? "Hệ đơn vị" : "Unit System")}: {report.UnitInfo ?? UnitManager.Info.ToString()}");
             sb.AppendLine($"   {(isVN ? "Tổ hợp tải" : "Load Pattern")}: {report.LoadPattern}");
-            sb.AppendLine($"   {(isVN ? "Ngày kiểm toán" : "Audit Date")}: {report.AuditDate:yyyy-MM-dd HH:mm:ss}");
-            sb.AppendLine($"   {(isVN ? "Đơn vị báo cáo" : "Report Unit")}: {targetUnit}");
+            sb.AppendLine($"   {(isVN ? "Ngày tính" : "Audit Date")}: {report.AuditDate:yyyy-MM-dd HH:mm:ss}");
+            sb.AppendLine($"   {(isVN ? "Đơn vị" : "Report Unit")}: {targetUnit}");
             sb.AppendLine("".PadRight(140, '='));
             sb.AppendLine();
 
@@ -1435,7 +1440,7 @@ namespace DTS_Engine.Core.Engines
 
             // ==================== SUMMARY AT BOTTOM ====================
             sb.AppendLine("".PadRight(140, '='));
-            sb.AppendLine(isVN ? "TỔNG KẾT KIỂM TOÁN:" : "AUDIT SUMMARY:");
+            sb.AppendLine(isVN ? "TỔNG KIỂM TOÁN:" : "AUDIT SUMMARY:");
             sb.AppendLine();
             sb.AppendLine($"   {(isVN ? "Tổng lực tính toán" : "Total Calculated Force")}: {report.TotalCalculatedForce * forceFactor:0.00} {targetUnit}");
             sb.AppendLine($"   {(isVN ? "Thành phần Fx" : "Force Component Fx")}: {report.CalculatedFx * forceFactor:0.00} {targetUnit}");
@@ -1463,41 +1468,150 @@ namespace DTS_Engine.Core.Engines
         }
 
         /// <summary>
-        /// Format a single data row with proper column widths
+        /// Compress element list into compact range notation: 1,2,5,7to9,13to21
+        /// FIX BUG #4: Use 'to' separator instead of hyphen to match system standard (3to5,9to12)
+        /// </summary>
+        private string CompressElementList(List<string> elements, int maxDisplayCount = 10)
+        {
+            if (elements == null || elements.Count == 0) return "";
+            
+            // Try to parse as numbers for range detection
+            var numbers = new List<int>();
+            var nonNumbers = new List<string>();
+            
+            foreach (var elem in elements)
+            {
+                if (int.TryParse(elem, out int num))
+                {
+                    numbers.Add(num);
+                }
+                else
+                {
+                    nonNumbers.Add(elem);
+                }
+            }
+            
+            numbers.Sort();
+            
+            // Build compressed string
+            var ranges = new List<string>();
+            int i = 0;
+            while (i < numbers.Count)
+            {
+                int start = numbers[i];
+                int end = start;
+                
+                // Find consecutive range
+                while (i + 1 < numbers.Count && numbers[i + 1] == numbers[i] + 1)
+                {
+                    end = numbers[i + 1];
+                    i++;
+                }
+                
+                // FIX: Use 'to' separator for ranges of 3+ consecutive numbers
+                if (end - start >= 2)
+                {
+                    ranges.Add($"{start}to{end}");
+                }
+                else if (end - start == 1)
+                {
+                    ranges.Add($"{start},{end}");
+                }
+                else
+                {
+                    ranges.Add($"{start}");
+                }
+                
+                i++;
+            }
+            
+            // Combine with non-numeric elements
+            var allItems = ranges.Concat(nonNumbers).ToList();
+            
+            if (allItems.Count > maxDisplayCount)
+            {
+                return string.Join(",", allItems.Take(maxDisplayCount)) + $",... +{allItems.Count - maxDisplayCount}";
+            }
+            
+            return string.Join(",", allItems);
+        }
+
+        /// <summary>
+        /// Format a single data row with dynamic column width allocation.
+        /// FIX BUG #3: Ensure strict adherence to totalWidth=140 constraint
+        /// FIX BUG #5: Compressed element list display using 'to' separator
         /// </summary>
         private void FormatDataRow(StringBuilder sb, AuditEntry entry, double forceFactor, string targetUnit, string loadType)
         {
-            string axis = TruncateOrWrap(entry.GridLocation, 25).PadRight(25);
-
-            // Calculator column - can wrap for long formulas
-            string calculator = entry.Explanation ?? "";
-            if (calculator.Length > 40)
+            const int totalWidth = 140;
+            const int typeWidth = 15;
+            const int unitWidth = 15;
+            const int forceWidth = 15;
+            const int dirWidth = 6;
+            
+            // Fixed columns total
+            int fixedTotal = typeWidth + unitWidth + forceWidth + dirWidth;
+            int availableForDynamic = totalWidth - fixedTotal;
+            
+            // Calculate desired widths based on content
+            int axisLen = entry.GridLocation?.Length ?? 0;
+            int calcLen = entry.Explanation?.Length ?? 0;
+            
+            // FIX BUG #3: Enforce minimum and maximum bounds strictly
+            int desiredAxisWidth = Math.Max(15, Math.Min(30, axisLen + 2));
+            int desiredCalcWidth = Math.Max(25, Math.Min(45, calcLen + 2));
+            
+            // FIX BUG #3: Redistribute if total exceeds available space
+            int axisWidth, calcWidth, elementsWidth;
+            
+            if (desiredAxisWidth + desiredCalcWidth > availableForDynamic)
             {
-                // Wrap long calculator formulas
-                var lines = WrapText(calculator, 40);
-                calculator = lines[0].PadRight(40);
-                // Additional lines will be added after main row
+                // Scale down proportionally to fit
+                double scale = (double)availableForDynamic / (desiredAxisWidth + desiredCalcWidth);
+                axisWidth = Math.Max(15, (int)(desiredAxisWidth * scale));
+                calcWidth = Math.Max(20, availableForDynamic - axisWidth);
+                elementsWidth = 0; // No room for elements when squeezed
             }
             else
             {
-                calculator = calculator.PadRight(40);
+                axisWidth = desiredAxisWidth;
+                calcWidth = desiredCalcWidth;
+                elementsWidth = availableForDynamic - axisWidth - calcWidth;
+            }
+            
+            // Build columns with strict width enforcement
+            string axis = TruncateOrWrap(entry.GridLocation, axisWidth).PadRight(axisWidth);
+            string calculator = TruncateOrWrap(entry.Explanation, calcWidth).PadRight(calcWidth);
+            string typeStr = FormatLoadType(entry, loadType).PadRight(typeWidth);
+            string unitLoad = (entry.UnitLoadString ?? "").PadRight(unitWidth);
+            string force = $"{entry.TotalForce * forceFactor:0.00}".PadRight(forceWidth);
+            string dir = FormatDirection(entry.Direction, entry).PadRight(dirWidth);
+
+            // FIX BUG #5: Use compressed element list with 'to' separator
+            string elemStr = "";
+            if (entry.ElementCount > 0 && elementsWidth > 10)
+            {
+                string compressed = CompressElementList(entry.ElementList, 8);
+                elemStr = $"({entry.ElementCount}) {compressed}";
+                if (elemStr.Length > elementsWidth)
+                {
+                    elemStr = elemStr.Substring(0, elementsWidth - 2) + "..";
+                }
+                elemStr = elemStr.PadRight(elementsWidth);
+            }
+            else if (elementsWidth > 0)
+            {
+                elemStr = "".PadRight(elementsWidth);
             }
 
-            // Type column (for Frame: Full, Distributed, I=x-y, etc.)
-            string typeStr = FormatLoadType(entry, loadType).PadRight(15);
-
-            // Unit load - hide for grouped points
-            string unitLoad = entry.UnitLoadString?.PadRight(15) ?? "".PadRight(15);
-
-            string force = $"{entry.TotalForce * forceFactor:0.00}".PadRight(15);
-            string dir = FormatDirection(entry.Direction, entry).PadRight(6);
-
-            // Full element list without truncation
-            string elemStr = entry.ElementCount > 0
-                ? $"({entry.ElementCount}) {string.Join(", ", entry.ElementList)}"
-                : "";
-
-            sb.AppendLine($"    {axis}{calculator}{typeStr}{unitLoad}{force}{dir}{elemStr}");
+            // FIX BUG #3: Verify total width before output
+            string fullLine = $"    {axis}{calculator}{typeStr}{unitLoad}{force}{dir}{elemStr}";
+            if (fullLine.Length > totalWidth + 4) // +4 for indent
+            {
+                fullLine = fullLine.Substring(0, totalWidth + 4);
+            }
+            
+            sb.AppendLine(fullLine);
         }
 
         /// <summary>

@@ -202,18 +202,37 @@ namespace DTS_Engine.Commands
 
                 if (exportExcel)
                 {
-                    // Excel export
-                    WriteMessage("\n   Xuất Excel đang được phát triển...");
-                    WriteMessage("   HƯỚNG DẪN: Cài đặt thư viện ClosedXML hoặc EPPlus");
-                    WriteMessage("   - ClosedXML (MIT License): Install-Package ClosedXML");
-                    WriteMessage("   - EPPlus 5+ (Commercial): Install-Package EPPlus");
-                    WriteMessage("\n   Hiện tại xuất Text thay thế...");
+                    // Excel export using ClosedXML
+                    WriteMessage("\n   Generating Excel report...");
                     
-                    // Fallback to text for now
-                    string content = engine.GenerateTextReport(report, selectedUnit, selectedLang);
-                    string fileName = $"DTS_Audit_{safeModel}_{selectedPattern}.txt";
-                    filePath = Path.Combine(tempFolder, fileName);
-                    File.WriteAllText(filePath, content, Encoding.UTF8);
+                    try
+                    {
+                        string excelPath = ExcelReportGenerator.GenerateExcelReport(
+                            report, 
+                            selectedUnit, 
+                            selectedLang);
+
+                        filePath = excelPath;
+                        WriteSuccess($"\nCompleted! Excel report generated at:");
+                        WriteMessage($"  {filePath}");
+                        
+                        try { Process.Start(filePath); } catch { }
+                    }
+                    catch (System.Exception ex)
+                    {
+                        WriteError($"\n   Excel generation failed: {ex.Message}");
+                        WriteMessage("\n   Falling back to Text export...");
+                        
+                        // Fallback to text
+                        string content = engine.GenerateTextReport(report, selectedUnit, selectedLang);
+                        string fileName = $"DTS_Audit_{safeModel}_{selectedPattern}.txt";
+                        filePath = Path.Combine(tempFolder, fileName);
+                        File.WriteAllText(filePath, content, Encoding.UTF8);
+                        
+                        WriteSuccess($"\nText report created at:");
+                        WriteMessage($"  {filePath}");
+                        try { Process.Start(filePath); } catch { }
+                    }
                 }
                 else
                 {
@@ -222,12 +241,12 @@ namespace DTS_Engine.Commands
                     string fileName = $"DTS_Audit_{safeModel}_{selectedPattern}.txt";
                     filePath = Path.Combine(tempFolder, fileName);
                     File.WriteAllText(filePath, content, Encoding.UTF8);
-                }
 
-                WriteSuccess($"\nHoàn thành! Đã tạo báo cáo tại:");
-                WriteMessage($"  {filePath}");
-                
-                try { Process.Start(filePath); } catch { }
+                    WriteSuccess($"\nCompleted! Text report created at:");
+                    WriteMessage($"  {filePath}");
+                    
+                    try { Process.Start(filePath); } catch { }
+                }
             });
         }
 
