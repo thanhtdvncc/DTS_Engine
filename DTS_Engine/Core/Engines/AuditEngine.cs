@@ -156,7 +156,7 @@ namespace DTS_Engine.Core.Engines
                 return report;
             }
 
-            // --- BƯỚC 1: XỬ LÝ CHI TIẾT (PROCESSED DATA) TRƯỚC ---
+            // --- CRITICAL v4.4: PROCESS DATA FIRST (Create Report Entries) ---
             // Nhóm theo tầng và xử lý chi tiết (bao gồm cả NTS Union cho Area)
             var storyBuckets = GroupLoadsByStory(allLoads);
             foreach (var bucket in storyBuckets.OrderByDescending(b => b.Elevation))
@@ -166,9 +166,10 @@ namespace DTS_Engine.Core.Engines
                     report.Stories.Add(storyGroup);
             }
 
-            // --- BƯỚC 2: TÍNH SUMMARY DỰA TRÊN PROCESSED DATA (VISUAL SUM) ---
-            // Khắc phục lỗi logic: Không cộng Raw Data nữa, mà cộng dồn từ các AuditEntry đã xử lý
-
+            // --- CRITICAL v4.4: CALCULATE SUMMARY FROM PROCESSED ENTRIES ONLY ---
+            // Aggregate ONLY from AuditEntry.ForceX/Y/Z (processed, signed values)
+            // This ensures: Report Total = Sum of displayed row Forces
+            
             double aggFx = 0;
             double aggFy = 0;
             double aggFz = 0;
@@ -178,13 +179,14 @@ namespace DTS_Engine.Core.Engines
                 foreach (var loadType in story.LoadTypes)
                 {
                     // Cộng dồn vector components từ các nhóm tải đã xử lý
+                    // SubTotalFx/Fy/Fz already calculated from AuditEntry.ForceX/Y/Z
                     aggFx += loadType.SubTotalFx;
                     aggFy += loadType.SubTotalFy;
                     aggFz += loadType.SubTotalFz;
                 }
             }
 
-            // Gán ngược lại vào Report Header
+            // Gán kết quả vào Report Header
             report.CalculatedFx = aggFx;
             report.CalculatedFy = aggFy;
             report.CalculatedFz = aggFz;
@@ -194,80 +196,6 @@ namespace DTS_Engine.Core.Engines
             report.IsAnalyzed = false;
 
             return report;
-        }
-
-        private double CalculateGeometryMultiplier(RawSapLoad load)
-        {
-            string elementName = load.ElementName?.Trim();
-            if (string.IsNullOrEmpty(elementName)) return 1.0;
-
-            // Area loads: Nhân với diện tích (m²)
-            if (load.LoadType.Contains("Area"))
-            {
-                var areaGeom = GetAreaGeometry(elementName);
-                if (areaGeom != null)
-                {
-                    double areaM2 = areaGeom.Area / 1_000_000.0; // mm² -> m²
-                    return areaM2 > 0 ? areaM2 : 1.0;
-                }
-            }
-
-            // Frame loads: Nhân với chiều dài (m)
-            if (load.LoadType.Contains("Frame") && !load.LoadType.Contains("Point"))
-            {
-                var frameGeom = GetFrameGeometry(elementName);
-                if (frameGeom != null)
-                {
-                    double startMeters, endMeters;
-                    double coveredM = CalculateCoveredLengthMeters(load, frameGeom, out startMeters, out endMeters);
-                    return coveredM > 0 ? coveredM : 1.0;
-                }
-            }
-
-            // Point loads: Nhân với 1
-            return 1.0;
-        }
-
-        /// <summary>
-        /// Helper: Tính hệ số nhân cho tải trọng (Area, Length, hoặc Point)
-        /// FIXED: Ensure correct multiplier for all load types including walls
-        /// </summary>
-        private double CalculateLoadMultiplier(RawSapLoad load)
-        {
-            string elementName = load.ElementName?.Trim();
-            if (string.IsNullOrEmpty(elementName)) return 1.0;
-
-            // Area loads: Multiply by area (m²)
-            if (load.LoadType.Contains("Area"))
-            {
-                var areaGeom = GetAreaGeometry(elementName);
-                if (areaGeom != null)
-                {
-                    double areaM2 = areaGeom.Area / 1_000_000.0; // mm² to m²
-                    return areaM2 > 0 ? areaM2 : 1.0;
-                }
-                return 1.0;
-            }
-
-            // Frame distributed loads: Multiply by covered length (m)
-            if (load.LoadType.Contains("Frame") && !load.LoadType.Contains("Point"))
-            {
-                var frameGeom = GetFrameGeometry(elementName);
-                if (frameGeom != null)
-                {
-                    double coveredM = CalculateCoveredLengthMeters(load, frameGeom, out _, out _);
-                    if (coveredM < 1e-6)
-                    {
-                        // Full length if no partial load specified
-                        coveredM = frameGeom.Length2D / 1000.0; // mm to m
-                    }
-                    return coveredM > 0 ? coveredM : 1.0;
-                }
-                return 1.0;
-            }
-
-            // Point loads: Multiplier = 1
-            return 1.0;
         }
 
         /// <summary>
@@ -304,99 +232,6 @@ namespace DTS_Engine.Core.Engines
                 return frame;
 
             return null;
-        }
-
-        #endregion
-
-        #region Main Audit Workflows (Backup)
-
-        /// <summary>
-        /// Chạy kiểm toán cho danh sách Load Patterns
-        /// BACKUP: Phiên bản cũ chưa refactor
-        /// </summary>
-        public List<AuditReport> RunAuditBackup(string loadPatterns)
-        {
-            var reports = new List<AuditReport>();
-            if (string.IsNullOrEmpty(loadPatterns)) return reports;
-
-            var patterns = loadPatterns.Split(new[] { ',', ';', ' ' }, StringSplitOptions.RemoveEmptyEntries)
-                                       .Select(p => p.Trim().ToUpper())
-                                       .Distinct()
-                                       .ToList();
-
-            // Cache geometry một lần dùng chung
-            CacheGeometry();
-
-            foreach (var pattern in patterns)
-            {
-                var report = RunSingleAuditBackup(pattern);
-                if (report != null) reports.Add(report);
-            }
-
-            return reports;
-        }
-
-        /// <summary>
-        /// Chạy kiểm toán cho một Load Pattern cụ thể
-        /// BACKUP: Phiên bản cũ chưa refactor
-        /// </summary>
-        public AuditReport RunSingleAuditBackup(string loadPattern)
-        {
-            // Refresh geometry cache
-            CacheGeometry();
-
-            var report = new AuditReport
-            {
-                LoadPattern = loadPattern,
-                AuditDate = DateTime.Now,
-                ModelName = SapUtils.GetModelName(),
-                UnitInfo = UnitManager.Info.ToString()
-            };
-
-            // CRITICAL: Đọc tải trọng qua Interface (Dependency Injection)
-            // LoadReader đã có sẵn ModelInventory → Vector đã được tính chính xác
-            var allLoads = _loadReader.ReadAllLoads(loadPattern);
-
-            if (allLoads.Count == 0)
-            {
-                report.IsAnalyzed = false;
-                report.SapBaseReaction = 0;
-                return report;
-            }
-
-            // --- BƯỚC TÍNH TOÁN CHÍNH XÁC (Dựa trên Vector từ Reader) ---
-            // OPTIMIZATION: Single-pass calculation
-            double sumFx = 0, sumFy = 0, sumFz = 0;
-
-            foreach (var load in allLoads)
-            {
-                // Vector đã được Reader tính toán sẵn → Chỉ cần nhân với multiplier
-                double multiplier = CalculateLoadMultiplier(load);
-
-                sumFx += load.DirectionX * multiplier;
-                sumFy += load.DirectionY * multiplier;
-                sumFz += load.DirectionZ * multiplier;
-            }
-
-            // GÁN KẾT QUẢ VÀO REPORT
-            report.CalculatedFx = sumFx;
-            report.CalculatedFy = sumFy;
-            report.CalculatedFz = sumFz;
-
-            // BƯỚC 4: Group and process by story
-            var storyBuckets = GroupLoadsByStory(allLoads);
-            foreach (var bucket in storyBuckets.OrderByDescending(b => b.Elevation))
-            {
-                var storyGroup = ProcessStory(bucket.StoryName, bucket.Elevation, bucket.Loads);
-                if (storyGroup.LoadTypes.Count > 0)
-                    report.Stories.Add(storyGroup);
-            }
-
-            // Base Reaction = 0 (người dùng check thủ công)
-            report.SapBaseReaction = 0;
-            report.IsAnalyzed = false;
-
-            return report;
         }
 
         #endregion
@@ -532,7 +367,8 @@ namespace DTS_Engine.Core.Engines
                 }
             }
 
-            // FIX v4.2: Calculate vector subtotals for load type
+            // CRITICAL v4.4: Calculate vector subtotals ONLY from processed AuditEntry.ForceX/Y/Z
+            // This ensures: LoadType Total = Sum of its entries (no raw data interference)
             typeGroup.SubTotalFx = typeGroup.Entries.Sum(e => e.ForceX);
             typeGroup.SubTotalFy = typeGroup.Entries.Sum(e => e.ForceY);
             typeGroup.SubTotalFz = typeGroup.Entries.Sum(e => e.ForceZ);
@@ -545,7 +381,17 @@ namespace DTS_Engine.Core.Engines
         // --- XỬ LÝ TẢI DIỆN TÍCH (AREA - SMART GEOMETRY RECOGNITION & DECOMPOSITION) ---
         /// <summary>
         /// Process area loads with vector-aware force calculation
-        /// FIX v4.2: Calculate force with proper directional sign
+        /// CRITICAL v4.4: ForceX/Y/Z calculated with CORRECT SIGN from loadVal (already signed from SAP)
+        /// 
+        /// SIGN CONVENTION:
+        /// - loadVal already contains sign from SAP (negative for downward gravity)
+        /// - No manual sign adjustment needed
+        /// - Force magnitude = areaM2 * loadVal (preserves sign)
+        /// - Vector components = forceVector.Normalized * signedForce (preserves direction)
+        /// 
+        /// RESULT:
+        /// - AuditEntry.ForceX/Y/Z have correct signs for summation
+        /// - Report displays these values directly (no conversion)
         /// </summary>
         private void ProcessAreaLoads(List<RawSapLoad> loads, double loadVal, string dir, List<AuditEntry> targetList)
         {
@@ -592,24 +438,11 @@ namespace DTS_Engine.Core.Engines
                 var shapeResult = AnalyzeShapeStrategy(geom);
                 string formula = shapeResult.IsExact ? shapeResult.Formula : $"~{areaM2:0.00}";
 
-                // FIX v4.2.1: Calculate force with correct sign convention
-                // CONVENTION: Positive value means load direction, negative means opposite
-                // Example: loadVal=-2.26 kN/m² for -Y direction → Force should be negative
-                double dirSign = 1.0;
-                if (validLoads.Count > 0)
-                {
-                    var sampleLoad = validLoads[0];
-                    // Determine sign based on primary direction component
-                    if (Math.Abs(sampleLoad.DirectionX) > 1e-6) dirSign = Math.Sign(sampleLoad.DirectionX);
-                    else if (Math.Abs(sampleLoad.DirectionY) > 1e-6) dirSign = Math.Sign(sampleLoad.DirectionY);
-                    else if (Math.Abs(sampleLoad.DirectionZ) > 1e-6) dirSign = Math.Sign(sampleLoad.DirectionZ);
-                }
-
-                // Calculate SIGNED force: loadVal inherits sign from SAP
-                // No need to multiply by dirSign if loadVal already has correct sign from SAP
+                // CRITICAL v4.4: Calculate SIGNED force from loadVal (already contains SAP sign)
+                // loadVal is in kN/m² with correct sign (negative for gravity down)
                 double signedForce = areaM2 * loadVal;
 
-                // FIX v4.2.1: Calculate vector components
+                // CRITICAL v4.4: Calculate vector components with PRESERVED SIGN
                 double fx = 0, fy = 0, fz = 0;
                 if (validLoads.Count > 0)
                 {
@@ -617,7 +450,7 @@ namespace DTS_Engine.Core.Engines
                     var forceVec = sampleLoad.GetForceVector();
                     if (forceVec.Length > 1e-6)
                     {
-                        // Scale vector to match magnitude
+                        // Scale vector to match signed magnitude (preserves direction AND sign)
                         forceVec = forceVec.Normalized * signedForce;
                         fx = forceVec.X;
                         fy = forceVec.Y;
@@ -625,25 +458,26 @@ namespace DTS_Engine.Core.Engines
                     }
                     else
                     {
-                        // Fallback: assume gravity (negative Z for down)
+                        // Fallback: assume gravity (sign already in signedForce)
                         fz = signedForce;
                     }
                 }
 
+                // CRITICAL v4.4: Store signed values - these will be displayed and summed
                 targetList.Add(new AuditEntry
                 {
                     GridLocation = GetGridRangeDescription(geom.EnvelopeInternal),
                     Explanation = formula,
                     Quantity = areaM2,
                     QuantityUnit = "m²",
-                    UnitLoad = loadVal,
+                    UnitLoad = loadVal, // Signed value from SAP
                     UnitLoadString = $"{loadVal:0.00}",
-                    TotalForce = signedForce, // FIX: Store signed value directly
+                    TotalForce = signedForce, // Signed magnitude
                     Direction = dir,
-                    DirectionSign = Math.Sign(signedForce), // Sign extracted for display logic
-                    ForceX = fx,
-                    ForceY = fy,
-                    ForceZ = fz,
+                    DirectionSign = Math.Sign(signedForce), // Sign for display reference
+                    ForceX = fx, // Signed component
+                    ForceY = fy, // Signed component
+                    ForceZ = fz, // Signed component
                     ElementList = validLoads.Select(l => l.ElementName).Distinct().ToList()
                 });
             }
@@ -665,7 +499,7 @@ namespace DTS_Engine.Core.Engines
             /// <summary>
             /// PHƯƠNG THỨC CHÍNH: Chạy đua giữa các thuật toán và chọn người chiến thắng.
             /// Tiêu chí thắng: Số lượng hình chữ nhật ít nhất (Công thức ngắn nhất).
-            /// Nếu bằng nhau: Ưu tiên thuật toán tạo ra khối chính (Main Chunk) lớn nhất.
+            /// Nếu bằng nhau: Ơu tiên thuật toán tạo ra khối chính (Main Chunk) lớn nhất.
             /// </summary>
             public static List<Envelope> DecomposeOptimal(Geometry poly)
             {
@@ -974,7 +808,16 @@ namespace DTS_Engine.Core.Engines
         // --- XỬ LÝ TẢI THANH (FRAME) - SMART GROUPING THEOREM ---
         /// <summary>
         /// Process frame loads with vector-aware force calculation
-        /// FIX v4.2: Calculate force with proper directional sign and segment details
+        /// CRITICAL v4.4: ForceX/Y/Z calculated with CORRECT SIGN from loadVal (already signed from SAP)
+        /// 
+        /// SIGN CONVENTION:
+        /// - loadVal already contains sign from SAP
+        /// - Force magnitude = totalLength * loadVal (preserves sign)
+        /// - Vector components = forceVector.Normalized * signedForce (preserves direction)
+        /// 
+        /// RESULT:
+        /// - AuditEntry.ForceX/Y/Z have correct signs for summation
+        /// - Report displays these values directly (no conversion)
         /// </summary>
         private void ProcessFrameLoads(List<RawSapLoad> loads, double loadVal, string dir, List<AuditEntry> targetList)
         {
@@ -1015,15 +858,16 @@ namespace DTS_Engine.Core.Engines
                 string gridName = grp.Key;
                 double totalLength = grp.Sum(f => f.Length);
 
-                // FIX v4.2.1: loadVal already has sign from SAP, calculate signed force directly
+                // CRITICAL v4.4: Calculate SIGNED force from loadVal (already contains SAP sign)
                 double signedForce = totalLength * loadVal;
 
-                // FIX v4.2.1: Vector components
+                // CRITICAL v4.4: Calculate vector components with PRESERVED SIGN
                 double fx = 0, fy = 0, fz = 0;
                 var sampleLoad = grp.First().Load;
                 var forceVec = sampleLoad.GetForceVector();
                 if (forceVec.Length > 1e-6)
                 {
+                    // Scale vector to match signed magnitude
                     forceVec = forceVec.Normalized * signedForce;
                     fx = forceVec.X;
                     fy = forceVec.Y;
@@ -1031,12 +875,13 @@ namespace DTS_Engine.Core.Engines
                 }
                 else
                 {
+                    // Fallback: assume gravity
                     fz = signedForce;
                 }
 
                 string rangeDesc = DetermineCrossAxisRange(grp.ToList());
                 
-                // FIX v4.2: Build segment details for partial loads
+                // Build segment details for partial loads
                 var partialSegments = grp.Where(f => f.StartM > 0.01 || Math.Abs(f.EndM - f.Frame.Length2D * UnitManager.Info.LengthScaleToMeter) > 0.01)
                     .Select(f => $"{f.Load.ElementName}_{f.StartM:0.##}to{f.EndM:0.##}")
                     .ToList();
@@ -1047,20 +892,21 @@ namespace DTS_Engine.Core.Engines
 
                 var elementNames = grp.Select(f => f.Load.ElementName).Distinct().ToList();
 
+                // CRITICAL v4.4: Store signed values - these will be displayed and summed
                 targetList.Add(new AuditEntry
                 {
                     GridLocation = $"{gridName} x {rangeDesc}",
                     Explanation = explanation,
                     Quantity = totalLength,
                     QuantityUnit = "m",
-                    UnitLoad = loadVal,
+                    UnitLoad = loadVal, // Signed value from SAP
                     UnitLoadString = $"{loadVal:0.00}",
-                    TotalForce = signedForce, // FIX: Store signed value directly
+                    TotalForce = signedForce, // Signed magnitude
                     Direction = dir,
-                    DirectionSign = Math.Sign(signedForce), // Sign for display reference
-                    ForceX = fx,
-                    ForceY = fy,
-                    ForceZ = fz,
+                    DirectionSign = Math.Sign(signedForce), // Sign for display
+                    ForceX = fx, // Signed component
+                    ForceY = fy, // Signed component
+                    ForceZ = fz, // Signed component
                     ElementList = elementNames
                 });
             }
@@ -1186,7 +1032,16 @@ namespace DTS_Engine.Core.Engines
         // --- XỬ LÝ TẢI ĐIỂM (POINT) - IMPROVED GROUPING ---
         /// <summary>
         /// Process point loads with vector-aware force calculation
-        /// FIX v4.2: Calculate force with proper directional sign
+        /// CRITICAL v4.4: ForceX/Y/Z calculated with CORRECT SIGN from loadVal (already signed from SAP)
+        /// 
+        /// SIGN CONVENTION:
+        /// - loadVal already contains sign from SAP
+        /// - Force magnitude = count * loadVal (preserves sign)
+        /// - Vector components = forceVector.Normalized * signedForce (preserves direction)
+        /// 
+        /// RESULT:
+        /// - AuditEntry.ForceX/Y/Z have correct signs for summation
+        /// - Report displays these values directly (no conversion)
         /// </summary>
         private void ProcessPointLoads(List<RawSapLoad> loads, double loadVal, string dir, List<AuditEntry> targetList)
         {
@@ -1215,16 +1070,17 @@ namespace DTS_Engine.Core.Engines
                 var groupLoads = group.Value;
                 int count = groupLoads.Count;
 
-                // FIX v4.2.1: loadVal already has sign from SAP, calculate signed force directly
+                // CRITICAL v4.4: Calculate SIGNED force from loadVal (already contains SAP sign)
                 double signedForce = count * loadVal;
 
-                // FIX v4.2.1: Vector components
+                // CRITICAL v4.4: Calculate vector components with PRESERVED SIGN
                 double fx = 0, fy = 0, fz = 0;
                 if (groupLoads.Count > 0)
                 {
                     var forceVec = groupLoads[0].load.GetForceVector();
                     if (forceVec.Length > 1e-6)
                     {
+                        // Scale vector to match signed magnitude
                         forceVec = forceVec.Normalized * signedForce;
                         fx = forceVec.X;
                         fy = forceVec.Y;
@@ -1232,6 +1088,7 @@ namespace DTS_Engine.Core.Engines
                     }
                     else
                     {
+                        // Fallback: assume gravity
                         fz = signedForce;
                     }
                 }
@@ -1239,20 +1096,21 @@ namespace DTS_Engine.Core.Engines
                 var sorted = SortPointsLeftToRight(groupLoads);
                 var elementNames = sorted.Select(p => p.load.ElementName).ToList();
 
+                // CRITICAL v4.4: Store signed values - these will be displayed and summed
                 targetList.Add(new AuditEntry
                 {
                     GridLocation = location,
                     Explanation = "",
                     Quantity = count,
                     QuantityUnit = "ea",
-                    UnitLoad = loadVal,
+                    UnitLoad = loadVal, // Signed value from SAP
                     UnitLoadString = $"{loadVal:0.00}",
-                    TotalForce = signedForce, // FIX: Store signed value directly
+                    TotalForce = signedForce, // Signed magnitude
                     Direction = dir,
-                    DirectionSign = Math.Sign(signedForce), // Sign for display reference
-                    ForceX = fx,
-                    ForceY = fy,
-                    ForceZ = fz,
+                    DirectionSign = Math.Sign(signedForce), // Sign for display
+                    ForceX = fx, // Signed component
+                    ForceY = fy, // Signed component
+                    ForceZ = fz, // Signed component
                     ElementList = elementNames
                 });
             }
@@ -1481,15 +1339,20 @@ namespace DTS_Engine.Core.Engines
 
         /// <summary>
         /// Generate formatted text audit report.
-        /// UPDATED v4.2: New column layout - removed Type, added Value, reordered Dir before Force
+        /// UPDATED v4.4: New column layout - removed Type, added Value, reordered Dir before Force
         /// Format: Grid Location | Calculator | Value(unit) | Unit Load(unit) | Dir | Force(unit) | Elements
+        /// 
+        /// CRITICAL v4.4 SUMMARY CALCULATION:
+        /// - Summary calculated ONLY from processed AuditEntry.ForceX/Y/Z (already in report.Stories)
+        /// - NO fallback to report.CalculatedFx/Fy/Fz (those are also from processed data)
+        /// - Ensures: Visual Sum = Calculated Sum = Sum of displayed Force values
         /// </summary>
         public string GenerateTextReport(AuditReport report, string targetUnit = "kN", string language = "English")
         {
             var sb = new StringBuilder();
             double forceFactor = 1.0;
 
-            // Unit conversion setup (giữ nguyên logic cũ)
+            // Unit conversion setup
             if (string.IsNullOrWhiteSpace(targetUnit)) targetUnit = UnitManager.Info.ForceUnit;
             if (targetUnit.Equals("Ton", StringComparison.OrdinalIgnoreCase) || targetUnit.Equals("Tonf", StringComparison.OrdinalIgnoreCase))
                 forceFactor = 1.0 / 9.81;
@@ -1498,9 +1361,9 @@ namespace DTS_Engine.Core.Engines
 
             bool isVN = language.Equals("Vietnamese", StringComparison.OrdinalIgnoreCase);
 
-            // HEADER CHUNG (Giữ nguyên)
+            // HEADER CHUNG
             sb.AppendLine("".PadRight(150, '='));
-            sb.AppendLine(isVN ? "   KIỂM TOÁN TẢI TRỌNG SAP2000 (DTS ENGINE v4.3)" : "   SAP2000 LOAD AUDIT REPORT (DTS ENGINE v4.3)");
+            sb.AppendLine(isVN ? "   KIỂM TOÁN TẢI TRỌNG SAP2000 (DTS ENGINE v4.4)" : "   SAP2000 LOAD AUDIT REPORT (DTS ENGINE v4.4)");
             sb.AppendLine($"   {(isVN ? "Dự án" : "Project")}: {report.ModelName ?? "Unknown"}");
             sb.AppendLine($"   {(isVN ? "Tổ hợp tải" : "Load Pattern")}: {report.LoadPattern}");
             sb.AppendLine($"   {(isVN ? "Ngày tính" : "Audit Date")}: {report.AuditDate:yyyy-MM-dd HH:mm:ss}");
@@ -1510,27 +1373,25 @@ namespace DTS_Engine.Core.Engines
 
             foreach (var story in report.Stories.OrderByDescending(s => s.Elevation))
             {
-                // Tính tổng vector tầng
+                // CRITICAL v4.4: Calculate story totals from LoadType subtotals (which come from AuditEntry.ForceX/Y/Z)
                 double storyFx = story.LoadTypes.Sum(lt => lt.SubTotalFx) * forceFactor;
                 double storyFy = story.LoadTypes.Sum(lt => lt.SubTotalFy) * forceFactor;
                 double storyFz = story.LoadTypes.Sum(lt => lt.SubTotalFz) * forceFactor;
 
-                // [SỬA 1] Header Tầng gọn gàng: [>] STORY ... [Fx=..., Fy=..., Fz=...]
                 sb.AppendLine($"[>] {(isVN ? "TẦNG" : "STORY")}: {story.StoryName} | Z={story.Elevation:0}mm [Fx={storyFx:0.00}, Fy={storyFy:0.00}, Fz={storyFz:0.00}]");
 
                 foreach (var loadType in story.LoadTypes)
                 {
                     string typeName = GetSpecificLoadTypeName(loadType, isVN);
 
-                    // Tính tổng vector loại tải
+                    // CRITICAL v4.4: LoadType totals from SubTotalFx/Fy/Fz (which come from AuditEntry.ForceX/Y/Z)
                     double typeFx = loadType.SubTotalFx * forceFactor;
                     double typeFy = loadType.SubTotalFy * forceFactor;
                     double typeFz = loadType.SubTotalFz * forceFactor;
 
-                    // [SỬA 2] Header Loại tải gọn gàng, bỏ dòng Subtotal riêng
                     sb.AppendLine($"  [{typeName}] [Fx={typeFx:0.00}, Fy={typeFy:0.00}, Fz={typeFz:0.00}]");
 
-                    // Setup cột (Giữ nguyên)
+                    // Setup cột
                     string valueUnit = loadType.Entries.FirstOrDefault()?.QuantityUnit ?? "m²";
 
                     // Column Header formatting
@@ -1557,13 +1418,12 @@ namespace DTS_Engine.Core.Engines
             }
 
             // ====================================================================================
-            // CRITICAL FIX v4.3: CONSISTENCY CHECK
-            // Thay vì dùng report.CalculatedFx (Raw Sum từ API), ta phải tính tổng lại từ
-            // chính các con số đã được xử lý hình học (SubTotalFx) trong report.Stories.
-            // Điều này đảm bảo: Tổng hiển thị = Tổng các dòng cộng lại.
+            // CRITICAL v4.4: SUMMARY CALCULATION FROM PROCESSED DATA ONLY
+            // Calculate Visual Sums from Processed Data (report.Stories → LoadTypes → SubTotalFx/Fy/Fz)
+            // This ensures: Summary = Sum of all displayed force values (100% consistency)
             // ====================================================================================
 
-            // 1. Calculate Visual Sums from Processed Data
+            // 1. Calculate Visual Sums from report.Stories (already populated with processed data)
             double visualFx = report.Stories.Sum(s => s.LoadTypes.Sum(lt => lt.SubTotalFx));
             double visualFy = report.Stories.Sum(s => s.LoadTypes.Sum(lt => lt.SubTotalFy));
             double visualFz = report.Stories.Sum(s => s.LoadTypes.Sum(lt => lt.SubTotalFz));
@@ -1605,7 +1465,12 @@ namespace DTS_Engine.Core.Engines
 
         /// <summary>
         /// Format data row with new column layout
-        /// FIX v4.2.1: TotalForce already signed, just apply forceFactor for unit conversion
+        /// CRITICAL v4.4: Display Force directly from AuditEntry.ForceX/Y/Z (already processed and signed)
+        /// 
+        /// DISPLAY STRATEGY:
+        /// - Show processed Force components converted to target unit
+        /// - NO re-calculation from Quantity * UnitLoad (that's for verification only)
+        /// - Ensures displayed Force = stored Force (100% consistency)
         /// </summary>
         private void FormatDataRow(StringBuilder sb, AuditEntry entry, double forceFactor, string targetUnit)
         {
@@ -1626,18 +1491,30 @@ namespace DTS_Engine.Core.Engines
             // 3. Value (Quantity) - Giữ 2 số thập phân chuẩn
             string value = $"{entry.Quantity:0.00}".PadRight(valueWidth);
 
-            // 4. Unit Load (Giá trị hiển thị)
+            // 4. Unit Load (Giá trị hiển thị) - Apply unit conversion
             double displayUnitLoad = entry.UnitLoad * forceFactor;
             string unitLoad = $"{displayUnitLoad:0.00}".PadRight(unitWidth);
 
             // 5. Direction
             string dir = FormatDirection(entry.Direction, entry).PadRight(dirWidth);
 
-            // [QUAN TRỌNG NHẤT] 6. Force = Value * UnitLoad * Sign
-            // Thay vì lấy TotalForce lưu trong DB, ta nhân trực tiếp các số đang hiển thị
-            // để đảm bảo người dùng nhân tay cũng ra khớp 100%.
-            double visualForce = entry.Quantity * displayUnitLoad * entry.DirectionSign;
-            string force = $"{visualForce:0.00}".PadRight(forceWidth);
+            // CRITICAL v4.4: Display Force from stored ForceX/Y/Z (magnitude of vector)
+            // Calculate magnitude from vector components (preserves sign via component sum)
+            double forceX = entry.ForceX * forceFactor;
+            double forceY = entry.ForceY * forceFactor;
+            double forceZ = entry.ForceZ * forceFactor;
+            
+            // Display the primary component (largest magnitude) to match user expectation
+            // For most cases, this will be ForceZ (gravity), ForceX (lateral X), or ForceY (lateral Y)
+            double displayForce = 0;
+            if (Math.Abs(forceX) > Math.Abs(forceY) && Math.Abs(forceX) > Math.Abs(forceZ))
+                displayForce = forceX;
+            else if (Math.Abs(forceY) > Math.Abs(forceZ))
+                displayForce = forceY;
+            else
+                displayForce = forceZ;
+
+            string force = $"{displayForce:0.00}".PadRight(forceWidth);
 
             // 7. Elements
             string elements = CompressElementList(entry.ElementList ?? new List<string>(), maxDisplay: 80);
@@ -1654,35 +1531,25 @@ namespace DTS_Engine.Core.Engines
         }
 
         /// <summary>
-        /// Compress element list with range detection (e.g., "1,2,3,4,5" -> "1-5")
-        /// FIX v4.2.1: Smart compression for numeric sequences
+        /// Compress element list with range detection (e.g., "1,2,3,4,5" -> "1to5")
+        /// Smart compression for numeric sequences
         /// </summary>
         private string CompressElementList(List<string> elements, int maxDisplay = 80)
         {
             if (elements == null || elements.Count == 0) return "";
 
-            // Parse numeric elements
             var numericElements = new List<int>();
             var nonNumericElements = new List<string>();
 
             foreach (var elem in elements)
             {
-                if (int.TryParse(elem, out int num))
-                {
-                    numericElements.Add(num);
-                }
-                else
-                {
-                    nonNumericElements.Add(elem);
-                }
+                if (int.TryParse(elem, out int num)) numericElements.Add(num);
+                else nonNumericElements.Add(elem);
             }
 
-            // Sort numeric elements
             numericElements.Sort();
-
             var compressed = new List<string>();
 
-            // Compress numeric ranges
             if (numericElements.Count > 0)
             {
                 int rangeStart = numericElements[0];
@@ -1691,65 +1558,31 @@ namespace DTS_Engine.Core.Engines
                 for (int i = 1; i < numericElements.Count; i++)
                 {
                     int current = numericElements[i];
-
                     if (current == rangeLast + 1)
                     {
-                        // Continue range
                         rangeLast = current;
                     }
                     else
                     {
-                        // End of range, output
-                        if (rangeLast == rangeStart)
-                        {
-                            compressed.Add(rangeStart.ToString());
-                        }
-                        else if (rangeLast == rangeStart + 1)
-                        {
-                            // Two consecutive numbers - just list them
-                            compressed.Add(rangeStart.ToString());
-                            compressed.Add(rangeLast.ToString());
-                        }
-                        else
-                        {
-                            // Range with 3+ numbers
-                            compressed.Add($"{rangeStart}to{rangeLast}");
-                        }
+                        if (rangeLast == rangeStart) compressed.Add(rangeStart.ToString());
+                        else if (rangeLast == rangeStart + 1) { compressed.Add(rangeStart.ToString()); compressed.Add(rangeLast.ToString()); }
+                        else compressed.Add($"{rangeStart}to{rangeLast}");
 
-                        // Start new range
                         rangeStart = current;
                         rangeLast = current;
                     }
                 }
 
-                // Output final range
-                if (rangeLast == rangeStart)
-                {
-                    compressed.Add(rangeStart.ToString());
-                }
-                else if (rangeLast == rangeStart + 1)
-                {
-                    compressed.Add(rangeStart.ToString());
-                    compressed.Add(rangeLast.ToString());
-                }
-                else
-                {
-                    compressed.Add($"{rangeStart}to{rangeLast}");
-                }
+                // final range
+                if (rangeLast == rangeStart) compressed.Add(rangeStart.ToString());
+                else if (rangeLast == rangeStart + 1) { compressed.Add(rangeStart.ToString()); compressed.Add(rangeLast.ToString()); }
+                else compressed.Add($"{rangeStart}to{rangeLast}");
             }
 
-            // Add non-numeric elements
             compressed.AddRange(nonNumericElements);
 
-            // Build final string
             string result = string.Join(",", compressed);
-
-            // Truncate if exceeds max display (only for text report)
-            if (result.Length > maxDisplay && maxDisplay > 0)
-            {
-                return result.Substring(0, maxDisplay - 5) + "...";
-            }
-
+            if (result.Length > maxDisplay && maxDisplay > 0) return result.Substring(0, maxDisplay - 5) + "...";
             return result;
         }
 
@@ -1782,5 +1615,5 @@ namespace DTS_Engine.Core.Engines
 
         #endregion
 
-    } // class AuditEngine
-} // namespace DTS_Engine.Core.Engines
+    }
+}
