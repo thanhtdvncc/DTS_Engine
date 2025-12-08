@@ -381,6 +381,7 @@ namespace DTS_Engine.Core.Engines
         // --- XỬ LÝ TẢI DIỆN TÍCH (AREA - SMART GEOMETRY RECOGNITION & DECOMPOSITION) ---
         /// <summary>
         /// Process area loads with vector-aware force calculation
+        ///  4.5 SỬA LỖI GỘP SAI KHÔNG GIAN ---
         /// CRITICAL v4.4: ForceX/Y/Z calculated with CORRECT SIGN from loadVal (already signed from SAP)
         /// 
         /// SIGN CONVENTION:
@@ -393,95 +394,358 @@ namespace DTS_Engine.Core.Engines
         /// - AuditEntry.ForceX/Y/Z have correct signs for summation
         /// - Report displays these values directly (no conversion)
         /// </summary>
+
+        // --- [NEW STRUCT] ĐỂ NHẬN DIỆN MẶT PHẲNG ---
+        private struct PlaneSignature : IEquatable<PlaneSignature>
+        {
+            public int AxisNormal; // 0=X (YZ plane), 1=Y (XZ plane), 2=Z (XY plane), 3=Oblique
+            public double Position; // Khoảng cách từ gốc (Coordinate)
+
+            public bool Equals(PlaneSignature other)
+            {
+                // Dung sai 50mm cho việc gộp mặt phẳng (Grid snapping)
+                return AxisNormal == other.AxisNormal && Math.Abs(Position - other.Position) < 50.0;
+            }
+
+            public override int GetHashCode()
+            {
+                return AxisNormal.GetHashCode() ^ Math.Round(Position / 50.0).GetHashCode();
+            }
+        }
+
+        /// <summary>
+        /// Xác định mặt phẳng của một Area
+        /// </summary>
+        private PlaneSignature GetElementPlane(SapArea area)
+        {
+            if (area == null || area.BoundaryPoints.Count < 3 || area.ZValues.Count < 3)
+                return new PlaneSignature { AxisNormal = 3, Position = 0 };
+
+            // Lấy 3 điểm đầu
+            var p1 = new Vector3D(area.BoundaryPoints[0].X, area.BoundaryPoints[0].Y, area.ZValues[0]);
+            var p2 = new Vector3D(area.BoundaryPoints[1].X, area.BoundaryPoints[1].Y, area.ZValues[1]);
+            var p3 = new Vector3D(area.BoundaryPoints[2].X, area.BoundaryPoints[2].Y, area.ZValues[2]);
+
+            // Tính pháp tuyến
+            var v12 = p2 - p1;
+            var v13 = p3 - p1;
+            var normal = v12.Cross(v13).Normalized;
+
+            double absX = Math.Abs(normal.X);
+            double absY = Math.Abs(normal.Y);
+            double absZ = Math.Abs(normal.Z);
+
+            // Ưu tiên trục chính (Vertical/Horizontal planes)
+            if (absZ > 0.95) // Sàn nằm ngang (Mặt phẳng XY) -> Normal Z
+                return new PlaneSignature { AxisNormal = 2, Position = p1.Z };
+
+            if (absY > 0.95) // Vách đứng theo phương X (Mặt phẳng XZ) -> Normal Y
+                return new PlaneSignature { AxisNormal = 1, Position = p1.Y };
+
+            if (absX > 0.95) // Vách đứng theo phương Y (Mặt phẳng YZ) -> Normal X
+                return new PlaneSignature { AxisNormal = 0, Position = p1.X };
+
+            // Mặt phẳng nghiêng/chéo
+            return new PlaneSignature { AxisNormal = 3, Position = 0 };
+        }
+
+        // --- [NEW CLASS] Helper để map Load với Geometry ---
+        private class LoadGeometryPair
+        {
+            public RawSapLoad Load;
+            public Geometry Poly; // NTS Polygon
+        }
+
+        // --- [REFACTORED] XỬ LÝ AREA LOAD: SPATIAL FILTERING & SIGN NORMALIZATION ---
+        // --- [REFACTORED v4.5] FIX LỖI ĐẢO DẤU & NHẬN DIỆN PHẦN TỬ ---
+        // --- [NEW STRUCT] KHÓA GOM NHÓM NGHIÊM NGẶT ---
+        private struct AreaGroupingKey : IEquatable<AreaGroupingKey>
+        {
+            public int AxisNormal;   // 0=X, 1=Y, 2=Z, 3=Oblique
+            public double Position;  // Coordinate (rounded)
+            public double LoadValue; // Signed Value (để tách tải âm/dương)
+            public string LoadDir;   // SAP Direction String (e.g. "Local 3")
+
+            // Thêm Local Axis Hash để tách các phần tử xoay trục khác nhau
+            public int LocalAxisHash;
+
+            public bool Equals(AreaGroupingKey other)
+            {
+                return AxisNormal == other.AxisNormal &&
+                       Math.Abs(Position - other.Position) < 50.0 && // Grid snap tolerance
+                       Math.Abs(LoadValue - other.LoadValue) < 0.001 &&
+                       string.Equals(LoadDir, other.LoadDir) &&
+                       LocalAxisHash == other.LocalAxisHash;
+            }
+
+            public override int GetHashCode()
+            {
+                unchecked
+                {
+                    int hash = 17;
+                    hash = hash * 23 + AxisNormal.GetHashCode();
+                    hash = hash * 23 + Math.Round(Position / 50.0).GetHashCode();
+                    hash = hash * 23 + Math.Round(LoadValue, 3).GetHashCode();
+                    hash = hash * 23 + (LoadDir?.GetHashCode() ?? 0);
+                    hash = hash * 23 + LocalAxisHash;
+                    return hash;
+                }
+            }
+        }
+
+        // --- [REFACTORED v4.6] FINAL FIX: GROUPING CHUẨN & VECTOR PHYSIC ---
         private void ProcessAreaLoads(List<RawSapLoad> loads, double loadVal, string dir, List<AuditEntry> targetList)
         {
-            var validLoads = new List<RawSapLoad>();
-            var geometries = new List<Geometry>();
+            // BƯỚC 1: GOM NHÓM CHI TIẾT (Tránh gộp sai Grid hoặc sai Dấu)
+            var groups = new Dictionary<AreaGroupingKey, List<LoadGeometryPair>>();
 
-            // 1. Thu thập hình học
             foreach (var load in loads)
             {
                 if (_areaGeometryCache.TryGetValue(load.ElementName, out var area))
                 {
-                    var projected = ProjectAreaToBestPlane(area);
-                    var poly = CreateNtsPolygon(projected);
+                    // 1. Xác định mặt phẳng và trục
+                    var plane = GetElementPlane(area);
+
+                    // 2. Tính Hash trục địa phương (để tách các tấm xoay khác nhau)
+                    // Nếu không có dữ liệu vector, dùng mặc định 0
+                    int localHash = 0;
+                    // (Lưu ý: Logic này giả định RawSapLoad đã xử lý Vector đúng ở Reader)
+                    // Ta dùng vector X, Y, Z của load làm "chữ ký" hướng
+                    localHash = (int)(load.DirectionX * 100) ^ (int)(load.DirectionY * 100) ^ (int)(load.DirectionZ * 100);
+
+                    // 3. Tạo Key gom nhóm
+                    var key = new AreaGroupingKey
+                    {
+                        AxisNormal = plane.AxisNormal,
+                        Position = plane.Position,
+                        LoadValue = load.Value1, // Phân biệt tải âm/dương
+                        LoadDir = load.Direction,
+                        LocalAxisHash = localHash
+                    };
+
+                    // Hack: Nếu mặt nghiêng (Oblique), không gộp, tách riêng từng phần tử
+                    if (key.AxisNormal == 3)
+                    {
+                        key.Position = load.ElementName.GetHashCode();
+                    }
+
+                    // 4. Tạo Geometry 2D chiếu lên mặt phẳng chuẩn
+                    var projectedPoints = ProjectPointsToPlane(area, key.AxisNormal);
+                    var poly = CreateNtsPolygon(projectedPoints);
+
                     if (poly != null && poly.IsValid && poly.Area > 1e-6)
                     {
-                        geometries.Add(poly);
-                        validLoads.Add(load);
+                        if (!groups.ContainsKey(key))
+                            groups[key] = new List<LoadGeometryPair>();
+
+                        groups[key].Add(new LoadGeometryPair { Load = load, Poly = poly });
                     }
                 }
             }
 
-            if (geometries.Count == 0) return;
-
-            // 2. Thử Union (Gộp hình)
-            Geometry processedGeometry = null;
-            try
+            // BƯỚC 2: XỬ LÝ TỪNG NHÓM (UNION & REPORT)
+            foreach (var group in groups)
             {
-                processedGeometry = UnaryUnionOp.Union(geometries);
-            }
-            catch
-            {
-                processedGeometry = _geometryFactory.CreateGeometryCollection(geometries.ToArray());
-            }
+                var key = group.Key;
+                var pairs = group.Value;
 
-            // 3. Tạo Audit Entry từ kết quả
-            for (int i = 0; i < processedGeometry.NumGeometries; i++)
-            {
-                var geom = processedGeometry.GetGeometryN(i);
-                if (geom.Area < 1e-6) continue;
+                // Union hình học
+                var geometries = pairs.Select(p => p.Poly).ToList();
+                Geometry processedGeometry;
+                try { processedGeometry = UnaryUnionOp.Union(geometries); }
+                catch { processedGeometry = _geometryFactory.CreateGeometryCollection(geometries.ToArray()); }
 
-                double areaM2 = geom.Area / 1.0e6;
-
-                // Smart Shape Analysis
-                var shapeResult = AnalyzeShapeStrategy(geom);
-                string formula = shapeResult.IsExact ? shapeResult.Formula : $"~{areaM2:0.00}";
-
-                // CRITICAL v4.4: Calculate SIGNED force from loadVal (already contains SAP sign)
-                // loadVal is in kN/m² with correct sign (negative for gravity down)
-                double signedForce = areaM2 * loadVal;
-
-                // CRITICAL v4.4: Calculate vector components with PRESERVED SIGN
-                double fx = 0, fy = 0, fz = 0;
-                if (validLoads.Count > 0)
+                // Duyệt từng khối hình kết quả
+                for (int i = 0; i < processedGeometry.NumGeometries; i++)
                 {
-                    var sampleLoad = validLoads[0];
-                    var forceVec = sampleLoad.GetForceVector();
-                    if (forceVec.Length > 1e-6)
+                    var geom = processedGeometry.GetGeometryN(i);
+                    if (geom.Area < 1e-6) continue;
+
+                    // Lọc lại phần tử con (chính xác hóa danh sách elements)
+                    var contributingLoads = new List<RawSapLoad>();
+                    foreach (var pair in pairs)
                     {
-                        // Scale vector to match signed magnitude (preserves direction AND sign)
-                        forceVec = forceVec.Normalized * signedForce;
-                        fx = forceVec.X;
-                        fy = forceVec.Y;
-                        fz = forceVec.Z;
+                        try
+                        {
+                            if (geom.Intersects(pair.Poly) && geom.Intersection(pair.Poly).Area > 0.01 * pair.Poly.Area)
+                                contributingLoads.Add(pair.Load);
+                        }
+                        catch { /* Topology errors safe ignore */ }
                     }
-                    else
+                    if (contributingLoads.Count == 0) continue;
+
+                    // --- TÍNH TOÁN HIỂN THỊ ---
+                    double areaM2 = geom.Area / 1.0e6;
+                    var shapeResult = AnalyzeShapeStrategy(geom);
+                    string formula = shapeResult.IsExact ? shapeResult.Formula : $"~{areaM2:0.00}";
+
+                    // --- FORCE CALCULATION (VẬT LÝ CHUẨN) ---
+                    // RawSapLoad.DirectionX/Y/Z là component của Unit Load (kN/m2)
+                    // Ta lấy trung bình vector của các phần tử trong nhóm (thường là giống nhau do đã group by LocalHash)
+                    double unitFx = 0, unitFy = 0, unitFz = 0;
+
+                    if (contributingLoads.Count > 0)
                     {
-                        // Fallback: assume gravity (sign already in signedForce)
-                        fz = signedForce;
+                        // Lấy load đại diện (vì đã group by Value và LocalHash nên giống nhau)
+                        var repLoad = contributingLoads[0];
+                        unitFx = repLoad.DirectionX;
+                        unitFy = repLoad.DirectionY;
+                        unitFz = repLoad.DirectionZ;
                     }
+
+                    // Tổng lực = (Vector Unit Load) * Diện tích
+                    // Không cần nhân thêm LoadValue vì DirectionX/Y/Z của Reader đã bao gồm độ lớn và dấu của Value1
+                    double totalFx = unitFx * areaM2;
+                    double totalFy = unitFy * areaM2;
+                    double totalFz = unitFz * areaM2;
+
+                    // Tổng độ lớn đại số (để hiển thị TotalForce)
+                    double totalMagSigned = key.LoadValue * areaM2;
+
+                    // --- LOCATION RESTORATION (UNPROJECT) ---
+                    // Khôi phục tọa độ 3D từ Envelope 2D để tìm Grid chính xác
+                    Envelope env2D = geom.EnvelopeInternal;
+                    Envelope env3D = UnprojectEnvelope(env2D, key.AxisNormal, key.Position);
+                    string locationDesc = GetGridRangeDescription(env3D);
+
+                    // --- FINAL ENTRY ---
+                    targetList.Add(new AuditEntry
+                    {
+                        GridLocation = locationDesc,
+                        Explanation = formula,
+                        Quantity = areaM2,
+                        QuantityUnit = "m²",
+
+                        // Hiển thị tuyệt đối cho Unit Load (để người dùng dễ đọc)
+                        UnitLoad = Math.Abs(key.LoadValue),
+                        UnitLoadString = $"{Math.Abs(key.LoadValue):0.00}",
+
+                        // Giá trị lực có dấu
+                        TotalForce = totalMagSigned,
+
+                        // Hướng thực tế của Vector
+                        Direction = GetVectorDirectionString(totalFx, totalFy, totalFz),
+                        DirectionSign = Math.Sign(totalMagSigned),
+
+                        // Vector thành phần (Quan trọng nhất để cộng dồn Global)
+                        ForceX = totalFx,
+                        ForceY = totalFy,
+                        ForceZ = totalFz,
+
+                        ElementList = contributingLoads.Select(l => l.ElementName).Distinct().ToList()
+                    });
                 }
-
-                // CRITICAL v4.4: Store signed values - these will be displayed and summed
-                targetList.Add(new AuditEntry
-                {
-                    GridLocation = GetGridRangeDescription(geom.EnvelopeInternal),
-                    Explanation = formula,
-                    Quantity = areaM2,
-                    QuantityUnit = "m²",
-                    UnitLoad = loadVal, // Signed value from SAP
-                    UnitLoadString = $"{loadVal:0.00}",
-                    TotalForce = signedForce, // Signed magnitude
-                    Direction = dir,
-                    DirectionSign = Math.Sign(signedForce), // Sign for display reference
-                    ForceX = fx, // Signed component
-                    ForceY = fy, // Signed component
-                    ForceZ = fz, // Signed component
-                    ElementList = validLoads.Select(l => l.ElementName).Distinct().ToList()
-                });
             }
         }
+
+        // --- Helper: Chiếu điểm theo trục pháp tuyến ---
+        private List<Point2D> ProjectPointsToPlane(SapArea area, int axisNormal)
+        {
+            var pts = area.BoundaryPoints;
+            var z = area.ZValues;
+            int n = Math.Min(pts.Count, z.Count);
+            var result = new List<Point2D>();
+
+            for (int i = 0; i < n; i++)
+            {
+                if (axisNormal == 2) // XY Plane (Z normal) - Sàn
+                    result.Add(new Point2D(pts[i].X, pts[i].Y));
+                else if (axisNormal == 1) // XZ Plane (Y normal) - Vách trục X
+                    result.Add(new Point2D(pts[i].X, z[i]));
+                else if (axisNormal == 0) // YZ Plane (X normal) - Vách trục Y
+                    result.Add(new Point2D(pts[i].Y, z[i]));
+                else // Oblique
+                    return ProjectAreaToBestPlane(area);
+            }
+            return result;
+        }
+
+        // --- Helper: Khôi phục Envelope 3D từ 2D chiếu ---
+        private Envelope UnprojectEnvelope(Envelope env2D, int axisNormal, double position)
+        {
+            if (axisNormal == 2) // XY Plane -> Z is position
+            {
+                // MinX=MinX, MinY=MinY
+                return env2D;
+            }
+            else if (axisNormal == 1) // XZ Plane (Y fixed) -> X=X, Y=Z
+            {
+                // Input: MinX (là X), MinY (là Z)
+                // Output Grid Search cần X và Y
+                // X range: env2D.MinX -> env2D.MaxX
+                // Y range: position (Fixed)
+                // Ta "hack" Envelope này để hàm GetGridRangeDescription hiểu:
+                // MinX..MaxX là X grid. MinY..MaxY là Y grid.
+                return new Envelope(env2D.MinX, env2D.MaxX, position, position);
+            }
+            else if (axisNormal == 0) // YZ Plane (X fixed) -> X=Y, Y=Z
+            {
+                // Input: MinX (là Y), MinY (là Z)
+                // Output Grid Search cần X và Y
+                // X range: position (Fixed)
+                // Y range: env2D.MinX -> env2D.MaxX
+                return new Envelope(position, position, env2D.MinX, env2D.MaxX);
+            }
+            return env2D;
+        }
+
+        // --- Helper xác định chuỗi hướng từ Vector ---
+        private string GetVectorDirectionString(double x, double y, double z)
+        {
+            double ax = Math.Abs(x), ay = Math.Abs(y), az = Math.Abs(z);
+            double max = Math.Max(ax, Math.Max(ay, az));
+
+            if (max < 1e-6) return "Zero";
+
+            if (max == ax) return x > 0 ? "+X" : "-X";
+            if (max == ay) return y > 0 ? "+Y" : "-Y";
+            if (max == az) return z > 0 ? "+Z" : "-Z"; // -Z thường là Gravity Down
+
+            return "Mix";
+        }
+
+        // Helper: Chuyển đổi Envelope từ hệ chiếu cục bộ về hệ mặt bằng (Plan) để tìm tên trục
+        private Envelope ConvertEnvelopeToPlan(Envelope projEnv, PlaneSignature plane)
+        {
+            // projEnv: 
+            // - Nếu là XY (Sàn): X=X, Y=Y
+            // - Nếu là XZ (Vách X): X=X, Y=Z
+            // - Nếu là YZ (Vách Y): X=Y, Y=Z
+
+            double minX, maxX, minY, maxY;
+
+            if (plane.AxisNormal == 2) // XY
+            {
+                return projEnv;
+            }
+            else if (plane.AxisNormal == 1) // XZ plane (Y constant)
+            {
+                // Trục hoành là X, Trục tung là Z
+                minX = projEnv.MinX;
+                maxX = projEnv.MaxX;
+                // Y cố định theo Position
+                minY = plane.Position;
+                maxY = plane.Position;
+            }
+            else if (plane.AxisNormal == 0) // YZ plane (X constant)
+            {
+                // Trục hoành là Y, Trục tung là Z
+                // X cố định theo Position
+                minX = plane.Position;
+                maxX = plane.Position;
+                minY = projEnv.MinX; // Vì chiếu YZ thì trục hoành là Y
+                maxY = projEnv.MaxX;
+            }
+            else
+            {
+                return projEnv;
+            }
+
+            // Tạo Envelope nhỏ (điểm hoặc đường thẳng trên mặt bằng)
+            // Thêm epsilon để tránh degenerate envelope nếu cần thiết cho hàm tìm trục
+            return new Envelope(minX, maxX, minY, maxY);
+        }
+
 
         // --- SMART SHAPE ANALYSIS ---
 
