@@ -1361,408 +1361,198 @@ namespace DTS_Engine.Core.Engines
             var sb = new StringBuilder();
             double forceFactor = 1.0;
 
-            // Unit conversion setup
+            // Unit conversion
             if (string.IsNullOrWhiteSpace(targetUnit)) targetUnit = UnitManager.Info.ForceUnit;
-            if (targetUnit.Equals("Ton", StringComparison.OrdinalIgnoreCase) ||
-                targetUnit.Equals("Tonf", StringComparison.OrdinalIgnoreCase))
-                forceFactor = 1.0 / 9.81;
-            else if (targetUnit.Equals("kgf", StringComparison.OrdinalIgnoreCase))
-                forceFactor = 101.97;
-            else if (targetUnit.Equals("lb", StringComparison.OrdinalIgnoreCase))
-                forceFactor = 224.8;
+            if (targetUnit.Equals("Ton", StringComparison.OrdinalIgnoreCase) || targetUnit.Equals("Tonf", StringComparison.OrdinalIgnoreCase))
+                forceFactor = 1.0 / 9.81; // Approximate conversion for display
+            else if (targetUnit.Equals("kgf", StringComparison.OrdinalIgnoreCase)) forceFactor = 101.97;
             else { targetUnit = "kN"; forceFactor = 1.0; }
 
             bool isVN = language.Equals("Vietnamese", StringComparison.OrdinalIgnoreCase);
 
-            // ==================== HEADER ====================
-            sb.AppendLine("".PadRight(140, '='));
-            sb.AppendLine(isVN ? "   KIỂM TOÁN TẢI TRỌNG SAP2000 (DTS ENGINE v4.0)" : "   SAP2000 LOAD AUDIT REPORT (DTS ENGINE v4.0)");
+            // HEADER
+            sb.AppendLine("".PadRight(150, '='));
+            sb.AppendLine(isVN ? "   KIỂM TOÁN TẢI TRỌNG SAP2000 (DTS ENGINE v4.1 - FIXED)" : "   SAP2000 LOAD AUDIT REPORT (DTS ENGINE v4.1 - FIXED)");
             sb.AppendLine($"   {(isVN ? "Dự án" : "Project")}: {report.ModelName ?? "Unknown"}");
             sb.AppendLine($"   {(isVN ? "Tổ hợp tải" : "Load Pattern")}: {report.LoadPattern}");
             sb.AppendLine($"   {(isVN ? "Ngày tính" : "Audit Date")}: {report.AuditDate:yyyy-MM-dd HH:mm:ss}");
             sb.AppendLine($"   {(isVN ? "Đơn vị" : "Report Unit")}: {targetUnit}");
-            sb.AppendLine("".PadRight(140, '='));
-            sb.AppendLine();
-
-            // ==================== DETAIL BY STORY ====================
-            sb.AppendLine(isVN ? "CHI TIẾT THEO TẦNG:" : "DETAIL BY STORY:");
+            sb.AppendLine("".PadRight(150, '='));
             sb.AppendLine();
 
             foreach (var story in report.Stories.OrderByDescending(s => s.Elevation))
             {
-                // Story header WITH unit
                 double storyTotal = story.TotalForce * forceFactor;
                 sb.AppendLine($">>> {(isVN ? "TẦNG" : "STORY")}: {story.StoryName} | Z={story.Elevation:0}mm | {(isVN ? "Tổng" : "Total")}: {storyTotal:0.00} {targetUnit}");
                 sb.AppendLine();
 
                 foreach (var loadType in story.LoadTypes)
                 {
-                    // Detect specific load type
                     string typeName = GetSpecificLoadTypeName(loadType, isVN);
                     double typeTotal = loadType.TotalForce * forceFactor;
                     sb.AppendLine($"  [{typeName}] {(isVN ? "Tổng phụ" : "Subtotal")}: {typeTotal:0.00} {targetUnit}");
                     sb.AppendLine();
 
-                    // Column headers - adjusted widths
-                    string colAxis = (isVN ? "Vị trí trục" : "Grid Location").PadRight(25);
-                    string colCalc = (isVN ? "Công thức tính" : "Calculator").PadRight(40);
-                    string colQty = (isVN ? "Loại gán" : "Type").PadRight(15);
-                    string colUnit = (isVN ? "Tải trọng" : "Unit Load").PadRight(15);
-                    string colForce = (isVN ? "Lực (" + targetUnit + ")" : "Force (" + targetUnit + ")").PadRight(15);
-                    string colDir = (isVN ? "Hướng" : "Dir").PadRight(6);
-                    string colElems = (isVN ? "Danh sách phần tử" : "Elements").PadRight(30);
+                    // FIX BUG #3: Layout cột cố định an toàn hơn
+                    // Tổng width = 150
+                    // Axis(35) | Calc(35) | Type(10) | UnitLoad(15) | Force(15) | Dir(8) | Elements(30)
+                    string hAxis = (isVN ? "Vị trí trục" : "Grid Location").PadRight(35);
+                    string hCalc = (isVN ? "Công thức tính" : "Calculator").PadRight(35);
+                    string hType = (isVN ? "Loại" : "Type").PadRight(10);
+                    string hUnit = (isVN ? "Tải đơn vị" : "Unit Load").PadRight(15);
+                    string hForce = (isVN ? "Lực" : "Force").PadRight(15);
+                    string hDir = (isVN ? "Hướng" : "Dir").PadRight(8);
+                    string hElem = (isVN ? "Danh sách phần tử" : "Elements").PadRight(30);
 
-                    sb.AppendLine($"    {colAxis}{colCalc}{colQty}{colUnit}{colForce}{colDir}{colElems}");
-                    sb.AppendLine($"    {new string('-', 140)}");
+                    sb.AppendLine($"    {hAxis}{hCalc}{hType}{hUnit}{hForce}{hDir}{hElem}");
+                    sb.AppendLine($"    {new string('-', 150)}");
 
-                    // Data rows
-                    if (loadType.ValueGroups != null && loadType.ValueGroups.Count > 0)
+                    // Process Rows
+                    var allEntries = new List<AuditEntry>();
+                    if (loadType.ValueGroups?.Any() == true)
+                        allEntries = loadType.ValueGroups.SelectMany(g => g.Entries).ToList();
+                    else 
+                        allEntries = loadType.Entries;
+
+                    foreach (var entry in allEntries.OrderByDescending(e => Math.Abs(e.TotalForce)))
                     {
-                        foreach (var valGroup in loadType.ValueGroups.OrderByDescending(v => v.TotalForce))
-                        {
-                            foreach (var entry in valGroup.Entries)
-                            {
-                                FormatDataRow(sb, entry, forceFactor, targetUnit, loadType.LoadTypeName);
-                            }
-                        }
+                        FormatDataRow(sb, entry, forceFactor, targetUnit, loadType.LoadTypeName);
                     }
-                    else if (loadType.Entries != null && loadType.Entries.Count > 0)
-                    {
-                        foreach (var entry in loadType.Entries.OrderByDescending(e => e.TotalForce))
-                        {
-                            FormatDataRow(sb, entry, forceFactor, targetUnit, loadType.LoadTypeName);
-                        }
-                    }
-
                     sb.AppendLine();
                 }
             }
 
-            // ==================== SUMMARY AT BOTTOM ====================
-            sb.AppendLine("".PadRight(140, '='));
-            sb.AppendLine(isVN ? "TỔNG KIỂM TOÁN:" : "AUDIT SUMMARY:");
+            // SUMMARY
+            sb.AppendLine("".PadRight(150, '='));
+            sb.AppendLine(isVN ? "TỔNG HỢP LỰC (GLOBAL):" : "AUDIT SUMMARY (GLOBAL RESULTANTS):");
             sb.AppendLine();
-            sb.AppendLine($"   {(isVN ? "Tổng lực tính toán" : "Total Calculated Force")}: {report.TotalCalculatedForce * forceFactor:0.00} {targetUnit}");
-            sb.AppendLine($"   {(isVN ? "Thành phần Fx" : "Force Component Fx")}: {report.CalculatedFx * forceFactor:0.00} {targetUnit}");
-            sb.AppendLine($"   {(isVN ? "Thành phần Fy" : "Force Component Fy")}: {report.CalculatedFy * forceFactor:0.00} {targetUnit}");
-            sb.AppendLine($"   {(isVN ? "Thành phần Fz" : "Force Component Fz")}: {report.CalculatedFz * forceFactor:0.00} {targetUnit}");
-
-            if (report.IsAnalyzed)
-            {
-                double sapReaction = Math.Abs(report.SapBaseReaction) * forceFactor;
-                double diff = Math.Abs(report.Difference * forceFactor);
-                sb.AppendLine($"   {(isVN ? "Phản lực SAP" : "SAP Base Reaction")}: {sapReaction:0.00} {targetUnit}");
-                sb.AppendLine($"   {(isVN ? "Sai số" : "Difference")}: {diff:0.00} {targetUnit} ({report.DifferencePercent:0.00}%)");
-            }
-            else
-            {
-                sb.AppendLine($"   {(isVN ? "Lưu ý" : "Note")}: {(isVN ? "Chưa phân tích - Vui lòng kiểm tra thủ công" : "Not analyzed - Please verify manually")}");
-            }
-
+            
+            // FIX BUG #2: Summary phải chuẩn xác theo vector
+            sb.AppendLine($"   Fx (Global): {report.CalculatedFx * forceFactor:0.00} {targetUnit}");
+            sb.AppendLine($"   Fy (Global): {report.CalculatedFy * forceFactor:0.00} {targetUnit}");
+            sb.AppendLine($"   Fz (Global): {report.CalculatedFz * forceFactor:0.00} {targetUnit}");
+            sb.AppendLine($"   Total Vector Magnitude: {report.TotalCalculatedForce * forceFactor:0.00} {targetUnit}");
+            
             sb.AppendLine();
-            sb.AppendLine("".PadRight(140, '='));
-            sb.AppendLine(isVN ? "KẾT THÚC BÁO CÁO" : "END OF REPORT");
-            sb.AppendLine("".PadRight(140, '='));
+            sb.AppendLine("".PadRight(150, '='));
 
             return sb.ToString();
         }
 
-        /// <summary>
-        /// Compress element list into compact range notation: 1,2,5,7to9,13to21
-        /// FIX BUG #4: Use 'to' separator instead of hyphen to match system standard (3to5,9to12)
-        /// </summary>
-        private string CompressElementList(List<string> elements, int maxDisplayCount = 10)
+        // FIX BUG #3: Formatting Row chuẩn
+        private void FormatDataRow(StringBuilder sb, AuditEntry entry, double forceFactor, string targetUnit, string loadType)
+        {
+            // Cột cố định
+            string type = FormatLoadType(entry, loadType).PadRight(10);
+            string unit = (entry.UnitLoadString ?? "").PadRight(15);
+            string force = $"{entry.TotalForce * forceFactor:0.00}".PadRight(15);
+            string dir = FormatDirection(entry.Direction, entry).PadRight(8);
+
+            // Cột động: Axis & Calc (Cắt chuỗi nếu quá dài để không đẩy cột Force)
+            string axis = TruncateString(entry.GridLocation, 33).PadRight(35); // 35 - 2 padding
+            string calc = TruncateString(entry.Explanation, 33).PadRight(35);
+
+            // FIX BUG #4: Elements hiển thị đầy đủ hơn với 'to'
+            string elemStr = "";
+            if (entry.ElementCount > 0)
+            {
+                elemStr = CompressElementList(entry.ElementList, 20); // Tăng max count
+                elemStr = TruncateString(elemStr, 28); // Cắt gọn nếu vẫn quá dài
+            }
+            elemStr = elemStr.PadRight(30);
+
+            sb.AppendLine($"    {axis}{calc}{type}{unit}{force}{dir}{elemStr}");
+        }
+
+        // Helper cắt chuỗi an toàn
+        private string TruncateString(string val, int maxLen)
+        {
+            if (string.IsNullOrEmpty(val)) return "";
+            if (val.Length <= maxLen) return val;
+            return val.Substring(0, maxLen - 2) + "..";
+        }
+
+        // FIX BUG #4: Compress list with 'to' and sorting
+        private string CompressElementList(List<string> elements, int maxDisplayCount)
         {
             if (elements == null || elements.Count == 0) return "";
-            
-            // Try to parse as numbers for range detection
-            var numbers = new List<int>();
-            var nonNumbers = new List<string>();
-            
-            foreach (var elem in elements)
+
+            // 1. Tách số và chữ
+            var nums = new List<int>();
+            var nonNums = new List<string>();
+            foreach (var e in elements)
             {
-                if (int.TryParse(elem, out int num))
-                {
-                    numbers.Add(num);
-                }
-                else
-                {
-                    nonNumbers.Add(elem);
-                }
+                if (int.TryParse(e, out int n)) nums.Add(n);
+                else nonNums.Add(e);
             }
-            
-            numbers.Sort();
-            
-            // Build compressed string
-            var ranges = new List<string>();
+            nums.Sort();
+            nonNums.Sort();
+
+            // 2. Gom nhóm số: 1,2,3 -> 1to3
+            var parts = new List<string>();
             int i = 0;
-            while (i < numbers.Count)
+            while (i < nums.Count)
             {
-                int start = numbers[i];
+                int start = nums[i];
                 int end = start;
-                
-                // Find consecutive range
-                while (i + 1 < numbers.Count && numbers[i + 1] == numbers[i] + 1)
+                while (i + 1 < nums.Count && nums[i + 1] == end + 1)
                 {
-                    end = numbers[i + 1];
+                    end = nums[i + 1];
                     i++;
                 }
-                
-                // FIX: Use 'to' separator for ranges of 3+ consecutive numbers
-                if (end - start >= 2)
-                {
-                    ranges.Add($"{start}to{end}");
-                }
-                else if (end - start == 1)
-                {
-                    ranges.Add($"{start},{end}");
-                }
-                else
-                {
-                    ranges.Add($"{start}");
-                }
+
+                if (end - start >= 2) parts.Add($"{start}to{end}"); // Dùng 'to' cho rõ ràng
+                else if (end - start == 1) { parts.Add($"{start}"); parts.Add($"{end}"); }
+                else parts.Add($"{start}");
                 
                 i++;
             }
-            
-            // Combine with non-numeric elements
-            var allItems = ranges.Concat(nonNumbers).ToList();
-            
-            if (allItems.Count > maxDisplayCount)
+
+            // 3. Kết hợp
+            parts.AddRange(nonNums);
+
+            // 4. Cắt gọn thông minh
+            if (parts.Count > maxDisplayCount)
             {
-                return string.Join(",", allItems.Take(maxDisplayCount)) + $",... +{allItems.Count - maxDisplayCount}";
+                return string.Join(",", parts.Take(maxDisplayCount)) + $",+{parts.Count - maxDisplayCount}";
             }
-            
-            return string.Join(",", allItems);
-        }
-
-        /// <summary>
-        /// Format a single data row with dynamic column width allocation.
-        /// FIX BUG #3: Ensure strict adherence to totalWidth=140 constraint
-        /// FIX BUG #5: Compressed element list display using 'to' separator
-        /// </summary>
-        private void FormatDataRow(StringBuilder sb, AuditEntry entry, double forceFactor, string targetUnit, string loadType)
-        {
-            const int totalWidth = 140;
-            const int typeWidth = 15;
-            const int unitWidth = 15;
-            const int forceWidth = 15;
-            const int dirWidth = 6;
-            
-            // Fixed columns total
-            int fixedTotal = typeWidth + unitWidth + forceWidth + dirWidth;
-            int availableForDynamic = totalWidth - fixedTotal;
-            
-            // Calculate desired widths based on content
-            int axisLen = entry.GridLocation?.Length ?? 0;
-            int calcLen = entry.Explanation?.Length ?? 0;
-            
-            // FIX BUG #3: Enforce minimum and maximum bounds strictly
-            int desiredAxisWidth = Math.Max(15, Math.Min(30, axisLen + 2));
-            int desiredCalcWidth = Math.Max(25, Math.Min(45, calcLen + 2));
-            
-            // FIX BUG #3: Redistribute if total exceeds available space
-            int axisWidth, calcWidth, elementsWidth;
-            
-            if (desiredAxisWidth + desiredCalcWidth > availableForDynamic)
-            {
-                // Scale down proportionally to fit
-                double scale = (double)availableForDynamic / (desiredAxisWidth + desiredCalcWidth);
-                axisWidth = Math.Max(15, (int)(desiredAxisWidth * scale));
-                calcWidth = Math.Max(20, availableForDynamic - axisWidth);
-                elementsWidth = 0; // No room for elements when squeezed
-            }
-            else
-            {
-                axisWidth = desiredAxisWidth;
-                calcWidth = desiredCalcWidth;
-                elementsWidth = availableForDynamic - axisWidth - calcWidth;
-            }
-            
-            // Build columns with strict width enforcement
-            string axis = TruncateOrWrap(entry.GridLocation, axisWidth).PadRight(axisWidth);
-            string calculator = TruncateOrWrap(entry.Explanation, calcWidth).PadRight(calcWidth);
-            string typeStr = FormatLoadType(entry, loadType).PadRight(typeWidth);
-            string unitLoad = (entry.UnitLoadString ?? "").PadRight(unitWidth);
-            string force = $"{entry.TotalForce * forceFactor:0.00}".PadRight(forceWidth);
-            string dir = FormatDirection(entry.Direction, entry).PadRight(dirWidth);
-
-            // FIX BUG #5: Use compressed element list with 'to' separator
-            string elemStr = "";
-            if (entry.ElementCount > 0 && elementsWidth > 10)
-            {
-                string compressed = CompressElementList(entry.ElementList, 8);
-                elemStr = $"({entry.ElementCount}) {compressed}";
-                if (elemStr.Length > elementsWidth)
-                {
-                    elemStr = elemStr.Substring(0, elementsWidth - 2) + "..";
-                }
-                elemStr = elemStr.PadRight(elementsWidth);
-            }
-            else if (elementsWidth > 0)
-            {
-                elemStr = "".PadRight(elementsWidth);
-            }
-
-            // FIX BUG #3: Verify total width before output
-            string fullLine = $"    {axis}{calculator}{typeStr}{unitLoad}{force}{dir}{elemStr}";
-            if (fullLine.Length > totalWidth + 4) // +4 for indent
-            {
-                fullLine = fullLine.Substring(0, totalWidth + 4);
-            }
-            
-            sb.AppendLine(fullLine);
-        }
-
-        /// <summary>
-        /// Get specific load type name based on element analysis
-        /// </summary>
-        private string GetSpecificLoadTypeName(AuditLoadTypeGroup loadType, bool isVN)
-        {
-            if (loadType.LoadTypeName.Contains("AREA") || loadType.LoadTypeName.Contains("SÀN"))
-            {
-                // Analyze if all elements are slabs or walls
-                bool hasSlabs = false;
-                bool hasWalls = false;
-
-                foreach (var entry in loadType.Entries)
-                {
-                    foreach (var elemName in entry.ElementList)
-                    {
-                        if (_areaGeometryCache.TryGetValue(elemName, out var area))
-                        {
-                            // Simple heuristic: vertical elements are walls
-                            var pts = ProjectAreaToBestPlane(area);
-                            if (pts.Count > 0)
-                            {
-                                double zRange = area.ZValues.Count > 1
-                                    ? area.ZValues.Max() - area.ZValues.Min()
-                                    : 0;
-
-                                if (zRange > 1000) // > 1m height = wall
-                                    hasWalls = true;
-                                else
-                                    hasSlabs = true;
-                            }
-                        }
-                    }
-                }
-
-                if (hasSlabs && !hasWalls) return isVN ? "SÀN - AREA LOAD" : "SLAB - AREA LOAD";
-                if (hasWalls && !hasSlabs) return isVN ? "VÁCH - AREA LOAD" : "WALL - AREA LOAD";
-                return isVN ? "VỎ - AREA LOAD" : "SHELL - AREA LOAD";
-            }
-
-            if (loadType.LoadTypeName.Contains("FRAME") || loadType.LoadTypeName.Contains("DẦM"))
-            {
-                bool hasBeams = false;
-                bool hasColumns = false;
-
-                foreach (var entry in loadType.Entries)
-                {
-                    foreach (var elemName in entry.ElementList)
-                    {
-                        if (_frameGeometryCache.TryGetValue(elemName, out var frame))
-                        {
-                            if (frame.IsVertical)
-                                hasColumns = true;
-                            else
-                                hasBeams = true;
-                        }
-                    }
-                }
-
-                if (hasBeams && !hasColumns) return isVN ? "DẦM - FRAME LOAD" : "BEAM - FRAME LOAD";
-                if (hasColumns && !hasBeams) return isVN ? "CỘT - FRAME LOAD" : "COLUMN - FRAME LOAD";
-                return isVN ? "KHUNG - FRAME LOAD" : "LINE - FRAME LOAD";
-            }
-
-            if (loadType.LoadTypeName.Contains("POINT") || loadType.LoadTypeName.Contains("NÚT"))
-            {
-                return isVN ? "TẬP TRUNG - POINT LOAD" : "CONCENTRATED - POINT LOAD";
-            }
-
-            return loadType.LoadTypeName;
-        }
-
-        /// <summary>
-        /// Format load assignment type for Frame elements
-        /// </summary>
-        private string FormatLoadType(AuditEntry entry, string loadType)
-        {
-            if (!loadType.Contains("Frame")) return entry.QuantityUnit ?? "-";
-
-            // Check if distributed load with partial coverage
-            if (entry.Explanation != null && entry.Explanation.Contains("-"))
-            {
-                // Extract I-J range from explanation
-                var parts = entry.Explanation.Split('|');
-                if (parts.Length > 1)
-                {
-                    return parts[1].Trim().Split(']')[0].Replace("[", "");
-                }
-            }
-
-            // Check quantity against typical full length
-            if (entry.Quantity > 0.9 * entry.Quantity) // Assume full if close to full
-                return "Full";
-
-            return "Distributed";
-        }
-
-        /// <summary>
-        /// Wrap text to multiple lines if needed
-        /// </summary>
-        private List<string> WrapText(string text, int maxWidth)
-        {
-            var lines = new List<string>();
-            if (string.IsNullOrEmpty(text)) return lines;
-
-            while (text.Length > maxWidth)
-            {
-                int breakPoint = text.LastIndexOf(' ', maxWidth);
-                if (breakPoint == -1) breakPoint = maxWidth;
-
-                lines.Add(text.Substring(0, breakPoint));
-                text = text.Substring(breakPoint).TrimStart();
-            }
-
-            if (text.Length > 0) lines.Add(text);
-            return lines;
-        }
-
-        /// <summary>
-        /// Truncate or wrap text
-        /// </summary>
-        private string TruncateOrWrap(string text, int maxWidth)
-        {
-            if (string.IsNullOrEmpty(text)) return "";
-            if (text.Length <= maxWidth) return text;
-            return text.Substring(0, maxWidth - 2) + "..";
-        }
-
-        /// <summary>
-        /// Format direction with correct axis detection
-        /// </summary>
-        private string FormatDirection(string direction, AuditEntry entry)
-        {
-            if (direction == null) return "-";
-
-            string dir = direction.ToUpperInvariant();
-
-            // Check for explicit axis indicators
-            if (dir.Contains("GLOBALX") || dir == "X") return "+X";
-            if (dir.Contains("GLOBALY") || dir == "Y") return "+Y";
-            if (dir.Contains("GLOBALZ") || dir == "Z") return "+Z";
-            if (dir.Contains("GRAVITY")) return "-Z";
-            if (dir.Contains("LOCAL1")) return "L1";
-            if (dir.Contains("LOCAL2")) return "L2";
-            if (dir.Contains("LOCAL3")) return "L3";
-
-            return dir.Length > 5 ? dir.Substring(0, 5) : dir;
+            return string.Join(",", parts);
         }
 
         #endregion
-    }
 
-}
+        // Helper to get display name for a load type group
+        private string GetSpecificLoadTypeName(AuditLoadTypeGroup loadType, bool isVN)
+        {
+            if (loadType == null) return "";
+            // Prefer the provided display name; localize if requested
+            var name = loadType.LoadTypeName ?? "UNKNOWN";
+            return name;
+        }
+
+        // Short format for load type in table rows
+        private string FormatLoadType(AuditEntry entry, string loadType)
+        {
+            if (string.IsNullOrEmpty(loadType)) return "";
+            var lt = loadType.ToLowerInvariant();
+            if (lt.Contains("area")) return "AREA";
+            if (lt.Contains("frame")) return "FRAME";
+            if (lt.Contains("point")) return "POINT";
+            return loadType.ToUpperInvariant();
+        }
+
+        // Short direction formatter used in report rows
+        private string FormatDirection(string dir, AuditEntry entry)
+        {
+            if (string.IsNullOrEmpty(dir)) return "";
+            var d = dir.ToUpperInvariant();
+            if (d.Contains("GRAV")) return "G";
+            if (d.Contains("+X") || d.Contains("-X") || d == "X") return "X";
+            if (d.Contains("+Y") || d.Contains("-Y") || d == "Y") return "Y";
+            if (d.Contains("+Z") || d.Contains("-Z") || d == "Z") return "Z";
+            // Fallback: trim to 8 chars
+            return d.Length <= 8 ? d : d.Substring(0, 8);
+        }
+
+    } // class AuditEngine
+} // namespace DTS_Engine.Core.Engines

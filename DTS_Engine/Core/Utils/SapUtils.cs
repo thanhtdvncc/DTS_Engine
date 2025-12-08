@@ -1001,9 +1001,9 @@ namespace DTS_Engine.Core.Utils
 
 				return new ElementVectors
 				{
-					L1 = new Vector3D(matrix[0], matrix[3], matrix[6]),
-					L2 = new Vector3D(matrix[1], matrix[4], matrix[7]),
-					L3 = new Vector3D(matrix[2], matrix[5], matrix[8])
+					L1 = new Vector3D(matrix[0], matrix[1], matrix[2]),
+					L2 = new Vector3D(matrix[3], matrix[4], matrix[5]),
+					L3 = new Vector3D(matrix[6], matrix[7], matrix[8])
 				};
 			}
 			catch (Exception ex)

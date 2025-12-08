@@ -221,13 +221,21 @@ namespace DTS_Engine.Core.Utils
 
 			var dirUpper = directionText?.Trim().ToUpperInvariant();
 			if (string.IsNullOrEmpty(dirUpper)) return fallback;
+			
+			// Check specific keywords first
 			if (dirUpper.Contains("GRAV")) return 10;
-			if (dirUpper.Contains("LOCAL 1") || dirUpper.Contains("LOCAL-1") || dirUpper == "1") return 1;
-			if (dirUpper.Contains("LOCAL 2") || dirUpper.Contains("LOCAL-2") || dirUpper == "2") return 2;
-			if (dirUpper.Contains("LOCAL 3") || dirUpper.Contains("LOCAL-3") || dirUpper == "3") return 3;
-			if (dirUpper.Contains("X")) return 4;
-			if (dirUpper.Contains("Y")) return 5;
-			if (dirUpper.Contains("Z")) return 6;
+			if (dirUpper.Contains("LOCAL"))
+			{
+				if (dirUpper.Contains("1")) return 1;
+				if (dirUpper.Contains("2")) return 2;
+				if (dirUpper.Contains("3")) return 3;
+			}
+			
+			// Global check needs to be strict to avoid matching "Local X" if that exists
+			if (dirUpper == "X" || dirUpper.Contains("GLOBAL X") || dirUpper.Contains("GLOBALX")) return 4;
+			if (dirUpper == "Y" || dirUpper.Contains("GLOBAL Y") || dirUpper.Contains("GLOBALY")) return 5;
+			if (dirUpper == "Z" || dirUpper.Contains("GLOBAL Z") || dirUpper.Contains("GLOBALZ")) return 6;
+
 			return fallback;
 		}
 
@@ -289,18 +297,40 @@ namespace DTS_Engine.Core.Utils
 			// CRITICAL: Use rawValue directly, preserve sign
 			double signedVal = rawValue;
 
-			// FIX BUG #2: For Local coordinates, use transformation matrix from SAP API or ModelInventory
-			if ((directionCode >= 1 && directionCode <= 3) && _inventory != null)
+			// CASE 1: GLOBAL / GRAVITY Direction (Direct mapping)
+			// 4=X, 5=Y, 6=Z, 10=Gravity(-Z), 11=GravityProj(-Z)
+			if (directionCode >= 4)
 			{
-				// Try to get accurate transformation from inventory
-				var localAxisVec = _inventory.GetLocalAxis(elementName, directionCode);
-				if (localAxisVec.HasValue && !localAxisVec.Value.IsZero)
+				switch (directionCode)
 				{
-					// Scale by load magnitude (with sign)
-					return localAxisVec.Value * signedVal;
+					case 4: return new Vector3D(signedVal, 0, 0); // Global X
+					case 5: return new Vector3D(0, signedVal, 0); // Global Y
+					case 6: return new Vector3D(0, 0, signedVal); // Global Z
+					case 7: return new Vector3D(signedVal, 0, 0); // X Projected
+					case 8: return new Vector3D(0, signedVal, 0); // Y Projected
+					case 9: return new Vector3D(0, 0, signedVal); // Z Projected
+					case 10:
+					case 11:
+						return new Vector3D(0, 0, -signedVal); // Gravity acts DOWN (-Z) for positive value
+					default: return new Vector3D(0, 0, -signedVal); // Default to Gravity
 				}
-				
-				// Fallback: Try SAP API GetTransformationMatrix
+			}
+
+			// CASE 2: LOCAL AXES (1, 2, 3) -> Require Transformation Matrix
+			if (directionCode >= 1 && directionCode <= 3)
+			{
+				// Try to get vectors from Inventory first (fastest)
+				if (_inventory != null)
+				{
+					var localAxisVec = _inventory.GetLocalAxis(elementName, directionCode);
+					if (localAxisVec.HasValue && !localAxisVec.Value.IsZero)
+					{
+						return localAxisVec.Value * signedVal;
+					}
+				}
+
+				// Fallback: Direct API Call (slower but robust)
+				// FIX: This now uses the CORRECTED matrix logic in SapUtils
 				var vectors = SapUtils.GetElementVectors(elementName);
 				if (vectors.HasValue)
 				{
@@ -310,10 +340,9 @@ namespace DTS_Engine.Core.Utils
 						case 1: localAxis = vectors.Value.L1; break;
 						case 2: localAxis = vectors.Value.L2; break;
 						case 3: localAxis = vectors.Value.L3; break;
-						default: localAxis = Vector3D.UnitZ; break;
+						default: localAxis = new Vector3D(0,0,1); break;
 					}
 					
-					// Verify axis is valid
 					if (!localAxis.IsZero)
 					{
 						return localAxis * signedVal;
@@ -321,29 +350,10 @@ namespace DTS_Engine.Core.Utils
 				}
 			}
 
-			// Global direction codes (4,5,6) - straightforward mapping
-			switch (directionCode)
-			{
-				case 10:
-				case 11:
-					return new Vector3D(0, 0, -Math.Abs(signedVal)); // Gravity always negative Z
-				case 4:
-					return new Vector3D(signedVal, 0, 0);
-				case 5:
-					return new Vector3D(0, signedVal, 0);
-				case 6:
-					return new Vector3D(0, 0, signedVal);
-				case 1:
-				case 2:
-				case 3:
-					// Fallback: approximate local axis with global cardinal directions if inventory unavailable
-					if (directionCode == 1) return new Vector3D(signedVal, 0, 0);
-					if (directionCode == 2) return new Vector3D(0, signedVal, 0);
-					return new Vector3D(0, 0, signedVal);
-				default:
-					System.Diagnostics.Debug.WriteLine($"[SapDatabaseReader] Unknown direction code '{directionCode}' for {elementName}. Defaulting to Gravity.");
-					return new Vector3D(0, 0, -Math.Abs(signedVal));
-			}
+			// Fallback for failed Local resolution (Should rarely happen with fixed SapUtils)
+			// Log warning internally
+			System.Diagnostics.Debug.WriteLine($"[SapDatabaseReader] Vector calc failed for {elementName} Dir={directionCode}.");
+			return new Vector3D(0, 0, 0);
 		}
 
 		/// <summary>
