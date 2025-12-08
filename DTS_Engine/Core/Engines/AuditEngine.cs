@@ -582,21 +582,24 @@ namespace DTS_Engine.Core.Engines
                 var shapeResult = AnalyzeShapeStrategy(geom);
                 string formula = shapeResult.IsExact ? shapeResult.Formula : $"~{areaM2:0.00}";
 
-                // FIX v4.2: Calculate directional sign from load vector
+                // FIX v4.2.1: Calculate force with correct sign convention
+                // CONVENTION: Positive value means load direction, negative means opposite
+                // Example: loadVal=-2.26 kN/m² for -Y direction → Force should be negative
                 double dirSign = 1.0;
                 if (validLoads.Count > 0)
                 {
                     var sampleLoad = validLoads[0];
-                    // Determine sign based on primary direction
-                    if (sampleLoad.DirectionX != 0) dirSign = Math.Sign(sampleLoad.DirectionX);
-                    else if (sampleLoad.DirectionY != 0) dirSign = Math.Sign(sampleLoad.DirectionY);
-                    else if (sampleLoad.DirectionZ != 0) dirSign = Math.Sign(sampleLoad.DirectionZ);
+                    // Determine sign based on primary direction component
+                    if (Math.Abs(sampleLoad.DirectionX) > 1e-6) dirSign = Math.Sign(sampleLoad.DirectionX);
+                    else if (Math.Abs(sampleLoad.DirectionY) > 1e-6) dirSign = Math.Sign(sampleLoad.DirectionY);
+                    else if (Math.Abs(sampleLoad.DirectionZ) > 1e-6) dirSign = Math.Sign(sampleLoad.DirectionZ);
                 }
 
-                // FIX v4.2: Calculate signed force = Quantity * UnitLoad * DirectionSign
-                double signedForce = areaM2 * loadVal * dirSign;
+                // Calculate SIGNED force: loadVal inherits sign from SAP
+                // No need to multiply by dirSign if loadVal already has correct sign from SAP
+                double signedForce = areaM2 * loadVal;
 
-                // FIX v4.2: Calculate vector components
+                // FIX v4.2.1: Calculate vector components
                 double fx = 0, fy = 0, fz = 0;
                 if (validLoads.Count > 0)
                 {
@@ -604,14 +607,15 @@ namespace DTS_Engine.Core.Engines
                     var forceVec = sampleLoad.GetForceVector();
                     if (forceVec.Length > 1e-6)
                     {
-                        forceVec = forceVec.Normalized * Math.Abs(signedForce);
+                        // Scale vector to match magnitude
+                        forceVec = forceVec.Normalized * signedForce;
                         fx = forceVec.X;
                         fy = forceVec.Y;
                         fz = forceVec.Z;
                     }
                     else
                     {
-                        // Fallback: assume gravity
+                        // Fallback: assume gravity (negative Z for down)
                         fz = signedForce;
                     }
                 }
@@ -624,9 +628,9 @@ namespace DTS_Engine.Core.Engines
                     QuantityUnit = "m²",
                     UnitLoad = loadVal,
                     UnitLoadString = $"{loadVal:0.00}",
-                    TotalForce = Math.Abs(signedForce),
+                    TotalForce = signedForce, // FIX: Store signed value directly
                     Direction = dir,
-                    DirectionSign = dirSign,
+                    DirectionSign = Math.Sign(signedForce), // Sign extracted for display logic
                     ForceX = fx,
                     ForceY = fy,
                     ForceZ = fz,
@@ -1001,22 +1005,16 @@ namespace DTS_Engine.Core.Engines
                 string gridName = grp.Key;
                 double totalLength = grp.Sum(f => f.Length);
 
-                // FIX v4.2: Calculate directional sign
-                double dirSign = 1.0;
-                var sampleLoad = grp.First().Load;
-                if (sampleLoad.DirectionX != 0) dirSign = Math.Sign(sampleLoad.DirectionX);
-                else if (sampleLoad.DirectionY != 0) dirSign = Math.Sign(sampleLoad.DirectionY);
-                else if (sampleLoad.DirectionZ != 0) dirSign = Math.Sign(sampleLoad.DirectionZ);
+                // FIX v4.2.1: loadVal already has sign from SAP, calculate signed force directly
+                double signedForce = totalLength * loadVal;
 
-                // FIX v4.2: Signed force
-                double signedForce = totalLength * loadVal * dirSign;
-
-                // FIX v4.2: Vector components
+                // FIX v4.2.1: Vector components
                 double fx = 0, fy = 0, fz = 0;
+                var sampleLoad = grp.First().Load;
                 var forceVec = sampleLoad.GetForceVector();
                 if (forceVec.Length > 1e-6)
                 {
-                    forceVec = forceVec.Normalized * Math.Abs(signedForce);
+                    forceVec = forceVec.Normalized * signedForce;
                     fx = forceVec.X;
                     fy = forceVec.Y;
                     fz = forceVec.Z;
@@ -1047,9 +1045,9 @@ namespace DTS_Engine.Core.Engines
                     QuantityUnit = "m",
                     UnitLoad = loadVal,
                     UnitLoadString = $"{loadVal:0.00}",
-                    TotalForce = Math.Abs(signedForce),
+                    TotalForce = signedForce, // FIX: Store signed value directly
                     Direction = dir,
-                    DirectionSign = dirSign,
+                    DirectionSign = Math.Sign(signedForce), // Sign for display reference
                     ForceX = fx,
                     ForceY = fy,
                     ForceZ = fz,
@@ -1207,26 +1205,17 @@ namespace DTS_Engine.Core.Engines
                 var groupLoads = group.Value;
                 int count = groupLoads.Count;
 
-                // FIX v4.2: Calculate directional sign
-                double dirSign = 1.0;
-                if (groupLoads.Count > 0)
-                {
-                    var sampleLoad = groupLoads[0].load;
-                    if (sampleLoad.DirectionX != 0) dirSign = Math.Sign(sampleLoad.DirectionX);
-                    else if (sampleLoad.DirectionY != 0) dirSign = Math.Sign(sampleLoad.DirectionY);
-                    else if (sampleLoad.DirectionZ != 0) dirSign = Math.Sign(sampleLoad.DirectionZ);
-                }
+                // FIX v4.2.1: loadVal already has sign from SAP, calculate signed force directly
+                double signedForce = count * loadVal;
 
-                double signedForce = count * loadVal * dirSign;
-
-                // FIX v4.2: Vector components
+                // FIX v4.2.1: Vector components
                 double fx = 0, fy = 0, fz = 0;
                 if (groupLoads.Count > 0)
                 {
                     var forceVec = groupLoads[0].load.GetForceVector();
                     if (forceVec.Length > 1e-6)
                     {
-                        forceVec = forceVec.Normalized * Math.Abs(signedForce);
+                        forceVec = forceVec.Normalized * signedForce;
                         fx = forceVec.X;
                         fy = forceVec.Y;
                         fz = forceVec.Z;
@@ -1248,9 +1237,9 @@ namespace DTS_Engine.Core.Engines
                     QuantityUnit = "ea",
                     UnitLoad = loadVal,
                     UnitLoadString = $"{loadVal:0.00}",
-                    TotalForce = Math.Abs(signedForce),
+                    TotalForce = signedForce, // FIX: Store signed value directly
                     Direction = dir,
-                    DirectionSign = dirSign,
+                    DirectionSign = Math.Sign(signedForce), // Sign for display reference
                     ForceX = fx,
                     ForceY = fy,
                     ForceZ = fz,
@@ -1511,28 +1500,37 @@ namespace DTS_Engine.Core.Engines
 
             foreach (var story in report.Stories.OrderByDescending(s => s.Elevation))
             {
-                // FIX v4.2: Calculate story total from vector components
-                double storyFx = story.LoadTypes.Sum(lt => lt.SubTotalFx);
-                double storyFy = story.LoadTypes.Sum(lt => lt.SubTotalFy);
-                double storyFz = story.LoadTypes.Sum(lt => lt.SubTotalFz);
-                double storyTotal = Math.Sqrt(storyFx * storyFx + storyFy * storyFy + storyFz * storyFz) * forceFactor;
+                // FIX v4.2.1: Calculate story total from vector components
+                double storyFx = story.LoadTypes.Sum(lt => lt.SubTotalFx) * forceFactor;
+                double storyFy = story.LoadTypes.Sum(lt => lt.SubTotalFy) * forceFactor;
+                double storyFz = story.LoadTypes.Sum(lt => lt.SubTotalFz) * forceFactor;
+                double storyTotal = Math.Sqrt(
+                    (storyFx * storyFx) + 
+                    (storyFy * storyFy) + 
+                    (storyFz * storyFz));
 
-                sb.AppendLine($">>> {(isVN ? "TẦNG" : "STORY")}: {story.StoryName} | Z={story.Elevation:0}mm | {(isVN ? "Tổng" : "Total")}: {storyTotal:0.00} {targetUnit}");
+                // FIX v4.2.1: Show vector breakdown in story header
+                sb.AppendLine($">>> {(isVN ? "TẦNG" : "STORY")}: {story.StoryName} | Z={story.Elevation:0}mm");
+                sb.AppendLine($"   {(isVN ? "Tổng" : "Total")}: {storyTotal:0.00} {targetUnit} [Fx={storyFx:0.00}, Fy={storyFy:0.00}, Fz={storyFz:0.00}]");
                 sb.AppendLine();
 
                 foreach (var loadType in story.LoadTypes)
                 {
                     string typeName = GetSpecificLoadTypeName(loadType, isVN);
                     
-                    // FIX v4.2: Use vector-based subtotal
+                    // FIX v4.2.1: Use vector-based subtotal with component breakdown
+                    double typeFx = loadType.SubTotalFx * forceFactor;
+                    double typeFy = loadType.SubTotalFy * forceFactor;
+                    double typeFz = loadType.SubTotalFz * forceFactor;
                     double typeTotal = Math.Sqrt(
-                        loadType.SubTotalFx * loadType.SubTotalFx + 
-                        loadType.SubTotalFy * loadType.SubTotalFy + 
-                        loadType.SubTotalFz * loadType.SubTotalFz) * forceFactor;
+                        (typeFx * typeFx) + 
+                        (typeFy * typeFy) + 
+                        (typeFz * typeFz));
 
-                    sb.AppendLine($"  [{typeName}] {(isVN ? "Tổng phụ" : "Subtotal")}: {typeTotal:0.00} {targetUnit}");
+                    sb.AppendLine($"  [{typeName}]");
+                    sb.AppendLine($"    {(isVN ? "Tổng phụ" : "Subtotal")}: {typeTotal:0.00} {targetUnit} [Fx={typeFx:0.00}, Fy={typeFy:0.00}, Fz={typeFz:0.00}]");
                     sb.AppendLine();
-
+                    
                     // FIX v4.2: New column layout
                     // Grid Location(30) | Calculator(35) | Value(15) | Unit Load(20) | Dir(8) | Force(15) | Elements(remaining)
                     string hGrid = (isVN ? "Vị trí trục" : "Grid Location").PadRight(30);
@@ -1577,8 +1575,7 @@ namespace DTS_Engine.Core.Engines
 
         /// <summary>
         /// Format data row with new column layout
-        /// FIX v4.2: Grid | Calculator | Value | UnitLoad | Dir | Force | Elements (full list)
-        /// Example: Axis 1-12 x G(+0.5)-F(+1.5) | 12x1.5 | 6.05 | -2.26 | -Y | 4.14 | 70,75,94,97
+        /// FIX v4.2.1: TotalForce already signed, just apply forceFactor for unit conversion
         /// </summary>
         private void FormatDataRow(StringBuilder sb, AuditEntry entry, double forceFactor, string targetUnit)
         {
@@ -1599,23 +1596,23 @@ namespace DTS_Engine.Core.Engines
             // Value (Quantity)
             string value = $"{entry.Quantity:0.00}".PadRight(valueWidth);
 
-            // Unit Load (with sign)
-            string unitLoad = $"{entry.UnitLoad:0.00}".PadRight(unitWidth);
+            // FIX v4.2.1: Apply forceFactor to UnitLoad for display consistency
+            // If report unit is Ton, convert kN/m² to Ton/m² to match header
+            double displayUnitLoad = entry.UnitLoad * forceFactor;
+            string unitLoad = $"{displayUnitLoad:0.00}".PadRight(unitWidth);
 
             // Direction (keep short)
             string dir = FormatDirection(entry.Direction, entry).PadRight(dirWidth);
 
-            // Force (signed)
-            double signedForce = entry.TotalForce * entry.DirectionSign * forceFactor;
-            string force = $"{signedForce:0.00}".PadRight(forceWidth);
+            // FIX v4.2.1: TotalForce already includes sign, just apply unit conversion
+            double displayForce = entry.TotalForce * forceFactor;
+            string force = $"{displayForce:0.00}".PadRight(forceWidth);
 
-            // Elements (FULL LIST - no truncation for text report per requirement)
-            string elements = string.Join(",", entry.ElementList ?? new List<string>());
+            // Elements: Use compression for text report
+            string elements = CompressElementList(entry.ElementList ?? new List<string>(), maxDisplay: 80);
 
             sb.AppendLine($"    {grid}{calc}{value}{unitLoad}{dir}{force}{elements}");
         }
-
-        #endregion
 
         // Helper cắt chuỗi an toàn
         private string TruncateString(string val, int maxLen)
@@ -1623,6 +1620,106 @@ namespace DTS_Engine.Core.Engines
             if (string.IsNullOrEmpty(val)) return "";
             if (val.Length <= maxLen) return val;
             return val.Substring(0, maxLen - 2) + "..";
+        }
+
+        /// <summary>
+        /// Compress element list with range detection (e.g., "1,2,3,4,5" -> "1-5")
+        /// FIX v4.2.1: Smart compression for numeric sequences
+        /// </summary>
+        private string CompressElementList(List<string> elements, int maxDisplay = 80)
+        {
+            if (elements == null || elements.Count == 0) return "";
+
+            // Parse numeric elements
+            var numericElements = new List<int>();
+            var nonNumericElements = new List<string>();
+
+            foreach (var elem in elements)
+            {
+                if (int.TryParse(elem, out int num))
+                {
+                    numericElements.Add(num);
+                }
+                else
+                {
+                    nonNumericElements.Add(elem);
+                }
+            }
+
+            // Sort numeric elements
+            numericElements.Sort();
+
+            var compressed = new List<string>();
+
+            // Compress numeric ranges
+            if (numericElements.Count > 0)
+            {
+                int rangeStart = numericElements[0];
+                int rangeLast = numericElements[0];
+
+                for (int i = 1; i < numericElements.Count; i++)
+                {
+                    int current = numericElements[i];
+
+                    if (current == rangeLast + 1)
+                    {
+                        // Continue range
+                        rangeLast = current;
+                    }
+                    else
+                    {
+                        // End of range, output
+                        if (rangeLast == rangeStart)
+                        {
+                            compressed.Add(rangeStart.ToString());
+                        }
+                        else if (rangeLast == rangeStart + 1)
+                        {
+                            // Two consecutive numbers - just list them
+                            compressed.Add(rangeStart.ToString());
+                            compressed.Add(rangeLast.ToString());
+                        }
+                        else
+                        {
+                            // Range with 3+ numbers
+                            compressed.Add($"{rangeStart}to{rangeLast}");
+                        }
+
+                        // Start new range
+                        rangeStart = current;
+                        rangeLast = current;
+                    }
+                }
+
+                // Output final range
+                if (rangeLast == rangeStart)
+                {
+                    compressed.Add(rangeStart.ToString());
+                }
+                else if (rangeLast == rangeStart + 1)
+                {
+                    compressed.Add(rangeStart.ToString());
+                    compressed.Add(rangeLast.ToString());
+                }
+                else
+                {
+                    compressed.Add($"{rangeStart}to{rangeLast}");
+                }
+            }
+
+            // Add non-numeric elements
+            compressed.AddRange(nonNumericElements);
+
+            // Build final string
+            string result = string.Join(",", compressed);
+
+            // Truncate if exceeds max display (only for text report)
+            if (result.Length > maxDisplay && maxDisplay > 0)
+            {
+                return result.Substring(0, maxDisplay - 5) + "...";
+            }
+
+            return result;
         }
 
         // Helper to get display name for a load type group
@@ -1652,6 +1749,7 @@ namespace DTS_Engine.Core.Engines
             return d.Length <= 8 ? d : d.Substring(0, 8);
         }
 
+        #endregion
 
     } // class AuditEngine
 } // namespace DTS_Engine.Core.Engines
