@@ -502,10 +502,44 @@ namespace DTS_Engine.Core.Engines
                 else if (key.GlobalAxis.Contains("Y")) dirDisplay = (key.DirectionSign > 0 ? "+" : "-") + "Y";
                 else if (key.GlobalAxis.Contains("Z")) dirDisplay = (key.DirectionSign > 0 ? "+" : "-") + "Z";
                 
+                // --- SMART CALCULATOR LOGIC ---
+                // Re-added: Combine geometry and decompose into rectangles
+                string calculatorFormula = $"~{totalArea:0.00}";
+                try
+                {
+                    Geometry combinedGeom = null;
+                    foreach (var name in elementNames)
+                    {
+                        var info = _inventory.GetElement(name);
+                        if (info?.AreaGeometry == null) continue;
+
+                        // Project to 2D based on plane (XY, XZ, or YZ)
+                        // This ensures walls are treated as 2D shapes for "Length x Height" calculation
+                        var projPts = ProjectAreaToBestPlane(info.AreaGeometry);
+                        var poly = CreateNtsPolygon(projPts);
+                        
+                        if (poly != null && poly.IsValid)
+                        {
+                            combinedGeom = combinedGeom == null ? poly : combinedGeom.Union(poly);
+                        }
+                    }
+
+                    if (combinedGeom != null)
+                    {
+                        var decomp = AnalyzeShapeStrategy(combinedGeom);
+                        calculatorFormula = decomp.Formula;
+                    }
+                }
+                catch (Exception ex)
+                {
+                    // Fallback if NTS fails
+                    System.Diagnostics.Debug.WriteLine($"Decomposition Error: {ex.Message}");
+                }
+
                 targetList.Add(new AuditEntry
                 {
                     GridLocation = locationDesc,
-                    Explanation = $"~{totalArea:0.00}",
+                    Explanation = calculatorFormula,
                     Quantity = totalArea,
                     QuantityUnit = "m²",
                     UnitLoad = key.LoadValue,
