@@ -416,7 +416,6 @@ namespace DTS_Engine.Core.Engines
             }
         }
 
-        private const double MIN_AREA_THRESHOLD_M2 = 0.0001; // Lowered to 1cm2
 
         private void ProcessAreaLoads(List<RawSapLoad> loads, double loadVal, string dir, List<AuditEntry> targetList)
         {
