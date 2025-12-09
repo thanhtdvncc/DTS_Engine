@@ -393,8 +393,14 @@ namespace DTS_Engine.Core.Engines
 
             foreach (var load in loads)
             {
+            // BƯỚC 1: GOM NHÓM CHI TIẾT (Dựa trên Global Axis đã tính sẵn)
+            var groups = new Dictionary<AreaGroupingKey, List<string>>(); // Key -> List<ElementName>
+            var groupAreas = new Dictionary<AreaGroupingKey, double>();   // Key -> Total Area
+
+            foreach (var load in loads)
+            {
                 var info = _inventory.GetElement(load.ElementName);
-                if (info == null) continue;
+                if (info == null || info.AreaGeometry == null) continue;
 
                 // 1. Lấy thông tin trục chuẩn từ Inventory
                 string axisName = info.GlobalAxisName;
@@ -865,7 +871,9 @@ namespace DTS_Engine.Core.Engines
 
             foreach (var load in loads)
             {
-                if (!_frameGeometryCache.TryGetValue(load.ElementName, out var frame)) continue;
+                var info = _inventory.GetElement(load.ElementName);
+                if (info == null || info.FrameGeometry == null) continue;
+                var frame = info.FrameGeometry;
 
                 string primaryGrid = DeterminePrimaryGrid(frame);
 
@@ -1085,14 +1093,13 @@ namespace DTS_Engine.Core.Engines
         /// </summary>
         private void ProcessPointLoads(List<RawSapLoad> loads, double loadVal, string dir, List<AuditEntry> targetList)
         {
-            var allPoints = SapUtils.GetAllPoints();
-
             var pointGroups = new Dictionary<string, List<(RawSapLoad load, SapUtils.SapPoint coord)>>(StringComparer.OrdinalIgnoreCase);
 
             foreach (var load in loads)
             {
-                var ptCoord = allPoints.FirstOrDefault(p => p.Name == load.ElementName);
-                if (ptCoord == null) continue;
+                var info = _inventory.GetElement(load.ElementName);
+                if (info == null || info.PointGeometry == null) continue;
+                var ptCoord = info.PointGeometry;
 
                 string loc = GetGridLocationForPoint(ptCoord);
 
@@ -1241,41 +1248,6 @@ namespace DTS_Engine.Core.Engines
         #endregion
 
         #region Geometry Helpers
-
-        /// <summary>
-        /// Cache geometry từ SAP2000 để tránh gọi API nhiều lần.
-        /// FIX: Sử dụng case-insensitive dictionary
-        /// </summary>
-        private void CacheGeometry()
-        {
-            if (_frameGeometryCache == null)
-                _frameGeometryCache = new Dictionary<string, SapFrame>(StringComparer.OrdinalIgnoreCase);
-            else
-                _frameGeometryCache.Clear();
-
-            if (_areaGeometryCache == null)
-                _areaGeometryCache = new Dictionary<string, SapArea>(StringComparer.OrdinalIgnoreCase);
-            else
-                _areaGeometryCache.Clear();
-
-            // Cache Frames
-            var frames = SapUtils.GetAllFramesGeometry();
-            foreach (var f in frames)
-            {
-                if (f == null || string.IsNullOrWhiteSpace(f.Name)) continue;
-                _frameGeometryCache[f.Name.Trim()] = f;
-            }
-
-            // Cache Areas
-            var areas = SapUtils.GetAllAreasGeometry();
-            foreach (var a in areas)
-            {
-                if (a == null || string.IsNullOrWhiteSpace(a.Name)) continue;
-                _areaGeometryCache[a.Name.Trim()] = a;
-            }
-
-            System.Diagnostics.Debug.WriteLine($"[AuditEngine] Cached {_frameGeometryCache.Count} frames, {_areaGeometryCache.Count} areas");
-        }
 
         private Polygon CreateNtsPolygon(List<Point2D> pts)
         {

@@ -31,6 +31,11 @@ namespace DTS_Engine.Core.Engines
             public string GlobalAxisName { get; set; } // "Global +Z", "Global -X", etc.
             public int DirectionSign { get; set; } // +1 or -1
 
+            // [ADDED] Full Geometry Objects for Audit Engine (replacing local caches)
+            public SapFrame FrameGeometry { get; set; }
+            public SapArea AreaGeometry { get; set; }
+            public SapUtils.SapPoint PointGeometry { get; set; }
+
             public double GetStoryElevation()
             {
                 return IsVertical ? MinZ : AverageZ;
@@ -92,7 +97,8 @@ namespace DTS_Engine.Core.Engines
                     MaxZ = Math.Max(f.Z1, f.Z2),
                     IsVertical = f.IsVertical,
                     GlobalAxisName = axisName,
-                    DirectionSign = sign
+                    DirectionSign = sign,
+                    FrameGeometry = f // Store full object
                 };
             }
         }
@@ -120,7 +126,8 @@ namespace DTS_Engine.Core.Engines
                     MaxZ = p.Z,
                     IsVertical = false,
                     GlobalAxisName = axisName,
-                    DirectionSign = sign
+                    DirectionSign = sign,
+                    PointGeometry = p // Store full object
                 };
             }
         }
@@ -162,7 +169,8 @@ namespace DTS_Engine.Core.Engines
                     MaxZ = maxZ,
                     IsVertical = isVertical,
                     GlobalAxisName = axisName,
-                    DirectionSign = sign
+                    DirectionSign = sign,
+                    AreaGeometry = area // Store full object
                 };
             }
         }
