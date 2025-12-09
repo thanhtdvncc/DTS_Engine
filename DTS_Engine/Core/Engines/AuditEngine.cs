@@ -47,6 +47,10 @@ namespace DTS_Engine.Core.Engines
         // CRITICAL: Load Reader injected via Constructor (Dependency Injection)
         private readonly ISapLoadReader _loadReader;
 
+        // Geometry caches (used by CacheGeometry and legacy code paths)
+        private Dictionary<string, SapFrame> _frameGeometryCache;
+        private Dictionary<string, SapArea> _areaGeometryCache;
+
         #endregion
 
         #region Constructor
@@ -387,12 +391,6 @@ namespace DTS_Engine.Core.Engines
 
         private void ProcessAreaLoads(List<RawSapLoad> loads, double loadVal, string dir, List<AuditEntry> targetList)
         {
-            // BƯỚC 1: GOM NHÓM CHI TIẾT (Dựa trên Global Axis đã tính sẵn)
-            var groups = new Dictionary<AreaGroupingKey, List<string>>(); // Key -> List<ElementName>
-            var groupAreas = new Dictionary<AreaGroupingKey, double>();   // Key -> Total Area
-
-            foreach (var load in loads)
-            {
             // BƯỚC 1: GOM NHÓM CHI TIẾT (Dựa trên Global Axis đã tính sẵn)
             var groups = new Dictionary<AreaGroupingKey, List<string>>(); // Key -> List<ElementName>
             var groupAreas = new Dictionary<AreaGroupingKey, double>();   // Key -> Total Area
