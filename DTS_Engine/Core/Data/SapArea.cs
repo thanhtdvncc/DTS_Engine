@@ -95,14 +95,27 @@ namespace DTS_Engine.Core.Data
         /// <summary>
         /// Area of polygon (absolute value). Returns 0 for degenerate polygons.
         /// </summary>
+        private double? _customArea = null;
+
+        /// <summary>
+        /// Area of polygon (absolute value). 
+        /// Supports manual assignment for 3D areas. 
+        /// Falls back to 2D plan calculation if not set.
+        /// </summary>
         public double Area
         {
             get
             {
+                if (_customArea.HasValue) return _customArea.Value;
+
                 if (BoundaryPoints == null || BoundaryPoints.Count < 3)
                     return 0.0;
 
                 return Math.Abs(CalculatePolygonArea(BoundaryPoints));
+            }
+            set
+            {
+                _customArea = value;
             }
         }
 

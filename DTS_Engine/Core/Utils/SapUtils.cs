@@ -1693,18 +1693,44 @@ namespace DTS_Engine.Core.Utils
 
                     if (fullGeometry)
                     {
-                        // BUG FIX: Calculate Area explicitly
-                        area = new SapArea
+                        // BUG FIX: Calculate 3D Surface Area (Handling Vertical Walls)
+                        
+                        // Reconstruct 3D points
+                        var pts3D = new List<(double x, double y, double z)>();
+                        for (int k = 0; k < area.BoundaryPoints.Count; k++)
                         {
-                            Name = areaName,
-                            BoundaryPoints = new List<Point2D>(area.BoundaryPoints),
-                            ZValues = new List<double>(area.ZValues),
-                            JointNames = new List<string>(area.JointNames),
-                            AreaType = area.AreaType,
-                            Section = area.Section,
-                            Story = area.Story
-                            // Area property will be calculated by the getter
-                        };
+                            pts3D.Add((area.BoundaryPoints[k].X, area.BoundaryPoints[k].Y, area.ZValues[k]));
+                        }
+
+                        // Calculate Area using Cross Product Sum (0.5 * |Sum((Pi - P0) x (Pi+1 - P0))|)
+                        double sumX = 0, sumY = 0, sumZ = 0;
+                        if (pts3D.Count >= 3)
+                        {
+                            var p0 = pts3D[0];
+                            for (int k = 1; k < pts3D.Count - 1; k++)
+                            {
+                                var p1 = pts3D[k];
+                                var p2 = pts3D[k + 1];
+
+                                // Vectors v1 = p1-p0, v2 = p2-p0
+                                double v1x = p1.x - p0.x;
+                                double v1y = p1.y - p0.y;
+                                double v1z = p1.z - p0.z;
+
+                                double v2x = p2.x - p0.x;
+                                double v2y = p2.y - p0.y;
+                                double v2z = p2.z - p0.z;
+
+                                // Cross Product (v1 x v2)
+                                sumX += v1y * v2z - v1z * v2y;
+                                sumY += v1z * v2x - v1x * v2z;
+                                sumZ += v1x * v2y - v1y * v2x;
+                            }
+                        }
+                        
+                        double area3D = 0.5 * Math.Sqrt(sumX * sumX + sumY * sumY + sumZ * sumZ);
+                        area.Area = area3D;
+
                         results.Add(area);
                     }
 				}
