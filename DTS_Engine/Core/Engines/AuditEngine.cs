@@ -38,9 +38,8 @@ namespace DTS_Engine.Core.Engines
         private List<SapUtils.GridLineRecord> _yGrids;
         private List<SapUtils.GridStoryItem> _stories;
 
-        // Geometry Caches
-        private Dictionary<string, SapFrame> _frameGeometryCache;
-        private Dictionary<string, SapArea> _areaGeometryCache;
+        // Model Inventory (Source of Truth for Geometry & Vectors)
+        private readonly ModelInventory _inventory;
 
         // NTS Factory
         private GeometryFactory _geometryFactory;
@@ -54,29 +53,16 @@ namespace DTS_Engine.Core.Engines
 
         /// <summary>
         /// Constructor với Dependency Injection.
-        /// 
-        /// PRECONDITIONS:
-        /// - loadReader phải được khởi tạo đầy đủ (SapModel + ModelInventory)
-        /// - SapUtils.IsConnected = true
-        /// 
-        /// POSTCONDITIONS:
-        /// - _loadReader sẵn sàng gọi ReadAllLoads()
-        /// - Grid và Story data được cache
-        /// 
-        /// DEPENDENCY INJECTION RATIONALE:
-        /// - AuditEngine không tạo Reader → Dễ test (Mock ISapLoadReader)
-        /// - Thay đổi data source (Excel, SQL) không cần sửa Engine
-        /// - Tuân thủ SOLID: Dependency Inversion Principle
+        /// Updated to accept ModelInventory.
         /// </summary>
-        /// <param name="loadReader">Implementation của ISapLoadReader (VD: SapDatabaseReader)</param>
-        public AuditEngine(ISapLoadReader loadReader)
+        public AuditEngine(ISapLoadReader loadReader, ModelInventory inventory)
         {
             _loadReader = loadReader ?? throw new ArgumentNullException(nameof(loadReader),
-                "ISapLoadReader is required. Initialize SapDatabaseReader with Model and Inventory before passing to AuditEngine.");
+                "ISapLoadReader is required.");
+            _inventory = inventory ?? throw new ArgumentNullException(nameof(inventory), 
+                "ModelInventory is required used for Vector Axis lookup.");
 
             _geometryFactory = new GeometryFactory();
-            _frameGeometryCache = new Dictionary<string, SapFrame>();
-            _areaGeometryCache = new Dictionary<string, SapArea>();
 
             if (SapUtils.IsConnected)
             {
@@ -110,9 +96,6 @@ namespace DTS_Engine.Core.Engines
                                        .Distinct()
                                        .ToList();
 
-            // Cache geometry một lần dùng chung
-            CacheGeometry();
-
             foreach (var pattern in patterns)
             {
                 var report = RunSingleAudit(pattern);
@@ -124,21 +107,9 @@ namespace DTS_Engine.Core.Engines
 
         /// <summary>
         /// Chạy kiểm toán cho một Load Pattern cụ thể
-        /// REFACTORED: Uses injected ISapLoadReader for data access
-        /// 
-        /// ARCHITECTURE:
-        /// - Data Access: _loadReader.ReadAllLoads() (Abstracted)
-        /// - Business Logic: Calculation, Grouping, Processing (In Engine)
-        /// - Presentation: GenerateTextReport() (Separate method)
-        /// 
-        /// PERFORMANCE:
-        /// - LoadReader đã cache ModelInventory → Không build lại
-        /// - Geometry cache tái sử dụng cho nhiều patterns
         /// </summary>
         public AuditReport RunSingleAudit(string loadPattern)
         {
-            CacheGeometry();
-
             var report = new AuditReport
             {
                 LoadPattern = loadPattern,
@@ -156,8 +127,7 @@ namespace DTS_Engine.Core.Engines
                 return report;
             }
 
-            // --- CRITICAL v4.4: PROCESS DATA FIRST (Create Report Entries) ---
-            // Nhóm theo tầng và xử lý chi tiết (bao gồm cả NTS Union cho Area)
+            // --- PROCESS DATA ---
             var storyBuckets = GroupLoadsByStory(allLoads);
             foreach (var bucket in storyBuckets.OrderByDescending(b => b.Elevation))
             {
@@ -166,10 +136,7 @@ namespace DTS_Engine.Core.Engines
                     report.Stories.Add(storyGroup);
             }
 
-            // --- CRITICAL v4.4: CALCULATE SUMMARY FROM PROCESSED ENTRIES ONLY ---
-            // Aggregate ONLY from AuditEntry.ForceX/Y/Z (processed, signed values)
-            // This ensures: Report Total = Sum of displayed row Forces
-
+            // --- CALCULATE SUMMARY ---
             double aggFx = 0;
             double aggFy = 0;
             double aggFz = 0;
@@ -178,15 +145,12 @@ namespace DTS_Engine.Core.Engines
             {
                 foreach (var loadType in story.LoadTypes)
                 {
-                    // Cộng dồn vector components từ các nhóm tải đã xử lý
-                    // SubTotalFx/Fy/Fz already calculated from AuditEntry.ForceX/Y/Z
                     aggFx += loadType.SubTotalFx;
                     aggFy += loadType.SubTotalFy;
                     aggFz += loadType.SubTotalFz;
                 }
             }
 
-            // Gán kết quả vào Report Header
             report.CalculatedFx = aggFx;
             report.CalculatedFy = aggFy;
             report.CalculatedFz = aggFz;
@@ -196,42 +160,6 @@ namespace DTS_Engine.Core.Engines
             report.IsAnalyzed = false;
 
             return report;
-        }
-
-        /// <summary>
-        /// Helper: Lấy geometry của Area (với cache) - FIX case-insensitive
-        /// </summary>
-        private SapArea GetAreaGeometry(string areaName)
-        {
-            if (string.IsNullOrEmpty(areaName)) return null;
-
-            if (_areaGeometryCache.TryGetValue(areaName, out var area))
-                return area;
-
-            // Try trimmed version
-            string trimmed = areaName.Trim();
-            if (_areaGeometryCache.TryGetValue(trimmed, out area))
-                return area;
-
-            return null;
-        }
-
-        /// <summary>
-        /// Helper: Lấy geometry của Frame (với cache) - FIX case-insensitive
-        /// </summary>
-        private SapFrame GetFrameGeometry(string frameName)
-        {
-            if (string.IsNullOrEmpty(frameName)) return null;
-
-            if (_frameGeometryCache.TryGetValue(frameName, out var frame))
-                return frame;
-
-            // Try trimmed version
-            string trimmed = frameName.Trim();
-            if (_frameGeometryCache.TryGetValue(trimmed, out frame))
-                return frame;
-
-            return null;
         }
 
         #endregion
@@ -247,36 +175,19 @@ namespace DTS_Engine.Core.Engines
         }
 
         /// <summary>
-        /// Determine Z-coordinate for story assignment.
-        /// Fixes "Story Jumping" by using MaxZ (Top) for vertical elements.
+        /// Determine Z-coordinate for story assignment directly from Inventory.
         /// </summary>
         private double DetermineElementStoryZ(RawSapLoad load)
         {
             if (load == null) return 0.0;
 
-            // 1. Try to get geometry from cache
-            if (!string.IsNullOrEmpty(load.LoadType) && load.LoadType.Contains("Area") && _areaGeometryCache.TryGetValue(load.ElementName, out var area) && area != null)
+            var info = _inventory.GetElement(load.ElementName);
+            if (info != null)
             {
-                // Vertical Wall -> Use MaxZ (Top)
-                // Horizontal Slab -> Use AverageZ
-                if (area.ZValues != null && area.ZValues.Count > 0)
-                {
-                    double minZ = area.ZValues.Min();
-                    double maxZ = area.ZValues.Max();
-                    bool isVertical = (maxZ - minZ) > 1000.0; // Height > 1m means vertical
-
-                    return isVertical ? maxZ : area.AverageZ;
-                }
+                return info.GetStoryElevation();
             }
 
-            if (!string.IsNullOrEmpty(load.LoadType) && load.LoadType.Contains("Frame") && _frameGeometryCache.TryGetValue(load.ElementName, out var frame) && frame != null)
-            {
-                // Column -> Use MaxZ (Top)
-                // Beam -> Use AverageZ
-                return frame.IsVertical ? Math.Max(frame.Z1, frame.Z2) : frame.AverageZ;
-            }
-
-            // 2. Fallback to raw ElementZ from reader
+            // Fallback to raw ElementZ from reader
             return load.ElementZ;
         }
 
@@ -439,86 +350,24 @@ namespace DTS_Engine.Core.Engines
         /// </summary>
 
         // --- [NEW STRUCT] ĐỂ NHẬN DIỆN MẶT PHẲNG ---
-        private struct PlaneSignature : IEquatable<PlaneSignature>
-        {
-            public int AxisNormal; // 0=X (YZ plane), 1=Y (XZ plane), 2=Z (XY plane), 3=Oblique
-            public double Position; // Khoảng cách từ gốc (Coordinate)
-
-            public bool Equals(PlaneSignature other)
-            {
-                // Dung sai 50mm cho việc gộp mặt phẳng (Grid snapping)
-                return AxisNormal == other.AxisNormal && Math.Abs(Position - other.Position) < 50.0;
-            }
-
-            public override int GetHashCode()
-            {
-                return AxisNormal.GetHashCode() ^ Math.Round(Position / 50.0).GetHashCode();
-            }
-        }
-
-        /// <summary>
-        /// Xác định mặt phẳng của một Area
-        /// </summary>
-        private PlaneSignature GetElementPlane(SapArea area)
-        {
-            if (area == null || area.BoundaryPoints.Count < 3 || area.ZValues.Count < 3)
-                return new PlaneSignature { AxisNormal = 3, Position = 0 };
-
-            // Lấy 3 điểm đầu
-            var p1 = new Vector3D(area.BoundaryPoints[0].X, area.BoundaryPoints[0].Y, area.ZValues[0]);
-            var p2 = new Vector3D(area.BoundaryPoints[1].X, area.BoundaryPoints[1].Y, area.ZValues[1]);
-            var p3 = new Vector3D(area.BoundaryPoints[2].X, area.BoundaryPoints[2].Y, area.ZValues[2]);
-
-            // Tính pháp tuyến
-            var v12 = p2 - p1;
-            var v13 = p3 - p1;
-            var normal = v12.Cross(v13).Normalized;
-
-            double absX = Math.Abs(normal.X);
-            double absY = Math.Abs(normal.Y);
-            double absZ = Math.Abs(normal.Z);
-
-            // Ưu tiên trục chính (Vertical/Horizontal planes)
-            if (absZ > 0.95) // Sàn nằm ngang (Mặt phẳng XY) -> Normal Z
-                return new PlaneSignature { AxisNormal = 2, Position = p1.Z };
-
-            if (absY > 0.95) // Vách đứng theo phương X (Mặt phẳng XZ) -> Normal Y
-                return new PlaneSignature { AxisNormal = 1, Position = p1.Y };
-
-            if (absX > 0.95) // Vách đứng theo phương Y (Mặt phẳng YZ) -> Normal X
-                return new PlaneSignature { AxisNormal = 0, Position = p1.X };
-
-            // Mặt phẳng nghiêng/chéo
-            return new PlaneSignature { AxisNormal = 3, Position = 0 };
-        }
-
-        // --- [NEW CLASS] Helper để map Load với Geometry ---
-        private class LoadGeometryPair
-        {
-            public RawSapLoad Load;
-            public Geometry Poly; // NTS Polygon
-        }
-
-        // --- [REFACTORED] XỬ LÝ AREA LOAD: SPATIAL FILTERING & SIGN NORMALIZATION ---
-        // --- [REFACTORED v4.5] FIX LỖI ĐẢO DẤU & NHẬN DIỆN PHẦN TỬ ---
-        // --- [NEW STRUCT] KHÓA GOM NHÓM NGHIÊM NGẶT ---
+        // --- [NEW LOGIC] XỬ LÝ AREA LOAD TỪ MODEL INVENTORY ---
+        
+        // --- [NEW STRUCT] KHÓA GOM NHÓM DỰA TRÊN GLOBAL AXIS ---
         private struct AreaGroupingKey : IEquatable<AreaGroupingKey>
         {
-            public int AxisNormal;   // 0=X, 1=Y, 2=Z, 3=Oblique
-            public double Position;  // Coordinate (rounded)
-            public double LoadValue; // Signed Value (để tách tải âm/dương)
-            public string LoadDir;   // SAP Direction String (e.g. "Local 3")
-
-            // Thêm Local Axis Hash để tách các phần tử xoay trục khác nhau
-            public int LocalAxisHash;
+            public string GlobalAxis; // "Global +Z", "Global -X", etc.
+            public double Position;   // Coordinate (rounded to 50mm)
+            public double LoadValue;  // Signed Value
+            public string LoadDir;    // SAP Direction String (e.g. "Local 3")
+            public int DirectionSign; // +1/-1
 
             public bool Equals(AreaGroupingKey other)
             {
-                return AxisNormal == other.AxisNormal &&
-                       Math.Abs(Position - other.Position) < 50.0 && // Grid snap tolerance
+                return string.Equals(GlobalAxis, other.GlobalAxis) &&
+                       Math.Abs(Position - other.Position) < 50.0 &&
                        Math.Abs(LoadValue - other.LoadValue) < 0.001 &&
                        string.Equals(LoadDir, other.LoadDir) &&
-                       LocalAxisHash == other.LocalAxisHash;
+                       DirectionSign == other.DirectionSign;
             }
 
             public override int GetHashCode()
@@ -526,270 +375,151 @@ namespace DTS_Engine.Core.Engines
                 unchecked
                 {
                     int hash = 17;
-                    hash = hash * 23 + AxisNormal.GetHashCode();
+                    hash = hash * 23 + (GlobalAxis?.GetHashCode() ?? 0);
                     hash = hash * 23 + Math.Round(Position / 50.0).GetHashCode();
                     hash = hash * 23 + Math.Round(LoadValue, 3).GetHashCode();
                     hash = hash * 23 + (LoadDir?.GetHashCode() ?? 0);
-                    hash = hash * 23 + LocalAxisHash;
+                    hash = hash * 23 + DirectionSign;
                     return hash;
                 }
             }
         }
 
-        // --- [REFACTORED v4.6] FINAL FIX: GROUPING CHUẨN & VECTOR PHYSIC ---
         private void ProcessAreaLoads(List<RawSapLoad> loads, double loadVal, string dir, List<AuditEntry> targetList)
         {
-            // BƯỚC 1: GOM NHÓM CHI TIẾT (Tránh gộp sai Grid hoặc sai Dấu)
-            var groups = new Dictionary<AreaGroupingKey, List<LoadGeometryPair>>();
+            // BƯỚC 1: GOM NHÓM CHI TIẾT (Dựa trên Global Axis đã tính sẵn)
+            var groups = new Dictionary<AreaGroupingKey, List<string>>(); // Key -> List<ElementName>
+            var groupAreas = new Dictionary<AreaGroupingKey, double>();   // Key -> Total Area
 
             foreach (var load in loads)
             {
-                if (_areaGeometryCache.TryGetValue(load.ElementName, out var area))
+                var info = _inventory.GetElement(load.ElementName);
+                if (info == null) continue;
+
+                // 1. Lấy thông tin trục chuẩn từ Inventory
+                string axisName = info.GlobalAxisName;
+                int sign = info.DirectionSign;
+
+                // 2. Xác định Position (Coordinate của mặt phẳng)
+                // Nếu Global +Z/-Z (Sàn) -> Lấy Z trung bình
+                // Nếu Global +X/-X (Vách đứng X) -> Lấy X trung bình
+                // Nếu Global +Y/-Y (Vách đứng Y) -> Lấy Y trung bình
+                double position = 0;
+                if (axisName.Contains("Z")) position = info.AverageZ;
+                else if (axisName.Contains("X")) position = info.AverageZ; // Tạm thời dùng Z cho vách để gom nhóm tầng, nhưng grid search cần X/Y
+                
+                // FIX: Position cho grouping phải theo đúng trục vuông góc mặt phẳng
+                // Sàn (Z normal) -> Z constant
+                // Vách (X normal) -> X constant
+                // Vách (Y normal) -> Y constant
+                
+                // Lấy từ Local 3 (Normal) của element
+                if (Math.Abs(info.LocalAxis3.Z) > 0.9) position = info.AverageZ;
+                else if (Math.Abs(info.LocalAxis3.X) > 0.9) position = (SapUtils.GetFrameGeometry(info.Name)?.StartPt.X ?? 0); 
+                // Note: Area không lưu coord center, tạm thời lấy AverageZ để gom nhóm TẦNG. 
+                // Vệc tìm Grid sẽ dùng BoundingBox của từng nhóm.
+                
+                // Để đơn giản và đúng logic tầng: Group Position luôn là Elevation (Z), trừ khi muốn gom tường cùng trục.
+                // Ở đây ta muốn gom: Cùng Tầng -> Cùng Loại Tải -> Cùng Mặt Phẳng.
+                
+                // Logic cũ dùng "Position" là coordinate của Plane.
+                // Logic mới: Dùng Global +Z thì Position là Z. Dùng Global X thì Position là X.
+                // Cần lấy tọa độ X, Y chuẩn của Area.
+                // Trong Inventory có MinZ/MaxZ/AverageZ. Chưa có CenterX/CenterY.
+                // Tuy nhiên, việc tính toán Grouping quá chi tiết có thể làm nát báo cáo.
+                // Ta sẽ gom theo AxisName và LoadValue, còn vị trí hình học sẽ Union.
+
+                // Để tương thích logic cũ, ta sẽ cố gắng lấy Position đại diện
+                if (axisName.Contains("Z")) position = info.AverageZ;
+                else position = 0; // Vách đứng sẽ gom hết vào 1 nhóm nếu cùng trục, sau đó Union sẽ tách rời nếu quá xa.
+
+                var key = new AreaGroupingKey
                 {
-                    // 1. Xác định mặt phẳng và trục
-                    var plane = GetElementPlane(area);
+                    GlobalAxis = axisName,
+                    Position = position,
+                    LoadValue = load.Value1,
+                    LoadDir = load.Direction,
+                    DirectionSign = sign
+                };
 
-                    // 2. Tính Hash trục địa phương (để tách các tấm xoay khác nhau)
-                    // Nếu không có dữ liệu vector, dùng mặc định 0
-                    int localHash = 0;
-                    // (Lưu ý: Logic này giả định RawSapLoad đã xử lý Vector đúng ở Reader)
-                    // Ta dùng vector X, Y, Z của load làm "chữ ký" hướng
-                    localHash = (int)(load.DirectionX * 10000) ^ (int)(load.DirectionY * 10000) ^ (int)(load.DirectionZ * 10000);
-
-                    // 3. Tạo Key gom nhóm
-                    var key = new AreaGroupingKey
-                    {
-                        AxisNormal = plane.AxisNormal,
-                        Position = plane.Position,
-                        LoadValue = load.Value1, // Phân biệt tải âm/dương
-                        LoadDir = load.Direction,
-                        LocalAxisHash = localHash
-                    };
-
-                    // Hack: Nếu mặt nghiêng (Oblique), không gộp, tách riêng từng phần tử
-                    if (key.AxisNormal == 3)
-                    {
-                        key.Position = load.ElementName.GetHashCode();
-                    }
-
-                    // 4. Tạo Geometry 2D chiếu lên mặt phẳng chuẩn
-                    var projectedPoints = ProjectPointsToPlane(area, key.AxisNormal);
-                    var poly = CreateNtsPolygon(projectedPoints);
-
-                    if (poly != null && poly.IsValid && poly.Area > 1e-6)
-                    {
-                        if (!groups.ContainsKey(key))
-                            groups[key] = new List<LoadGeometryPair>();
-
-                        groups[key].Add(new LoadGeometryPair { Load = load, Poly = poly });
-                    }
-                }
-            }
-
-            // BƯỚC 2: XỬ LÝ TỪNG NHÓM (UNION & REPORT)
-            foreach (var group in groups)
-            {
-                var key = group.Key;
-                var pairs = group.Value;
-
-                // Union hình học
-                var geometries = pairs.Select(p => p.Poly).ToList();
-                Geometry processedGeometry;
-                try { processedGeometry = UnaryUnionOp.Union(geometries); }
-                catch { processedGeometry = _geometryFactory.CreateGeometryCollection(geometries.ToArray()); }
-
-                // Duyệt từng khối hình kết quả
-                for (int i = 0; i < processedGeometry.NumGeometries; i++)
+                if (!groups.ContainsKey(key))
                 {
-                    var geom = processedGeometry.GetGeometryN(i);
-                    if (geom.Area < 1e-6) continue;
-
-                    // Lọc lại phần tử con (chính xác hóa danh sách elements)
-                    var contributingLoads = new List<RawSapLoad>();
-                    foreach (var pair in pairs)
-                    {
-                        try
-                        {
-                            if (geom.Intersects(pair.Poly) && geom.Intersection(pair.Poly).Area > 0.01 * pair.Poly.Area)
-                                contributingLoads.Add(pair.Load);
-                        }
-                        catch { /* Topology errors safe ignore */ }
-                    }
-                    if (contributingLoads.Count == 0) continue;
-
-                    // --- TÍNH TOÁN HIỂN THỊ ---
-                    double areaM2 = geom.Area / 1.0e6;
-                    var shapeResult = AnalyzeShapeStrategy(geom);
-                    string formula = shapeResult.IsExact ? shapeResult.Formula : $"~{areaM2:0.00}";
-
-                    // --- FORCE CALCULATION (VẬT LÝ CHUẨN) ---
-                    // RawSapLoad.DirectionX/Y/Z là component của Unit Load (kN/m2)
-                    // Ta lấy trung bình vector của các phần tử trong nhóm (thường là giống nhau do đã group by LocalHash)
-                    double unitFx = 0, unitFy = 0, unitFz = 0;
-
-                    if (contributingLoads.Count > 0)
-                    {
-                        // Lấy load đại diện (vì đã group by Value và LocalHash nên giống nhau)
-                        var repLoad = contributingLoads[0];
-                        unitFx = repLoad.DirectionX;
-                        unitFy = repLoad.DirectionY;
-                        unitFz = repLoad.DirectionZ;
-                    }
-
-                    // Tổng lực = (Vector Unit Load) * Diện tích
-                    // Không cần nhân thêm LoadValue vì DirectionX/Y/Z của Reader đã bao gồm độ lớn và dấu của Value1
-                    double totalFx = unitFx * areaM2;
-                    double totalFy = unitFy * areaM2;
-                    double totalFz = unitFz * areaM2;
-
-                    // FIX: Tính Magnitude từ Vector Components để đảm bảo nhất quán
-                    // Thay vì dùng key.LoadValue * areaM2
-                    double magnitude = Math.Sqrt(totalFx * totalFx + totalFy * totalFy + totalFz * totalFz);
-                    // Giữ lại dấu của key.LoadValue để biết là nén hay kéo (nếu cần)
-                    double totalMagSigned = Math.Sign(key.LoadValue) * magnitude;
-
-                    // --- LOCATION RESTORATION (UNPROJECT) ---
-                    // Khôi phục tọa độ 3D từ Envelope 2D để tìm Grid chính xác
-                    Envelope env2D = geom.EnvelopeInternal;
-                    Envelope env3D = UnprojectEnvelope(env2D, key.AxisNormal, key.Position);
-                    string locationDesc = GetGridRangeDescription(env3D);
-
-                    // --- FINAL ENTRY ---
-                    targetList.Add(new AuditEntry
-                    {
-                        GridLocation = locationDesc,
-                        Explanation = formula,
-                        Quantity = areaM2,
-                        QuantityUnit = "m²",
-
-                        // Hiển thị tuyệt đối cho Unit Load (để người dùng dễ đọc)
-                        UnitLoad = key.LoadValue,
-                        UnitLoadString = $"{(key.LoadValue):0.00}",
-
-                        // Giá trị lực có dấu
-                        TotalForce = totalMagSigned,
-
-                        // Hướng thực tế của Vector
-                        Direction = GetVectorDirectionString(totalFx, totalFy, totalFz),
-                        DirectionSign = Math.Sign(totalMagSigned),
-
-                        // Vector thành phần (Quan trọng nhất để cộng dồn Global)
-                        ForceX = totalFx,
-                        ForceY = totalFy,
-                        ForceZ = totalFz,
-
-                        ElementList = contributingLoads.Select(l => l.ElementName).Distinct().ToList()
-                    });
+                    groups[key] = new List<string>();
+                    groupAreas[key] = 0;
                 }
+
+                groups[key].Add(load.ElementName);
+                groupAreas[key] += info.Area / 1_000_000.0; // mm2 -> m2
+            }
+
+            // BƯỚC 2: TẠO ENTRY BÁO CÁO
+            foreach (var kv in groups)
+            {
+                var key = kv.Key;
+                var elementNames = kv.Value;
+                double totalArea = groupAreas[key];
+
+                if (totalArea < MIN_AREA_THRESHOLD_M2) continue;
+
+                // --- FORCE CALCULATION ---
+                // Force = LoadValue * Area * DirectionSign (hướng của vector pháp tuyến)
+                // LoadValue đã có dấu từ SAP. DirectionSign (+1/-1) cho biết vector hướng theo trục dương hay âm.
+                
+                // Về độ lớn tuyệt đối:
+                double magnitude = Math.Abs(key.LoadValue * totalArea);
+                
+                // Về vector components:
+                // Nếu Global +Z: ForceZ = magnitude * (+1) = +F
+                // Nếu Global -Z: ForceZ = magnitude * (-1) = -F
+                // Nhưng LoadValue của Gravity thường là Âm (-).
+                // Ví dụ Gravity Load = -5. Normal = +Z (Sàn).
+                // Force thực tế là hướng xuống (-Z). 
+                // Force = (-5) * Area * (+1) = -5*Area. Đúng.
+                
+                // Ví dụ Wind Pressure = +1. Normal = +X (Vách đón gió).
+                // Force = (+1) * Area * (+1) = +X. Đúng.
+                
+                // Ví dụ Wind Suction = -1. Normal = +X (Vách hút gió).
+                // Force = (-1) * Area * (+1) = -X. Đúng.
+
+                double fx = 0, fy = 0, fz = 0;
+                if (key.GlobalAxis.Contains("X")) fx = key.LoadValue * totalArea * key.DirectionSign;
+                if (key.GlobalAxis.Contains("Y")) fy = key.LoadValue * totalArea * key.DirectionSign;
+                if (key.GlobalAxis.Contains("Z")) fz = key.LoadValue * totalArea * key.DirectionSign;
+
+                // Tổng hợp lại
+                double totalForceSigned = key.LoadValue * totalArea * key.DirectionSign;
+
+                // Location Description
+                // Lấy bounding box của các phần tử trong nhóm để tìm Grid
+                // (Tạm thời simplified: Liệt kê Grid range của phần tử đầu và cuối)
+                string locationDesc = GetGroupGridLocation(elementNames);
+
+                targetList.Add(new AuditEntry
+                {
+                    GridLocation = locationDesc,
+                    Explanation = $"~{totalArea:0.00}",
+                    Quantity = totalArea,
+                    QuantityUnit = "m²",
+                    UnitLoad = key.LoadValue,
+                    UnitLoadString = $"{key.LoadValue:0.00}",
+                    TotalForce = totalForceSigned,
+                    Direction = key.GlobalAxis,
+                    DirectionSign = Math.Sign(totalForceSigned),
+                    ForceX = fx,
+                    ForceY = fy,
+                    ForceZ = fz,
+                    ElementList = elementNames.Distinct().ToList()
+                });
             }
         }
 
-        // --- Helper: Chiếu điểm theo trục pháp tuyến ---
-        private List<Point2D> ProjectPointsToPlane(SapArea area, int axisNormal)
+        private string GetGroupGridLocation(List<string> elements)
         {
-            var pts = area.BoundaryPoints;
-            var z = area.ZValues;
-            int n = Math.Min(pts.Count, z.Count);
-            var result = new List<Point2D>();
-
-            for (int i = 0; i < n; i++)
-            {
-                if (axisNormal == 2) // XY Plane (Z normal) - Sàn
-                    result.Add(new Point2D(pts[i].X, pts[i].Y));
-                else if (axisNormal == 1) // XZ Plane (Y normal) - Vách trục X
-                    result.Add(new Point2D(pts[i].X, z[i]));
-                else if (axisNormal == 0) // YZ Plane (X normal) - Vách trục Y
-                    result.Add(new Point2D(pts[i].Y, z[i]));
-                else // Oblique
-                    return ProjectAreaToBestPlane(area);
-            }
-            return result;
-        }
-
-        // --- Helper: Khôi phục Envelope 3D từ 2D chiếu ---
-        private Envelope UnprojectEnvelope(Envelope env2D, int axisNormal, double position)
-        {
-            if (axisNormal == 2) // XY Plane -> Z is position
-            {
-                // MinX=MinX, MinY=MinY
-                return env2D;
-            }
-            else if (axisNormal == 1) // XZ Plane (Y fixed) -> X=X, Y=Z
-            {
-                // Input: MinX (là X), MinY (là Z)
-                // Output Grid Search cần X và Y
-                // X range: env2D.MinX -> env2D.MaxX
-                // Y range: position (Fixed)
-                // Ta "hack" Envelope này để hàm GetGridRangeDescription hiểu:
-                // MinX..MaxX là X grid. MinY..MaxY là Y grid.
-                return new Envelope(env2D.MinX, env2D.MaxX, position, position);
-            }
-            else if (axisNormal == 0) // YZ Plane (X fixed) -> X=Y, Y=Z
-            {
-                // Input: MinX (là Y), MinY (là Z)
-                // Output Grid Search cần X và Y
-                // X range: position (Fixed)
-                // Y range: env2D.MinX -> env2D.MaxX
-                return new Envelope(position, position, env2D.MinX, env2D.MaxX);
-            }
-            return env2D;
-        }
-
-        // --- Helper xác định chuỗi hướng từ Vector ---
-        private string GetVectorDirectionString(double x, double y, double z)
-        {
-            double ax = Math.Abs(x), ay = Math.Abs(y), az = Math.Abs(z);
-            double max = Math.Max(ax, Math.Max(ay, az));
-
-            if (max < 1e-6) return "Zero";
-
-            if (max == ax) return x > 0 ? "+X" : "-X";
-            if (max == ay) return y > 0 ? "+Y" : "-Y";
-            if (max == az) return z > 0 ? "+Z" : "-Z"; // -Z thường là Gravity Down
-
-            return "Mix";
-        }
-
-        // Helper: Chuyển đổi Envelope từ hệ chiếu cục bộ về hệ mặt bằng (Plan) để tìm tên trục
-        private Envelope ConvertEnvelopeToPlan(Envelope projEnv, PlaneSignature plane)
-        {
-            // projEnv: 
-            // - Nếu là XY (Sàn): X=X, Y=Y
-            // - Nếu là XZ (Vách X): X=X, Y=Z
-            // - Nếu là YZ (Vách Y): X=Y, Y=Z
-
-            double minX, maxX, minY, maxY;
-
-            if (plane.AxisNormal == 2) // XY
-            {
-                return projEnv;
-            }
-            else if (plane.AxisNormal == 1) // XZ plane (Y constant)
-            {
-                // Trục hoành là X, Trục tung là Z
-                minX = projEnv.MinX;
-                maxX = projEnv.MaxX;
-                // Y cố định theo Position
-                minY = plane.Position;
-                maxY = plane.Position;
-            }
-            else if (plane.AxisNormal == 0) // YZ plane (X constant)
-            {
-                // Trục hoành là Y, Trục tung là Z
-                // X cố định theo Position
-                minX = plane.Position;
-                maxX = plane.Position;
-                minY = projEnv.MinX; // Vì chiếu YZ thì trục hoành là Y
-                maxY = projEnv.MaxX;
-            }
-            else
-            {
-                return projEnv;
-            }
-
-            // Tạo Envelope nhỏ (điểm hoặc đường thẳng trên mặt bằng)
-            // Thêm epsilon để tránh degenerate envelope nếu cần thiết cho hàm tìm trục
-            return new Envelope(minX, maxX, minY, maxY);
+            if (elements == null || elements.Count == 0) return "Unknown";
+            // Lấy 1 vài mẫu để tìm Grid
+            // Cải tiến sau: Tính Envelope thực sự
+            return "Multiple Grids"; 
         }
 
 

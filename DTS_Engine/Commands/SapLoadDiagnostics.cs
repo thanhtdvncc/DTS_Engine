@@ -408,7 +408,8 @@ namespace DTS_Engine.Commands
                 WriteMessage("    Load Reader initialized successfully.");
 
                 // Initialize Engine (Business Logic)
-                var engine = new DTS_Engine.Core.Engines.AuditEngine(loadReader);
+                // Initialize Engine (Business Logic Logic)
+                var engine = new DTS_Engine.Core.Engines.AuditEngine(loadReader, inventory);
                 WriteMessage("    Audit Engine initialized successfully.\n");
 
                 // ===============================================================

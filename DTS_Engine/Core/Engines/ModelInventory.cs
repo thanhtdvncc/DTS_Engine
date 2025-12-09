@@ -28,6 +28,8 @@ namespace DTS_Engine.Core.Engines
             public double MinZ { get; set; }
             public double MaxZ { get; set; }
             public bool IsVertical { get; set; }
+            public string GlobalAxisName { get; set; } // "Global +Z", "Global -X", etc.
+            public int DirectionSign { get; set; } // +1 or -1
 
             public double GetStoryElevation()
             {
@@ -74,6 +76,9 @@ namespace DTS_Engine.Core.Engines
                 Vector3D v2 = vectors?.L2 ?? Vector3D.UnitY;
                 Vector3D v3 = vectors?.L3 ?? Vector3D.UnitZ;
 
+                // Determine Global Axis from L3 (Normal) - Updated Logic
+                AnalyzeGlobalAxis(v3, out string axisName, out int sign);
+
                 _elements[f.Name] = new ElementInfo
                 {
                     Name = f.Name,
@@ -85,7 +90,9 @@ namespace DTS_Engine.Core.Engines
                     AverageZ = f.AverageZ,
                     MinZ = Math.Min(f.Z1, f.Z2),
                     MaxZ = Math.Max(f.Z1, f.Z2),
-                    IsVertical = f.IsVertical
+                    IsVertical = f.IsVertical,
+                    GlobalAxisName = axisName,
+                    DirectionSign = sign
                 };
             }
         }
@@ -97,6 +104,9 @@ namespace DTS_Engine.Core.Engines
             {
                 // Point cũng có thể bị xoay trục (Restraint/Load), cần lấy chính xác
                 var vectors = SapUtils.GetElementVectors(p.Name);
+                
+                Vector3D v3 = vectors?.L3 ?? Vector3D.UnitZ;
+                AnalyzeGlobalAxis(v3, out string axisName, out int sign);
 
                 _elements[p.Name] = new ElementInfo
                 {
@@ -104,11 +114,13 @@ namespace DTS_Engine.Core.Engines
                     ElementType = "Point",
                     LocalAxis1 = vectors?.L1 ?? Vector3D.UnitX,
                     LocalAxis2 = vectors?.L2 ?? Vector3D.UnitY,
-                    LocalAxis3 = vectors?.L3 ?? Vector3D.UnitZ,
+                    LocalAxis3 = v3,
                     AverageZ = p.Z,
                     MinZ = p.Z,
                     MaxZ = p.Z,
-                    IsVertical = false
+                    IsVertical = false,
+                    GlobalAxisName = axisName,
+                    DirectionSign = sign
                 };
             }
         }
@@ -134,6 +146,9 @@ namespace DTS_Engine.Core.Engines
                 double minZ = area.ZValues.Count > 0 ? area.ZValues.Min() : area.AverageZ;
                 double maxZ = area.ZValues.Count > 0 ? area.ZValues.Max() : area.AverageZ;
 
+                // Determine Global Axis from L3 (Normal) - Updated Logic
+                AnalyzeGlobalAxis(l3, out string axisName, out int sign);
+
                 _elements[area.Name] = new ElementInfo
                 {
                     Name = area.Name,
@@ -145,8 +160,39 @@ namespace DTS_Engine.Core.Engines
                     AverageZ = area.AverageZ,
                     MinZ = minZ,
                     MaxZ = maxZ,
-                    IsVertical = isVertical
+                    IsVertical = isVertical,
+                    GlobalAxisName = axisName,
+                    DirectionSign = sign
                 };
+            }
+        }
+
+        private void AnalyzeGlobalAxis(Vector3D l3, out string axisName, out int sign)
+        {
+            double gx = l3.X;
+            double gy = l3.Y;
+            double gz = l3.Z;
+
+            // Logic copied from SapLoadDiagnostics.DTS_DEBUG_SELECTED
+            if (Math.Abs(gx) > 0.9)
+            {
+                axisName = gx > 0 ? "Global +X" : "Global -X";
+                sign = gx > 0 ? 1 : -1;
+            }
+            else if (Math.Abs(gy) > 0.9)
+            {
+                axisName = gy > 0 ? "Global +Y" : "Global -Y";
+                sign = gy > 0 ? 1 : -1;
+            }
+            else if (Math.Abs(gz) > 0.9)
+            {
+                axisName = gz > 0 ? "Global +Z" : "Global -Z";
+                sign = gz > 0 ? 1 : -1;
+            }
+            else
+            {
+                axisName = "Mix";
+                sign = 1; // Default
             }
         }
 

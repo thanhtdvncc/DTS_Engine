@@ -182,7 +182,9 @@ namespace DTS_Engine.Commands
 
                 // STEP 4: Initialize Audit Engine (Business Logic Layer)
                 WriteMessage("   [3/3] Initializing Audit Engine...");
-                var engine = new AuditEngine(loadReader);
+                // STEP 4: Initialize Audit Engine (Business Logic Layer)
+                WriteMessage("   [3/3] Initializing Audit Engine...");
+                var engine = new AuditEngine(loadReader, inventory);
 
                 WriteMessage("   >> System ready. Processing pattern...\n");
 
