@@ -496,6 +496,12 @@ namespace DTS_Engine.Core.Engines
                 // (Tạm thời simplified: Liệt kê Grid range của phần tử đầu và cuối)
                 string locationDesc = GetGroupGridLocation(elementNames);
 
+                // Clean Direction String
+                string dirDisplay = key.GlobalAxis.Replace("Global ", "");
+                if (key.GlobalAxis.Contains("X")) dirDisplay = (key.DirectionSign > 0 ? "+" : "-") + "X";
+                else if (key.GlobalAxis.Contains("Y")) dirDisplay = (key.DirectionSign > 0 ? "+" : "-") + "Y";
+                else if (key.GlobalAxis.Contains("Z")) dirDisplay = (key.DirectionSign > 0 ? "+" : "-") + "Z";
+                
                 targetList.Add(new AuditEntry
                 {
                     GridLocation = locationDesc,
@@ -505,7 +511,7 @@ namespace DTS_Engine.Core.Engines
                     UnitLoad = key.LoadValue,
                     UnitLoadString = $"{key.LoadValue:0.00}",
                     TotalForce = totalForceSigned,
-                    Direction = key.GlobalAxis,
+                    Direction = dirDisplay,
                     DirectionSign = Math.Sign(totalForceSigned),
                     ForceX = fx,
                     ForceY = fy,
@@ -518,9 +524,72 @@ namespace DTS_Engine.Core.Engines
         private string GetGroupGridLocation(List<string> elements)
         {
             if (elements == null || elements.Count == 0) return "Unknown";
-            // Lấy 1 vài mẫu để tìm Grid
-            // Cải tiến sau: Tính Envelope thực sự
-            return "Multiple Grids"; 
+            
+            // 1. Calculate Bounding Box of the group
+            double minX = double.MaxValue, maxX = double.MinValue;
+            double minY = double.MaxValue, maxY = double.MinValue;
+            bool found = false;
+
+            foreach (var name in elements)
+            {
+                var info = _inventory.GetElement(name);
+                if (info == null) continue;
+
+                if (info.FrameGeometry != null)
+                {
+                     minX = Math.Min(minX, Math.Min(info.FrameGeometry.StartPt.X, info.FrameGeometry.EndPt.X));
+                     maxX = Math.Max(maxX, Math.Max(info.FrameGeometry.StartPt.X, info.FrameGeometry.EndPt.X));
+                     minY = Math.Min(minY, Math.Min(info.FrameGeometry.StartPt.Y, info.FrameGeometry.EndPt.Y));
+                     maxY = Math.Max(maxY, Math.Max(info.FrameGeometry.StartPt.Y, info.FrameGeometry.EndPt.Y));
+                     found = true;
+                }
+                else if (info.AreaGeometry != null && info.AreaGeometry.BoundaryPoints.Count > 0)
+                {
+                     foreach (var pt in info.AreaGeometry.BoundaryPoints)
+                     {
+                         minX = Math.Min(minX, pt.X);
+                         maxX = Math.Max(maxX, pt.X);
+                         minY = Math.Min(minY, pt.Y);
+                         maxY = Math.Max(maxY, pt.Y);
+                     }
+                     found = true;
+                }
+            }
+
+            if (!found) return "Geometry N/A";
+
+            // 2. Find intersecting grids
+            string gridX = FindGridRange(_xGrids, minX, maxX);
+            string gridY = FindGridRange(_yGrids, minY, maxY);
+
+            return $"Grid {gridX} x {gridY}";
+        }
+
+        private string FindGridRange(List<SapUtils.GridLineRecord> grids, double min, double max)
+        {
+            if (grids == null || grids.Count == 0) return "?";
+
+            // Tolerance for snapping (200mm)
+            double tol = 200.0;
+            
+            var startGrid = grids.FirstOrDefault(g => Math.Abs(g.Coordinate - min) < tol);
+            var endGrid = grids.LastOrDefault(g => Math.Abs(g.Coordinate - max) < tol);
+
+            // If exact match
+            if (startGrid != null && endGrid != null)
+            {
+                return startGrid == endGrid ? startGrid.Name : $"{startGrid.Name}-{endGrid.Name}";
+            }
+
+            // If range covers multiple grids
+            var covered = grids.Where(g => g.Coordinate >= min - tol && g.Coordinate <= max + tol).ToList();
+            if (covered.Count > 1) 
+                return $"{covered.First().Name}-{covered.Last().Name}";
+            if (covered.Count == 1)
+                return covered.First().Name;
+
+            // No nearby grid
+            return $"(~{min:0}..{max:0})";
         }
 
 
@@ -935,6 +1004,12 @@ namespace DTS_Engine.Core.Engines
 
                 var elementNames = grp.Select(f => f.Load.ElementName).Distinct().ToList();
 
+                // Clean Direction String
+                string dirDisplay = dir.Replace("Global ", "");
+                if (dir.Contains("X")) dirDisplay = (Math.Sign(signedForce) > 0 ? "+" : "-") + "X";
+                else if (dir.Contains("Y")) dirDisplay = (Math.Sign(signedForce) > 0 ? "+" : "-") + "Y";
+                else if (dir.Contains("Z")) dirDisplay = (Math.Sign(signedForce) > 0 ? "+" : "-") + "Z";
+
                 // CRITICAL v4.4: Store signed values - these will be displayed and summed
                 targetList.Add(new AuditEntry
                 {
@@ -945,7 +1020,7 @@ namespace DTS_Engine.Core.Engines
                     UnitLoad = loadVal, // Signed value from SAP
                     UnitLoadString = $"{loadVal:0.00}",
                     TotalForce = signedForce, // Signed magnitude
-                    Direction = dir,
+                    Direction = dirDisplay,
                     DirectionSign = Math.Sign(signedForce), // Sign for display
                     ForceX = fx, // Signed component
                     ForceY = fy, // Signed component
@@ -1138,6 +1213,12 @@ namespace DTS_Engine.Core.Engines
                 var sorted = SortPointsLeftToRight(groupLoads);
                 var elementNames = sorted.Select(p => p.load.ElementName).ToList();
 
+                // Clean Direction String
+                string dirDisplay = dir.Replace("Global ", "");
+                if (dir.Contains("X")) dirDisplay = (Math.Sign(signedForce) > 0 ? "+" : "-") + "X";
+                else if (dir.Contains("Y")) dirDisplay = (Math.Sign(signedForce) > 0 ? "+" : "-") + "Y";
+                else if (dir.Contains("Z")) dirDisplay = (Math.Sign(signedForce) > 0 ? "+" : "-") + "Z";
+
                 // CRITICAL v4.4: Store signed values - these will be displayed and summed
                 targetList.Add(new AuditEntry
                 {
@@ -1148,7 +1229,7 @@ namespace DTS_Engine.Core.Engines
                     UnitLoad = loadVal, // Signed value from SAP
                     UnitLoadString = $"{loadVal:0.00}",
                     TotalForce = signedForce, // Signed magnitude
-                    Direction = dir,
+                    Direction = dirDisplay,
                     DirectionSign = Math.Sign(signedForce), // Sign for display
                     ForceX = fx, // Signed component
                     ForceY = fy, // Signed component
