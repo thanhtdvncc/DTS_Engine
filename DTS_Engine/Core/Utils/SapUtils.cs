@@ -1633,17 +1633,39 @@ namespace DTS_Engine.Core.Utils
 		/// <summary>
 		/// Helper: Biến danh sách điểm thành Dictionary để tra cứu O(1)
 		/// </summary>
-		private static Dictionary<string, SapPoint> GetAllPointsDictionary()
-		{
-			var dict = new Dictionary<string, SapPoint>(StringComparer.OrdinalIgnoreCase);
-			var points = GetAllPoints(); // Hàm này đã có sẵn trong code của bạn (đọc bảng Joint Coordinates)
-			foreach (var p in points)
-			{
-				if (!dict.ContainsKey(p.Name))
-					dict[p.Name] = p;
-			}
-			return dict;
-		}
+        /// <summary>
+        /// Helper: Biến danh sách điểm thành Dictionary để tra cứu O(1)
+        /// [FIX v6.1] Enforce kN_mm_C units just like GetAllFramesGeometry to ensure coordinates are in mm.
+        /// </summary>
+        private static Dictionary<string, SapPoint> GetAllPointsDictionary()
+        {
+            var dict = new Dictionary<string, SapPoint>(StringComparer.OrdinalIgnoreCase);
+            
+            var model = GetModel();
+            if (model == null) return dict;
+
+            // SAVE UNITS & FORCE mm
+            int currentUnit = 0;
+            currentUnit = (int)model.GetPresentUnits();
+            model.SetPresentUnits(SAP2000v1.eUnits.kN_mm_C);
+
+            try
+            {
+                var points = GetAllPoints(); // Hàm này đọc bảng hoặc API
+                foreach (var p in points)
+                {
+                    if (!dict.ContainsKey(p.Name))
+                        dict[p.Name] = p;
+                }
+            }
+            finally
+            {
+                // RESTORE UNITS
+                model.SetPresentUnits((SAP2000v1.eUnits)currentUnit);
+            }
+            
+            return dict;
+        }
 
 		#endregion
 	}

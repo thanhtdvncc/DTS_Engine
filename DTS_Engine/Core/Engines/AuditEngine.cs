@@ -227,18 +227,34 @@ namespace DTS_Engine.Core.Engines
 
         /// <summary>
         /// Determine Z-coordinate for story assignment directly from Inventory.
+        /// [v6.0] Updated to use specific dictionary based on LoadType to avoid name collisions.
         /// </summary>
         private double DetermineElementStoryZ(RawSapLoad load)
         {
             if (load == null) return 0.0;
 
-            var info = _inventory.GetElement(load.ElementName);
+            ModelInventory.ElementInfo info = null;
+
+            // Dispatch based entirely on LoadType to avoid "GetElement" ambiguity
+            if (load.LoadType.StartsWith("Frame")) 
+                info = _inventory.GetFrame(load.ElementName);
+            else if (load.LoadType.StartsWith("Area"))
+                info = _inventory.GetArea(load.ElementName);
+            else if (load.LoadType.Contains("Point") || load.LoadType.Contains("Joint") || load.LoadType.Contains("Force"))
+                info = _inventory.GetPoint(load.ElementName);
+            
+            // Fallback
+            if (info == null) info = _inventory.GetElement(load.ElementName);
+
             if (info != null)
             {
                 return info.GetStoryElevation();
             }
 
             // Fallback to raw ElementZ from reader
+            // Note: If LoadReader already called inventory (as it does in GetElementElevation), 
+            // this might still be wrong if LoadReader used unsafe GetElement.
+            // But usually AuditEngine re-evaluates Z here for Grouping.
             return load.ElementZ;
         }
 
@@ -1193,19 +1209,11 @@ namespace DTS_Engine.Core.Engines
 
             foreach (var load in loads)
             {
-                var info = _inventory.GetElement(load.ElementName);
+                // [v6.0] Type-safe lookup: Frame loads -> Frame dictionary only
+                var info = _inventory.GetFrame(load.ElementName);
                 if (info == null)
                 {
-                    Log($"   [SKIP] {load.ElementName}: info=null (not in inventory)");
-                    skipCount++;
-                    continue;
-                }
-                
-                // [FIX v5.2] STRICT: Nếu là Frame load nhưng không có FrameGeometry -> SKIP, KHÔNG reroute
-                // Nguyên tắc: Tải gán vào Dầm/Cột phải nằm trong bảng Dầm/Cột bất kể trạng thái hình học
-                if (info.FrameGeometry == null)
-                {
-                    Log($"   [SKIP] {load.ElementName}: FrameGeometry=null (missing geometry, NOT rerouting)");
+                    Log($"   [SKIP] {load.ElementName}: not found in Frame inventory");
                     skipCount++;
                     continue;
                 }
@@ -1460,8 +1468,9 @@ namespace DTS_Engine.Core.Engines
 
             foreach (var load in loads)
             {
-                var info = _inventory.GetElement(load.ElementName);
-                if (info == null || info.PointGeometry == null) continue;
+                // [v6.0] Type-safe lookup: Point loads -> Point dictionary only
+                var info = _inventory.GetPoint(load.ElementName);
+                if (info == null) continue;
                 allPoints.Add((load, info.PointGeometry));
             }
 
