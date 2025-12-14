@@ -1225,12 +1225,13 @@ namespace DTS_Engine.Core.Engines
             return $"{env.Width / 1000.0:0.##}x{env.Height / 1000.0:0.##}";
         }
 
-        // [ProcessFrameLoads v8.1] Optimized Partial Load Handling
+        // [ProcessFrameLoads v8.2] Optimized Partial Load Handling
         // - Merges split load segments on the same frame -> Full Load
         // - Merges display of partial segments (e.g., I=0to2.3 & 2.3to4.5) -> Single Line
+        // - GlobalInterval for span analysis
         private void ProcessFrameLoads(List<RawSapLoad> loads, double loadVal, string dir, List<AuditEntry> targetList)
         {
-            Log($"[ProcessFrameLoads v8.1] Processing {loads.Count} loads. Val={loadVal}, Dir={dir}");
+            Log($"[ProcessFrameLoads v8.2] Processing {loads.Count} loads. Val={loadVal}, Dir={dir}");
             
             var frameItems = new List<FrameAuditItem>();
             int skipCount = 0;
@@ -1270,6 +1271,9 @@ namespace DTS_Engine.Core.Engines
                     if (frame.Length2D < 1e-4) isFull = true; // Cột luôn full
                 }
 
+                // Tính tọa độ Global để gộp (Span analysis)
+                var globalInterval = CalculateGlobalInterval(load, frame);
+
                 frameItems.Add(new FrameAuditItem
                 {
                     Load = load,
@@ -1278,6 +1282,8 @@ namespace DTS_Engine.Core.Engines
                     Length = loadLen,
                     StartM = startM,
                     EndM = endM,
+                    GlobalStart = globalInterval.Start,
+                    GlobalEnd = globalInterval.End,
                     IsFullLoad = isFull
                 });
             }
@@ -1331,7 +1337,7 @@ namespace DTS_Engine.Core.Engines
                     
                     // Tạo entry tổng hợp
                     // Pass danh sách gốc (fullLoads) để tính Force chính xác (dựa trên từng đoạn tải)
-                    CreateFullLoadEntry(fullLoads, uniqueElements.Count, uniqueElements.Sum(e => e.TotalLen), fullGridLoc, loadVal, dir, structType, targetList);
+                    CreateFullLoadEntry(fullLoads, uniqueElements.Count, uniqueElements.Sum(e => e.TotalLen), uniqueElements.Select(e => e.TotalLen).ToList(), fullGridLoc, loadVal, dir, structType, targetList);
                 }
 
                 // GROUP 2: Partial Loads (Thực sự lẻ)
@@ -1417,19 +1423,33 @@ namespace DTS_Engine.Core.Engines
 
         #region Frame Load Entry Helpers v7.0
 
-        // [UPDATED HELPER] Cập nhật CreateFullLoadEntry để nhận số lượng thanh và tổng chiều dài đã tính toán lại
-        private void CreateFullLoadEntry(List<FrameAuditItem> allSegments, int uniqueElemCount, double totalLenUnique, string location, double loadVal, string dir, string structType, List<AuditEntry> targetList)
+        // [UPDATED v8.2] SỬA LỖI HIỂN THỊ "SUM=..." - Hiện công thức cộng dồn
+        private void CreateFullLoadEntry(List<FrameAuditItem> allSegments, int uniqueElemCount, double totalLenUnique, List<double> uniqueLengths, string location, double loadVal, string dir, string structType, List<AuditEntry> targetList)
         {
-            // Force tính từ tổng chiều dài các đoạn segment (để chính xác tuyệt đối với SAP)
             double totalForceLen = allSegments.Sum(i => i.Length); 
             double force = totalForceLen * loadVal;
             
-            // Formula hiển thị
-            string formula = $"Sum={totalLenUnique:0.00}m ({uniqueElemCount} elems)";
-
-            var elementNames = allSegments.Select(x => x.Load.ElementName).Distinct().ToList();
+            // Tạo công thức cộng dồn: 4x5.0+3.0...
+            var lenGroups = uniqueLengths.GroupBy(l => Math.Round(l, 2))
+                                         .OrderByDescending(g => g.Key);
             
-            // Lưu ý: Quantity hiển thị là tổng chiều dài của các thanh (unique length)
+            var parts = new List<string>();
+            foreach (var g in lenGroups)
+            {
+                int count = g.Count();
+                double l = g.Key;
+                if (count > 2) parts.Add($"{count}x{l:0.##}");
+                else
+                {
+                    for (int k = 0; k < count; k++) parts.Add($"{l:0.##}");
+                }
+            }
+            string formula = string.Join("+", parts);
+            
+            // [FIXED] Đã xóa dòng lệnh if (formula.Length > 50)...
+            // Bây giờ nó sẽ luôn hiện công thức đầy đủ
+            
+            var elementNames = allSegments.Select(x => x.Load.ElementName).Distinct().ToList();
             AddFrameEntry(location, formula, totalLenUnique, loadVal, force, dir, elementNames, structType, targetList);
         }
 
