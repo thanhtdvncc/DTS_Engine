@@ -361,10 +361,6 @@ namespace DTS_Engine.Core.Engines
 
         #region Core Processing Logic
 
-        /// <summary>
-        /// REFACTORED v7.3: Group by Generalized Category (Area/Frame/Point) to avoid splitting
-        /// distinct SAP load types (e.g., AreaUniform vs AreaConstraint) into separate rows.
-        /// </summary>
         private AuditStoryGroup ProcessStory(string storyName, double elevation, List<RawSapLoad> loads)
         {
             var storyGroup = new AuditStoryGroup
@@ -373,23 +369,16 @@ namespace DTS_Engine.Core.Engines
                 Elevation = elevation
             };
 
-            // DEBUG: Log all raw load types received
+            // DEBUG: Log all load types received
             var loadTypeSummary = loads.GroupBy(l => l.LoadType).Select(g => $"{g.Key}:{g.Count()}");
-            Log($"   [LOADTYPES-RAW] {storyName}: {string.Join(", ", loadTypeSummary)}");
+            Log($"   [LOADTYPES] {storyName}: {string.Join(", ", loadTypeSummary)}");
 
-            // FIX v7.3: Group by GENERAL CATEGORY instead of raw LoadType string
-            // This merges "AreaUniform", "AreaUniformToFrame", "AreaConstraint" etc. into one "Area Loads" group.
-            var loadTypeGroups = loads.GroupBy(l => GetGeneralLoadCategory(l.LoadType));
-
-            // DEBUG: Log grouped categories
-            var catSummary = loadTypeGroups.Select(g => $"{g.Key}:{g.Count()}");
-            Log($"   [LOADTYPES-MERGED] {storyName}: {string.Join(", ", catSummary)}");
+            // Gom nhóm theo loại tải (Area, Frame, Point)
+            var loadTypeGroups = loads.GroupBy(l => l.LoadType);
 
             foreach (var typeGroup in loadTypeGroups)
             {
-                // Pass the Category Name (e.g., "Area Loads") to processing
                 var typeResult = ProcessLoadType(typeGroup.Key, typeGroup.ToList());
-                
                 if (typeResult.Entries != null && typeResult.Entries.Count > 0)
                     storyGroup.LoadTypes.Add(typeResult);
                 else
@@ -398,22 +387,6 @@ namespace DTS_Engine.Core.Engines
 
             Log($"   [STORY-DONE] {storyName}: {storyGroup.LoadTypes.Count} load types, {storyGroup.LoadTypes.Sum(t => t.Entries.Count)} total entries.");
             return storyGroup;
-        }
-
-        /// <summary>
-        /// [v7.3] Normalizes SAP Load Types into broad categories for reporting.
-        /// This prevents SAP's internal type variants from splitting into separate tables.
-        /// </summary>
-        private string GetGeneralLoadCategory(string rawLoadType)
-        {
-            if (string.IsNullOrEmpty(rawLoadType)) return "UNKNOWN";
-            
-            // Normalize: Group all Area-related types together
-            if (rawLoadType.Contains("Area")) return "Area Loads"; // AreaUniform, AreaUniformToFrame, AreaConstraint, etc.
-            if (rawLoadType.Contains("Frame")) return "Frame Loads"; // FrameDistributed, etc.
-            if (rawLoadType.Contains("Point") || rawLoadType.Contains("Joint") || rawLoadType.Contains("Force")) return "Point Loads";
-            
-            return rawLoadType; // Fallback to original
         }
 
         private AuditLoadTypeGroup ProcessLoadType(string loadType, List<RawSapLoad> loads)
@@ -2136,53 +2109,57 @@ namespace DTS_Engine.Core.Engines
 
                 sb.AppendLine($"[>] {(isVN ? "TẦNG" : "STORY")}: {story.StoryName} | Z={story.Elevation:0}mm [Fx={storyFx:0.00}, Fy={storyFy:0.00}, Fz={storyFz:0.00}]");
 
-                // [FIX v7.2] Flatten ALL entries from all LoadTypes, then group by StructuralType
-                // This creates ONE table per element type (Slab, Beam, etc.) regardless of load value
-                var allEntriesInStory = story.LoadTypes.SelectMany(lt => lt.Entries).ToList();
-                
-                // Group by StructuralType
-                var structGroups = allEntriesInStory
-                    .GroupBy(e => e.StructuralType)
-                    .OrderBy(g => g.Key);
-
-                foreach (var structGroup in structGroups)
+                foreach (var loadType in story.LoadTypes)
                 {
-                    string structHeader = structGroup.Key;
-                    // Basic translation for VN
-                    if (isVN)
+                    string typeName = GetSpecificLoadTypeName(loadType, isVN);
+
+                    // CRITICAL v4.4: LoadType totals from SubTotalFx/Fy/Fz (which come from AuditEntry.ForceX/Y/Z)
+                    double typeFx = loadType.SubTotalFx * forceFactor;
+                    double typeFy = loadType.SubTotalFy * forceFactor;
+                    double typeFz = loadType.SubTotalFz * forceFactor;
+
+                    // CRITICAL v4.4: LoadType totals hidden from table header as per request v4.10
+                    // but we still calculate them for internal validation if needed.
+                    // Removed: sb.AppendLine($"  [{typeName}] [Fx={typeFx:0.00}, Fy={typeFy:0.00}, Fz={typeFz:0.00}]");
+
+                    // Setup cột (variable needed inside loop)
+                    string valueUnit = loadType.Entries.FirstOrDefault()?.QuantityUnit ?? "m²";
+
+                    // [FIX v4.10] Split by Structural Type (Slab, Wall, Beam, Column)
+                    // Create separate tables for each structural type.
+                    var typeGroups = loadType.Entries.GroupBy(e => e.StructuralType).OrderBy(g => g.Key);
+
+                    foreach (var subGroup in typeGroups)
                     {
-                        if (structHeader == "Slab Elements") structHeader = "Sàn (Slab)";
-                        else if (structHeader == "Wall Elements") structHeader = "Vách (Wall)";
-                        else if (structHeader == "Beam Elements") structHeader = "Dầm (Beam)";
-                        else if (structHeader == "Column Elements") structHeader = "Cột (Column)";
-                        else if (structHeader == "Point Elements") structHeader = "Điểm (Point)";
+                        string structHeader = subGroup.Key;
+                        // Basic translation for VN
+                        if (isVN)
+                        {
+                            if (structHeader == "Slab Elements") structHeader = "Sàn (Slab)";
+                            else if (structHeader == "Wall Elements") structHeader = "Vách (Wall)";
+                            else if (structHeader == "Beam Elements") structHeader = "Dầm (Beam)";
+                            else if (structHeader == "Column Elements") structHeader = "Cột (Column)";
+                        }
+
+                        // Column Header formatting (Last column takes StructType name, e.g. "Slab Elements")
+                        string hGrid = (isVN ? "Vị trí trục" : "Grid Location").PadRight(30);
+                        string hCalc = (isVN ? "Chi tiết" : "Calculator").PadRight(35);
+                        string hValue = $"Value({valueUnit})".PadRight(15);
+                        string hUnit = $"Unit Load({targetUnit}/{valueUnit})".PadRight(20);
+                        string hDir = (isVN ? "Hướng" : "Dir").PadRight(8);
+                        string hForce = $"Force({targetUnit})".PadRight(15);
+                        string hElem = structHeader; 
+
+                        sb.AppendLine($"    {hGrid}{hCalc}{hValue}{hUnit}{hDir}{hForce}{hElem}");
+                        sb.AppendLine($"    {new string('-', 160)}");
+
+                        // Entries are already sorted in ProcessLoadType
+                        foreach (var entry in subGroup)
+                        {
+                            FormatDataRow(sb, entry, forceFactor, targetUnit);
+                        }
+                        sb.AppendLine();
                     }
-
-                    // Determine value unit from first entry
-                    string valueUnit = structGroup.FirstOrDefault()?.QuantityUnit ?? "m²";
-
-                    // Column Header formatting
-                    string hGrid = (isVN ? "Vị trí trục" : "Grid Location").PadRight(30);
-                    string hCalc = (isVN ? "Chi tiết" : "Calculator").PadRight(35);
-                    string hValue = $"Value({valueUnit})".PadRight(15);
-                    string hUnit = $"Unit Load({targetUnit}/{valueUnit})".PadRight(20);
-                    string hDir = (isVN ? "Hướng" : "Dir").PadRight(8);
-                    string hForce = $"Force({targetUnit})".PadRight(15);
-                    string hElem = structHeader;
-
-                    sb.AppendLine($"    {hGrid}{hCalc}{hValue}{hUnit}{hDir}{hForce}{hElem}");
-                    sb.AppendLine($"    {new string('-', 160)}");
-
-                    // [FIX v7.2] Sort entries by Direction (X+, X-, Y+, Y-, Z+, Z-) then by GridLocation
-                    var sortedEntries = structGroup
-                        .OrderBy(e => GetDirectionSortOrder(e.Direction))
-                        .ThenBy(e => e.GridLocation);
-
-                    foreach (var entry in sortedEntries)
-                    {
-                        FormatDataRow(sb, entry, forceFactor, targetUnit);
-                    }
-                    sb.AppendLine();
                     sb.AppendLine();
                 }
                 sb.AppendLine(); // Dòng trống giữa các tầng
@@ -2303,24 +2280,6 @@ namespace DTS_Engine.Core.Engines
             string elements = CompressElementList(entry.ElementList ?? new List<string>(), maxDisplay: 80);
 
             sb.AppendLine($"    {grid}{calc}{value}{unitLoad}{dir}{force}{elements}");
-        }
-
-        /// <summary>
-        /// [v7.2] Get sort order for Direction: X+ < X- < Y+ < Y- < Z+ < Z-
-        /// </summary>
-        private int GetDirectionSortOrder(string direction)
-        {
-            if (string.IsNullOrEmpty(direction)) return 99;
-            string d = direction.Trim().ToUpper();
-            
-            if (d.Contains("+X") || d == "X" || d == "+X") return 0;
-            if (d.Contains("-X")) return 1;
-            if (d.Contains("+Y") || d == "Y" || d == "+Y") return 2;
-            if (d.Contains("-Y")) return 3;
-            if (d.Contains("+Z") || d == "Z" || d == "+Z") return 4;
-            if (d.Contains("-Z")) return 5;
-            
-            return 99; // Default for unknown
         }
 
         // Helper cắt chuỗi an toàn
