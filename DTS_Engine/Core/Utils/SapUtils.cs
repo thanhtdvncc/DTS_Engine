@@ -961,24 +961,31 @@ namespace DTS_Engine.Core.Utils
 			var model = GetModel();
 			if (model == null) return result;
 
-			string[] candidateTableKeys = new[] { "Grid Lines" };
-
-			foreach (var tableKey in candidateTableKeys)
+			// [FIX v7.1] Enforce kN_mm_C units for consistent coordinates with frame geometry
+			// Without this, grid coords are in display units (meters) but frames are in mm
+			int currentUnit = (int)model.GetPresentUnits();
+			try
 			{
-				try
-				{
-					int tableVersion = 0;
-					string[] fieldNames = null;
-					string[] tableData = null;
-					int numberRecords = 0;
-					string[] fieldsKeysIncluded = null;
+				model.SetPresentUnits(SAP2000v1.eUnits.kN_mm_C);
 
-					string[] fieldKeyListInput = new string[] { "" };
-					int ret = model.DatabaseTables.GetTableForDisplayArray(
-					 tableKey,
-				 ref fieldKeyListInput, "All", ref tableVersion, ref fieldsKeysIncluded,
-					 ref numberRecords, ref tableData
-					 );
+				string[] candidateTableKeys = new[] { "Grid Lines" };
+
+				foreach (var tableKey in candidateTableKeys)
+				{
+					try
+					{
+						int tableVersion = 0;
+						string[] fieldNames = null;
+						string[] tableData = null;
+						int numberRecords = 0;
+						string[] fieldsKeysIncluded = null;
+
+						string[] fieldKeyListInput = new string[] { "" };
+						int ret = model.DatabaseTables.GetTableForDisplayArray(
+						 tableKey,
+					 ref fieldKeyListInput, "All", ref tableVersion, ref fieldsKeysIncluded,
+						 ref numberRecords, ref tableData
+						 );
 
 					if (ret != 0 || tableData == null || fieldsKeysIncluded == null || numberRecords == 0)
 						continue;
@@ -1030,9 +1037,15 @@ namespace DTS_Engine.Core.Utils
 						catch { }
 					}
 
-					if (result.Count > 0) return result;
+					if (result.Count > 0) break; // Found grids, exit loop
+					}
+					catch { }
 				}
-				catch { }
+			}
+			finally
+			{
+				// Restore original units
+				model.SetPresentUnits((SAP2000v1.eUnits)currentUnit);
 			}
 
 			return result;

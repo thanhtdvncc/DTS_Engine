@@ -1357,17 +1357,37 @@ namespace DTS_Engine.Core.Engines
             string dUpper = dir.ToUpper();
             int sign = Math.Sign(force);
 
-            // Direction mapping
-            if (dUpper.Contains("GRAV")) fz = -Math.Abs(force);
-            else if (dUpper.Contains("X")) fx = force;
-            else if (dUpper.Contains("Y")) fy = force;
-            else fz = force; // Default Z
-
-            // Clean direction display
-            string dirDisplay = dUpper.Replace("GLOBAL ", "");
-            if (dUpper.Contains("X")) dirDisplay = (sign > 0 ? "+" : "-") + "X";
-            else if (dUpper.Contains("Y")) dirDisplay = (sign > 0 ? "+" : "-") + "Y";
-            else if (dUpper.Contains("Z") || dUpper.Contains("GRAV")) dirDisplay = (sign > 0 ? "+" : "-") + "Z";
+            // [FIX v7.1] Direction mapping - GRAVITY must be checked first!
+            // "GRAVITY" contains "Y" so naive Contains check failed
+            string dirDisplay = "?";
+            
+            if (dUpper.Contains("GRAV") || dUpper == "10" || dUpper == "11")
+            {
+                // Gravity load = -Z direction
+                fz = -Math.Abs(force);
+                dirDisplay = "-Z";
+            }
+            else if (dUpper.Contains("Z") || dUpper == "6")
+            {
+                fz = force;
+                dirDisplay = (sign > 0 ? "+" : "-") + "Z";
+            }
+            else if (dUpper.EndsWith("X") || dUpper == "4" || dUpper.Contains("GLOBAL X"))
+            {
+                fx = force;
+                dirDisplay = (sign > 0 ? "+" : "-") + "X";
+            }
+            else if (dUpper.EndsWith("Y") || dUpper == "5" || dUpper.Contains("GLOBAL Y"))
+            {
+                fy = force;
+                dirDisplay = (sign > 0 ? "+" : "-") + "Y";
+            }
+            else
+            {
+                // Default: assume Z-direction
+                fz = force;
+                dirDisplay = (sign > 0 ? "+" : "-") + "Z";
+            }
 
             targetList.Add(new AuditEntry
             {
