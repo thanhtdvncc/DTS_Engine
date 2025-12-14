@@ -574,9 +574,14 @@ namespace DTS_Engine.Core.Engines
         /// - Tạm chuyển SAP về kN_m_C để lấy tọa độ mét, load kN/m²
         /// - Sau xử lý, trả lại unit gốc
         /// </summary>
+        /// <summary>
+        /// ProcessAreaLoads v5.2 - Optimized Grouping & Performance
+        /// - Fixes Duplicate Rows: Normalizes Direction & uses F3 rounding
+        /// - Fixes Performance: Uses CascadedPolygonUnion
+        /// </summary>
         private void ProcessAreaLoads(List<RawSapLoad> loads, double loadVal, string dir, List<AuditEntry> targetList)
         {
-            Log($"[ProcessAreaLoads v5.1] Processing {loads.Count} loads. Val={loadVal}");
+            Log($"[ProcessAreaLoads v5.2] Processing {loads.Count} loads. Val={loadVal}");
 
             var model = SapUtils.GetModel();
             if (model == null) { Log("[ERROR] Cannot get SAP Model"); return; }
@@ -596,7 +601,6 @@ namespace DTS_Engine.Core.Engines
             catch { }
 
             var groups = new Dictionary<string, List<(RawSapLoad Load, double AreaM2, string Axis, int Sign, SapArea Geom)>>();
-
 
             foreach (var load in loads)
             {
@@ -649,15 +653,24 @@ namespace DTS_Engine.Core.Engines
                 // Tolerance 0.5m cho grouping walls cùng plane
                 long planeBin = (long)Math.Round(planeCoord / 0.5);
 
-                // 5. GROUP KEY
+                // 5. GROUP KEY - NORMALIZED & SYNCHRONIZED
+                
+                // [FIX 1] Normalize Direction: Z loads are same group regardless of label
+                string rawDir = (load.Direction ?? "").Trim().ToUpperInvariant();
+                string normDir = rawDir;
+                if (globalAxis.Contains("Z"))
+                {
+                    if (rawDir.Contains("GRAV") || rawDir.Contains("GLOBAL Z") || rawDir.Contains("Z"))
+                        normDir = "Z_AXIS";
+                }
+
+                // [FIX 2] Sync Rounding with ProcessLoadType (F3 instead of F4)
                 string groupKey = globalAxis.Contains("Z")
-                    ? $"SLAB|{(load.Direction ?? "").Trim().ToUpperInvariant()}|{load.Value1:F4}"
-                    : $"WALL|{globalAxis}|{load.Value1:F4}|{planeBin}|{sign}";
+                    ? $"SLAB|{normDir}|{load.Value1:F3}"
+                    : $"WALL|{globalAxis}|{load.Value1:F3}|{planeBin}|{sign}";
 
                 // Tạo SapArea để dùng cho NTS
                 var sapArea = new SapArea { Name = name, BoundaryPoints = pts.Select(p => new Point2D(p.x, p.y)).ToList(), ZValues = pts.Select(p => p.z).ToList() };
-
-
 
                 if (!groups.ContainsKey(groupKey))
                     groups[groupKey] = new List<(RawSapLoad, double, string, int, SapArea)>();
@@ -684,18 +697,31 @@ namespace DTS_Engine.Core.Engines
 
                     if (totalArea < MIN_AREA_THRESHOLD_M2) { continue; }
 
-                    // NTS GEOMETRY
+                    // [FIX 3] Performance Fix: Cascaded Union (Unary Union)
                     Geometry combinedGeom = null;
                     try
                     {
+                        var polygonList = new List<Geometry>();
                         foreach (var item in items)
                         {
                             var projPts = ProjectAreaToBestPlane(item.Geom);
                             var poly = CreateNtsPolygon(projPts);
-                            if (poly?.IsValid == true) combinedGeom = combinedGeom == null ? poly : combinedGeom.Union(poly);
+                            if (poly != null && poly.IsValid && !poly.IsEmpty)
+                            {
+                                polygonList.Add(poly);
+                            }
+                        }
+
+                        if (polygonList.Count > 0)
+                        {
+                            // UnaryUnion is O(N log N) vs Iterative Union O(N^2)
+                            combinedGeom = UnaryUnionOp.Union(polygonList);
                         }
                     }
-                    catch { }
+                    catch (Exception ex) 
+                    {
+                        Log($"[GEOM-ERROR] Union failed: {ex.Message}");
+                    }
 
                     string formula = combinedGeom != null && !combinedGeom.IsEmpty ? FormatGeomGrouping(combinedGeom) : $"~{totalArea:0.00}";
                     string location = GetGroupGridLocation(elementNames);
