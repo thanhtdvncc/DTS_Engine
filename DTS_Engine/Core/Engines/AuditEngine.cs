@@ -2173,22 +2173,14 @@ namespace DTS_Engine.Core.Engines
 
         #region Report Generation (With Unit Conversion & New Format v4.2)
 
-        /// <summary>
-        /// Generate formatted text audit report.
-        /// UPDATED v4.4: New column layout - removed Type, added Value, reordered Dir before Force
-        /// Format: Grid Location | Calculator | Value(unit) | Unit Load(unit) | Dir | Force(unit) | Elements
-        /// 
-        /// CRITICAL v4.4 SUMMARY CALCULATION:
-        /// - Summary calculated ONLY from processed AuditEntry.ForceX/Y/Z (already in report.Stories)
-        /// - NO fallback to report.CalculatedFx/Fy/Fz (those are also from processed data)
-        /// - Ensures: Visual Sum = Calculated Sum = Sum of displayed Force values
-        /// </summary>
+        // [UPDATE v9.0] REPORT PRO: GROUP BY AXIS & SMART SORTING
+        // "Out trình kỹ sư": Tự động gom nhóm các grid lẻ (D, D-1m...) về trục chính
         public string GenerateTextReport(AuditReport report, string targetUnit = "kN", string language = "English")
         {
             var sb = new StringBuilder();
             double forceFactor = 1.0;
 
-            // Unit conversion setup
+            // Unit setup
             if (string.IsNullOrWhiteSpace(targetUnit)) targetUnit = UnitManager.Info.ForceUnit;
             if (targetUnit.Equals("Ton", StringComparison.OrdinalIgnoreCase) || targetUnit.Equals("Tonf", StringComparison.OrdinalIgnoreCase))
                 forceFactor = 1.0 / 9.81;
@@ -2197,9 +2189,9 @@ namespace DTS_Engine.Core.Engines
 
             bool isVN = language.Equals("Vietnamese", StringComparison.OrdinalIgnoreCase);
 
-            // HEADER CHUNG
+            // HEADER
             sb.AppendLine("".PadRight(150, '='));
-            sb.AppendLine(isVN ? "   KIỂM TOÁN TẢI TRỌNG SAP2000 (DTS ENGINE v4.4)" : "   SAP2000 LOAD AUDIT REPORT (DTS ENGINE v4.4)");
+            sb.AppendLine(isVN ? "   BÁO CÁO KIỂM TOÁN TẢI TRỌNG (DTS ENGINE v9.0 - AXIS GROUPING)" : "   LOAD AUDIT REPORT (DTS ENGINE v9.0 - AXIS GROUPING)");
             sb.AppendLine($"   {(isVN ? "Dự án" : "Project")}: {report.ModelName ?? "Unknown"}");
             sb.AppendLine($"   {(isVN ? "Tổ hợp tải" : "Load Pattern")}: {report.LoadPattern}");
             sb.AppendLine($"   {(isVN ? "Ngày tính" : "Audit Date")}: {report.AuditDate:yyyy-MM-dd HH:mm:ss}");
@@ -2209,7 +2201,6 @@ namespace DTS_Engine.Core.Engines
 
             foreach (var story in report.Stories.OrderByDescending(s => s.Elevation))
             {
-                // CRITICAL v4.4: Calculate story totals from LoadType subtotals (which come from AuditEntry.ForceX/Y/Z)
                 double storyFx = story.LoadTypes.Sum(lt => lt.SubTotalFx) * forceFactor;
                 double storyFy = story.LoadTypes.Sum(lt => lt.SubTotalFy) * forceFactor;
                 double storyFz = story.LoadTypes.Sum(lt => lt.SubTotalFz) * forceFactor;
@@ -2218,41 +2209,26 @@ namespace DTS_Engine.Core.Engines
 
                 foreach (var loadType in story.LoadTypes)
                 {
-                    string typeName = GetSpecificLoadTypeName(loadType, isVN);
-
-                    // CRITICAL v4.4: LoadType totals from SubTotalFx/Fy/Fz (which come from AuditEntry.ForceX/Y/Z)
-                    double typeFx = loadType.SubTotalFx * forceFactor;
-                    double typeFy = loadType.SubTotalFy * forceFactor;
-                    double typeFz = loadType.SubTotalFz * forceFactor;
-
-                    // CRITICAL v4.4: LoadType totals hidden from table header as per request v4.10
-                    // but we still calculate them for internal validation if needed.
-                    // Removed: sb.AppendLine($"  [{typeName}] [Fx={typeFx:0.00}, Fy={typeFy:0.00}, Fz={typeFz:0.00}]");
-
-                    // Setup cột (variable needed inside loop)
-                    string valueUnit = loadType.Entries.FirstOrDefault()?.QuantityUnit ?? "m²";
-
-                    // [FIX v4.10] Split by Structural Type (Slab, Wall, Beam, Column)
-                    // Create separate tables for each structural type.
+                    // Group by Structural Type (Beam, Column, Wall...)
                     var typeGroups = loadType.Entries.GroupBy(e => e.StructuralType).OrderBy(g => g.Key);
 
                     foreach (var subGroup in typeGroups)
                     {
                         string structHeader = subGroup.Key;
-                        // Basic translation for VN
                         if (isVN)
                         {
                             if (structHeader == "Slab Elements") structHeader = "Sàn (Slab)";
                             else if (structHeader == "Wall Elements") structHeader = "Vách (Wall)";
                             else if (structHeader == "Beam Elements") structHeader = "Dầm (Beam)";
                             else if (structHeader == "Column Elements") structHeader = "Cột (Column)";
+                            else if (structHeader == "Point Elements") structHeader = "Nút (Point)";
                         }
 
-                        // Column Header formatting (Last column takes StructType name, e.g. "Slab Elements")
+                        // Column Headers
                         string hGrid = (isVN ? "Vị trí trục" : "Grid Location").PadRight(30);
-                        string hCalc = (isVN ? "Chi tiết" : "Calculator").PadRight(35);
-                        string hValue = $"Value({valueUnit})".PadRight(15);
-                        string hUnit = $"Unit Load({targetUnit}/{valueUnit})".PadRight(20);
+                        string hCalc = (isVN ? "Chi tiết tính toán" : "Calculator").PadRight(35);
+                        string hValue = $"Value({subGroup.First().QuantityUnit})".PadRight(15);
+                        string hUnit = $"Unit Load".PadRight(15);
                         string hDir = (isVN ? "Hướng" : "Dir").PadRight(8);
                         string hForce = $"Force({targetUnit})".PadRight(15);
                         string hElem = structHeader; 
@@ -2260,62 +2236,103 @@ namespace DTS_Engine.Core.Engines
                         sb.AppendLine($"    {hGrid}{hCalc}{hValue}{hUnit}{hDir}{hForce}{hElem}");
                         sb.AppendLine($"    {new string('-', 160)}");
 
-                        // Entries are already sorted in ProcessLoadType
-                        foreach (var entry in subGroup)
+                        // --- LOGIC GOM NHÓM THEO TRỤC (AXIS GROUPING) ---
+                        // 1. Phân loại từng Entry về trục cơ sở (Ví dụ: "D-1m" về "D")
+                        var axisGroups = subGroup.GroupBy(e => GetBaseGridName(e.GridLocation))
+                                                 .ToList();
+
+                        // 2. Sắp xếp trục: Số trước, Chữ sau (1, 2, 3... A, B, C...)
+                        var sortedGroups = SortAxisGroups(axisGroups);
+
+                        foreach (var axisGroup in sortedGroups)
                         {
-                            FormatDataRow(sb, entry, forceFactor, targetUnit);
+                            // 3. Trong mỗi trục, sắp xếp theo phương vuông góc (Span)
+                            // GridLocation thường là "Grid D x 1-2". Ta sort theo phần sau "x".
+                            var sortedEntries = axisGroup.OrderBy(e => GetCrossAxisSortKey(e.GridLocation)).ToList();
+
+                            foreach (var entry in sortedEntries)
+                            {
+                                FormatDataRow(sb, entry, forceFactor, targetUnit);
+                            }
                         }
                         sb.AppendLine();
                     }
                     sb.AppendLine();
                 }
-                sb.AppendLine(); // Dòng trống giữa các tầng
+                sb.AppendLine(); 
             }
 
-            // ====================================================================================
-            // CRITICAL v4.4: SUMMARY CALCULATION FROM PROCESSED DATA ONLY
-            // Calculate Visual Sums from Processed Data (report.Stories → LoadTypes → SubTotalFx/Fy/Fz)
-            // This ensures: Summary = Sum of all displayed force values (100% consistency)
-            // ====================================================================================
-
-            // 1. Calculate Visual Sums from report.Stories (already populated with processed data)
+            // SUMMARY
             double visualFx = report.Stories.Sum(s => s.LoadTypes.Sum(lt => lt.SubTotalFx));
             double visualFy = report.Stories.Sum(s => s.LoadTypes.Sum(lt => lt.SubTotalFy));
             double visualFz = report.Stories.Sum(s => s.LoadTypes.Sum(lt => lt.SubTotalFz));
 
-            // 2. Apply unit conversion factor
             double displayFx = visualFx * forceFactor;
             double displayFy = visualFy * forceFactor;
             double displayFz = visualFz * forceFactor;
-
-            // 3. Calculate Resultant Magnitude
             double displayTotal = Math.Sqrt(displayFx * displayFx + displayFy * displayFy + displayFz * displayFz);
 
-            // 4. Print Summary
             sb.AppendLine("".PadRight(150, '='));
-            sb.AppendLine(isVN ? "TỔNG HỢP LỰC (TÍNH TỪ BÁO CÁO):" : "AUDIT SUMMARY (CALCULATED FROM REPORT ROWS):");
+            sb.AppendLine(isVN ? "TỔNG HỢP LỰC TOÀN CÔNG TRÌNH:" : "PROJECT AUDIT SUMMARY:");
             sb.AppendLine();
             sb.AppendLine($"   Fx (Global): {displayFx:0.00} {targetUnit}");
             sb.AppendLine($"   Fy (Global): {displayFy:0.00} {targetUnit}");
             sb.AppendLine($"   Fz (Global): {displayFz:0.00} {targetUnit}");
-
-            // 5. Compare with SAP Base Reaction (Reference only)
-            if (report.IsAnalyzed && Math.Abs(report.SapBaseReaction) > 0.001)
-            {
-                double sapReaction = Math.Abs(report.SapBaseReaction) * forceFactor;
-                double diff = displayTotal - sapReaction;
-                double diffPercent = (sapReaction > 0) ? (diff / sapReaction) * 100.0 : 0;
-
-                sb.AppendLine();
-                sb.AppendLine($"   {(isVN ? "Phản lực SAP" : "SAP Reaction")}: {sapReaction:0.00} {targetUnit}");
-                sb.AppendLine($"   {(isVN ? "Sai số" : "Difference")}: {diff:0.00} {targetUnit} ({diffPercent:0.00}%)");
-            }
-
             sb.AppendLine();
             sb.AppendLine("".PadRight(150, '='));
 
             return sb.ToString();
         }
+
+        #region Smart Axis Grouping Helpers (New v9.0)
+
+        // Trích xuất tên trục cơ sở từ chuỗi vị trí
+        // VD: "Grid D x 1-2" -> "D"
+        //     "Grid D(-2.5m) x 1-2" -> "D"
+        private string GetBaseGridName(string gridLoc)
+        {
+            if (string.IsNullOrEmpty(gridLoc)) return "Unknown";
+            
+            // 1. Lấy phần đầu trước dấu "x" (Grid D...)
+            var parts = gridLoc.Split(new[] { " x " }, StringSplitOptions.RemoveEmptyEntries);
+            string mainPart = parts[0].Replace("Grid", "").Trim();
+
+            // 2. Bỏ phần offset trong ngoặc đơn (nếu có)
+            // VD: "D(-2.5m)" -> lấy "D"
+            int parenIndex = mainPart.IndexOf('(');
+            if (parenIndex > 0)
+            {
+                mainPart = mainPart.Substring(0, parenIndex).Trim();
+            }
+
+            return mainPart;
+        }
+
+        // Tạo key sắp xếp cho phần Span (phần sau chữ x)
+        // VD: "Grid D x 1-2" -> key là "1-2"
+        private string GetCrossAxisSortKey(string gridLoc)
+        {
+            var parts = gridLoc.Split(new[] { " x " }, StringSplitOptions.RemoveEmptyEntries);
+            if (parts.Length > 1) return parts[1].Trim();
+            return "ZZZ"; // Không có span thì đẩy xuống cuối
+        }
+
+        // Sắp xếp danh sách các nhóm trục: Số trước, Chữ sau
+        private List<IGrouping<string, AuditEntry>> SortAxisGroups(List<IGrouping<string, AuditEntry>> groups)
+        {
+            return groups.OrderBy(g => 
+            {
+                string key = g.Key;
+                // Thử parse ra số
+                if (double.TryParse(key, out double num)) return num; // Nhóm số (1, 2, 3...)
+                
+                // Nhóm chữ (A, B, C...): Cộng thêm 1000000 để đẩy ra sau số
+                // Nhưng vẫn đảm bảo thứ tự Alpha
+                return 1000000 + (key.Length > 0 ? (int)key[0] : 0);
+            }).ToList();
+        }
+
+        #endregion
 
         /// <summary>
         /// Format data row with new column layout
