@@ -36,51 +36,37 @@ namespace DTS_Engine.Commands
                 return;
             }
 
-            // 2. Select Frames on Screen
+            // 2. Ask Display Mode
+            // 0 = Combined (Flex + Torsion) - Default
+            // 1 = Flex only (Thép dọc chịu uốn)
+            // 2 = Torsion only (Thép xoắn)
+            var ed = AcadUtils.Editor;
+            var pIntOpt = new PromptIntegerOptions("\nChọn chế độ hiển thị [0=Tổng hợp | 1=Thép dọc | 2=Thép xoắn]: ");
+            pIntOpt.AllowNone = true;
+            pIntOpt.DefaultValue = 0;
+            pIntOpt.AllowNegative = false;
+            pIntOpt.LowerLimit = 0;
+            pIntOpt.UpperLimit = 2;
+            
+            var pIntRes = ed.GetInteger(pIntOpt);
+            int displayMode = 0; // Default = Combined
+            if (pIntRes.Status == PromptStatus.OK)
+                displayMode = pIntRes.Value;
+            else if (pIntRes.Status != PromptStatus.None)
+                return; // User cancelled
+
+            // 3. Select Frames on Screen
             var selectedIds = AcadUtils.SelectObjects("Chọn các đường Dầm (Frame) để lấy nội lực: ");
             if (selectedIds.Count == 0) return;
 
-            // 3. Filter Valid Frames (Must correspond to SAP names)
-            List<string> sapNames = new List<string>();
-            Dictionary<string, ObjectId> mapNameToId = new Dictionary<string, ObjectId>();
+            // 4. Clear old rebar labels on layer "dts_rebar_text"
+            WriteMessage("Đang xóa label cũ...");
+            ClearRebarLabels();
 
-            UsingTransaction(tr =>
-            {
-                foreach (ObjectId id in selectedIds)
-                {
-                    var ent = tr.GetObject(id, OpenMode.ForRead);
-                    var data = XDataUtils.ReadElementData(ent);
-                    // Use Handle or explicitly stored Name? 
-                    // Usually we map CAD Handle <-> SAP Name via some mapping or assume Name is stored.
-                    // Check PlotCommands: When plotting from SAP, we store data but do we store SAP Name?
-                    // In PlotCommands.cs: We store `BeamData` but looking at it, it DOES NOT assume Name property is SAP Name.
-                    // Actually, `LabelUtils` usually plots the Name.
-                    // Let's assume the user has plotted from SAP -> CAD using `DTS_PLOT_FROM_SAP`.
-                    // We need to match CAD entity back to SAP Frame.
-                    // Strategy: If we plotted from SAP, we likely stored SAP Name or we can use geometry.
-                    // BUT: Current BeamData in `PlotCommands.cs` line 516 does NOT explicitly store SAP Name in a dedicated field other than `SectionName`?
-                    // Wait, `SapFrame` has Name. When plotting, we should store SAP Name.
-                    // Let's checking `BeamData`... `ElementData` has no `SapName` field?
-                    // RISK: If we don't store SAP Name, we can't map back easily!
-                    // Fix: We must check if we can rely on Text Label or geometry.
-                    // Alternative: Use Geometry Matching (GetBeamResults gets ALL, then we match).
-                    // BETTER: Assume the Layer Name or XData contains ID?
-                    // Let's check `ElementData` definition. It inherits from `ElementData`.
-                    // If `DTS_PLOT_FROM_SAP` was used, maybe we can assume specific Layer convention or just geometry match.
-                    
-                    // FOR NOW: Let's assume we can rely on Geometry Matching with SAP 
-                    // OR we assume the user has just plotted them and they are in sync.
-                    // To be safe: We get ALL SAP Beams, then match with checked CAD entities by geometry (Start/End).
-                }
-            });
-
-            // Geometry Match Strategy
-            // 1. Get All Design Results from all Beams in current Story?
-            //    Too heavy.
-            // 2. Map Selected CAD Lines -> SAP Names via Geometry.
+            // 5. Geometry Match Strategy
             WriteMessage("Đang đồng bộ hình học để tìm tên phần tử SAP...");
             
-            var allSapFrames = SapUtils.GetAllFramesGeometry(); // Fast cached
+            var allSapFrames = SapUtils.GetAllFramesGeometry();
             
             List<string> matchedNames = new List<string>();
             Dictionary<ObjectId, string> cadToSap = new Dictionary<ObjectId, string>();
@@ -95,10 +81,9 @@ namespace DTS_Engine.Commands
                     Point3d start = curve.StartPoint;
                     Point3d end = curve.EndPoint;
 
-                    // Find SAP frame with matching geometric endpoints (tolerance 200mm)
                     var match = allSapFrames.FirstOrDefault(f => 
                         (IsSamePt(f.StartPt, start) && IsSamePt(f.EndPt, end)) ||
-                        (IsSamePt(f.StartPt, end) && IsSamePt(f.EndPt, start)) // Reversed
+                        (IsSamePt(f.StartPt, end) && IsSamePt(f.EndPt, start))
                     );
 
                     if (match != null)
@@ -117,7 +102,7 @@ namespace DTS_Engine.Commands
 
             WriteMessage($"Đã khớp {matchedNames.Count} dầm. Đang lấy kết quả thiết kế...");
 
-            // 4. Call Engine to get Results
+            // 6. Call Engine to get Results
             var results = engine.GetBeamResults(matchedNames);
 
             if (results.Count == 0)
@@ -126,8 +111,10 @@ namespace DTS_Engine.Commands
                 return;
             }
 
-            // 5. Update XData and Plot Labels
+            // 7. Update XData and Plot Labels based on displayMode
             int successCount = 0;
+            double torFactor = RebarSettings.Instance.TorsionDistributionFactor;
+
             UsingTransaction(tr =>
             {
                 var btr = tr.GetObject(AcadUtils.Db.CurrentSpaceId, OpenMode.ForWrite) as BlockTableRecord;
@@ -139,41 +126,31 @@ namespace DTS_Engine.Commands
 
                     if (results.TryGetValue(sapName, out var designData))
                     {
-                         // Apply Torsion Factor (Default 0.25 -> distributed to 4 faces?)
-                         // Formula: As_Total = As_Flex + k * As_Torsion
-                         // If Torsion is total longitudinal, usually we divide by 2 or 4?
-                         // User said: "As_Total = As_Flex + A_tor_long / 4".
-                         // With factor = 0.25.
-                         double torFactor = RebarSettings.Instance.TorsionDistributionFactor;
-                         
-                         // Update effective Area in Data (Storing Raw + Logic happens display/calc side?
-                         // Let's store raw in XData, but calculate for Display now.
-                        
-                        // Update XData
                         designData.TorsionFactorUsed = torFactor;
                         DBObject obj = tr.GetObject(cadId, OpenMode.ForWrite);
-                        
-                        // Merge XData instead of Overwrite? We might lose other info?
-                        // XDataUtils.UpdateElementData merges.
                         XDataUtils.UpdateElementData(obj, designData, tr);
 
-                        // Plot Labels
-                        // Plot 6 positions: 
-                        // Start-Top, Start-Bot
-                        // Mid-Top, Mid-Bot
-                        // End-Top, End-Bot
-                        
-                        // We use LabelPlotter.
-                        // We need to calculate the values to display (including Torsion).
-                        
+                        // Calculate display values based on mode
                         double[] displayTop = new double[3];
                         double[] displayBot = new double[3];
 
                         for(int i=0; i<3; i++)
                         {
-                            // Logic: Flex + Factor * Tor
-                             displayTop[i] = designData.TopArea[i] + designData.TorsionArea[i] * torFactor;
-                             displayBot[i] = designData.BotArea[i] + designData.TorsionArea[i] * torFactor;
+                            switch (displayMode)
+                            {
+                                case 0: // Combined (Flex + Torsion)
+                                    displayTop[i] = designData.TopArea[i] + designData.TorsionArea[i] * torFactor;
+                                    displayBot[i] = designData.BotArea[i] + designData.TorsionArea[i] * torFactor;
+                                    break;
+                                case 1: // Flex only (Thép dọc)
+                                    displayTop[i] = designData.TopArea[i];
+                                    displayBot[i] = designData.BotArea[i];
+                                    break;
+                                case 2: // Torsion only (Thép xoắn)
+                                    displayTop[i] = designData.TorsionArea[i];
+                                    displayBot[i] = designData.TorsionArea[i];
+                                    break;
+                            }
                         }
 
                         // Plot Labels - 6 positions (Start/Mid/End x Top/Bot)
@@ -182,8 +159,8 @@ namespace DTS_Engine.Commands
                         Point3d pEnd = curve.EndPoint;
 
                         // Start (Index 0)
-                        LabelPlotter.PlotRebarLabel(btr, tr, pStart, pEnd, $"{displayTop[0]:F1}", 0, true);  // Top
-                        LabelPlotter.PlotRebarLabel(btr, tr, pStart, pEnd, $"{displayBot[0]:F1}", 0, false); // Bot
+                        LabelPlotter.PlotRebarLabel(btr, tr, pStart, pEnd, $"{displayTop[0]:F1}", 0, true);
+                        LabelPlotter.PlotRebarLabel(btr, tr, pStart, pEnd, $"{displayBot[0]:F1}", 0, false);
 
                         // Mid (Index 1)
                         LabelPlotter.PlotRebarLabel(btr, tr, pStart, pEnd, $"{displayTop[1]:F1}", 1, true);
@@ -198,7 +175,29 @@ namespace DTS_Engine.Commands
                 }
             });
             
-            WriteSuccess($"Đã cập nhật Label thép cho {successCount} dầm.");
+            string modeText = displayMode == 0 ? "Tổng hợp" : (displayMode == 1 ? "Thép dọc" : "Thép xoắn");
+            WriteSuccess($"Đã cập nhật Label thép ({modeText}) cho {successCount} dầm.");
+        }
+
+        /// <summary>
+        /// Xóa tất cả label rebar trên layer "dts_rebar_text"
+        /// </summary>
+        private void ClearRebarLabels()
+        {
+            UsingTransaction(tr =>
+            {
+                var btr = tr.GetObject(AcadUtils.Db.CurrentSpaceId, OpenMode.ForWrite) as BlockTableRecord;
+                foreach (ObjectId id in btr)
+                {
+                    if (id.IsErased) continue;
+                    var ent = tr.GetObject(id, OpenMode.ForRead) as Entity;
+                    if (ent != null && ent.Layer == "dts_rebar_text")
+                    {
+                        ent.UpgradeOpen();
+                        ent.Erase();
+                    }
+                }
+            });
         }
 
 
