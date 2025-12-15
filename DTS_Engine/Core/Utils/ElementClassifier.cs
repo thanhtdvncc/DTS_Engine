@@ -1,6 +1,6 @@
+﻿using DTS_Engine.Core.Data;
 using DTS_Engine.Core.Primitives;
 using System;
-using DTS_Engine.Core.Data;
 
 namespace DTS_Engine.Core.Utils
 {
@@ -95,7 +95,7 @@ namespace DTS_Engine.Core.Utils
             if (vectors != null)
             {
                 Vector3D l1 = vectors.Value.L1;
-                
+
                 // If L1.Z is large, frame is vertical/steeply inclined -> Column
                 if (Math.Abs(l1.Z) > AuditConfig.VERTICAL_AXIS_THRESHOLD)
                 {
@@ -115,7 +115,7 @@ namespace DTS_Engine.Core.Utils
             if (length3D < 1e-6) return ElementType.Column; // Point-like
 
             double slopeRatio = frame.Length2D / length3D;
-            
+
             // If projected < 50% of real length -> steep slope (>60 deg) -> Column
             if (slopeRatio < AuditConfig.VERTICAL_AXIS_THRESHOLD)
             {

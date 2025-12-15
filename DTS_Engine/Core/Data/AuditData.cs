@@ -238,7 +238,7 @@ namespace DTS_Engine.Core.Data
 
         public List<string> ElementList { get; set; } = new List<string>();
         public int ElementCount => ElementList?.Count ?? 0;
-        
+
         // Backward-compatible property used in engines
         public double Force
         {

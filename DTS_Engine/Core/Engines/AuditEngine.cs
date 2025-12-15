@@ -50,9 +50,11 @@ namespace DTS_Engine.Core.Engines
         // CRITICAL: Load Reader injected via Constructor (Dependency Injection)
         private readonly ISapLoadReader _loadReader;
 
+#pragma warning disable CS0169 // Unused fields - reserved for geometry caching optimization
         // Geometry caches (used by CacheGeometry and legacy code paths)
         private Dictionary<string, SapFrame> _frameGeometryCache;
         private Dictionary<string, SapArea> _areaGeometryCache;
+#pragma warning restore CS0169
 
         /// <summary>
         /// Call back để in log debug ra ngoài (Command Line).
@@ -77,7 +79,7 @@ namespace DTS_Engine.Core.Engines
         {
             _loadReader = loadReader ?? throw new ArgumentNullException(nameof(loadReader),
                 "ISapLoadReader is required.");
-            _inventory = inventory ?? throw new ArgumentNullException(nameof(inventory), 
+            _inventory = inventory ?? throw new ArgumentNullException(nameof(inventory),
                 "ModelInventory is required used for Vector Axis lookup.");
 
             _geometryFactory = new GeometryFactory();
@@ -236,13 +238,13 @@ namespace DTS_Engine.Core.Engines
             ModelInventory.ElementInfo info = null;
 
             // Dispatch based entirely on LoadType to avoid "GetElement" ambiguity
-            if (load.LoadType.StartsWith("Frame")) 
+            if (load.LoadType.StartsWith("Frame"))
                 info = _inventory.GetFrame(load.ElementName);
             else if (load.LoadType.StartsWith("Area"))
                 info = _inventory.GetArea(load.ElementName);
             else if (load.LoadType.Contains("Point") || load.LoadType.Contains("Joint") || load.LoadType.Contains("Force"))
                 info = _inventory.GetPoint(load.ElementName);
-            
+
             // Fallback
             if (info == null) info = _inventory.GetElement(load.ElementName);
 
@@ -273,7 +275,7 @@ namespace DTS_Engine.Core.Engines
         {
             // 1. Lấy danh sách tầng định nghĩa từ SAP (Mốc chuẩn)
             var definedStories = _stories.OrderByDescending(s => s.Coordinate).ToList();
-            
+
             // Tạo bucket cho các tầng chuẩn trước
             var buckets = new List<TempStoryBucket>();
             foreach (var s in definedStories)
@@ -301,7 +303,7 @@ namespace DTS_Engine.Core.Engines
                     .OrderBy(x => x.Dist)
                     .FirstOrDefault();
 
-                if (bestMatch != null && bestMatch.Dist < 2000.0) 
+                if (bestMatch != null && bestMatch.Dist < 2000.0)
                 {
                     bestMatch.Bucket.Loads.Add(load);
                 }
@@ -375,18 +377,18 @@ namespace DTS_Engine.Core.Engines
         private string NormalizeLoadType(string loadType)
         {
             if (string.IsNullOrEmpty(loadType)) return "Unknown";
-            
+
             string upper = loadType.ToUpperInvariant();
-            
+
             // Consolidate all Area types
             if (upper.Contains("AREA")) return "Area";
-            
+
             // Consolidate all Frame types  
             if (upper.Contains("FRAME")) return "FrameDistributed";
-            
+
             // Consolidate Point types
             if (upper.Contains("POINT") || upper.Contains("JOINT")) return "PointForce";
-            
+
             return loadType; // Keep original for unknown types
         }
 
@@ -402,7 +404,7 @@ namespace DTS_Engine.Core.Engines
             // [FIX v4.13] Area loads: Chỉ group theo Value (BỎ Direction!)
             // Vì ProcessAreaLoads sẽ tự xử lý Direction dựa trên effectiveAxis của element.
             // Frame/Point loads: Vẫn group theo cả Value và Direction.
-            
+
             if (loadType.Contains("Area"))
             {
                 // Area: Group CHỈ theo Value
@@ -468,13 +470,13 @@ namespace DTS_Engine.Core.Engines
         {
             if (string.IsNullOrEmpty(location)) return "ZZZ";
             // Remove offset parts "(...)" to avoid parsing units as text
-            var mainPart = location.Split('(')[0]; 
+            var mainPart = location.Split('(')[0];
             var tokens = mainPart.Split(new[] { ' ', '-', 'x', '/', ',' }, StringSplitOptions.RemoveEmptyEntries);
-            
+
             // Find first token that is a Letter (A, B, AA...) and NOT keywords
-            var alphas = tokens.Where(t => 
-                char.IsLetter(t[0]) && 
-                !t.Equals("Grid", StringComparison.OrdinalIgnoreCase) && 
+            var alphas = tokens.Where(t =>
+                char.IsLetter(t[0]) &&
+                !t.Equals("Grid", StringComparison.OrdinalIgnoreCase) &&
                 !t.Equals("No", StringComparison.OrdinalIgnoreCase)
             ).OrderBy(t => t); // Order to find Min (A < B)
 
@@ -484,7 +486,7 @@ namespace DTS_Engine.Core.Engines
         private double GetGridNumericSort(string location)
         {
             if (string.IsNullOrEmpty(location)) return 999999;
-             // Remove offset parts "(...)" to avoid parsing offset numbers
+            // Remove offset parts "(...)" to avoid parsing offset numbers
             var mainPart = location.Split('(')[0];
             var tokens = mainPart.Split(new[] { ' ', '-', 'x', '/', ',' }, StringSplitOptions.RemoveEmptyEntries);
 
@@ -513,6 +515,7 @@ namespace DTS_Engine.Core.Engines
         /// - AuditEntry.ForceX/Y/Z have correct signs for summation
         /// - Report displays these values directly (no conversion)
         /// </summary>
+#pragma warning disable CS0649 // Fields assigned via object initializer
         private struct AreaGroupingKey : IEquatable<AreaGroupingKey>
         {
             public string GlobalAxis; // "Global +Z", "Global -X", etc.
@@ -520,6 +523,7 @@ namespace DTS_Engine.Core.Engines
             public double LoadValue;  // Signed Value
             public string LoadDir;    // SAP Direction String (e.g. "Local 3")
             public int DirectionSign; // +1/-1
+#pragma warning restore CS0649
 
             public bool Equals(AreaGroupingKey other)
             {
@@ -679,11 +683,11 @@ namespace DTS_Engine.Core.Engines
                             // SAP convention: Gravity Load +1 means Downward (-Z).
                             // Wind Uplift usually applied as Pressure (Local 3).
                             // Just assign magnitude to Fz.
-                            fz = force; 
-                            
+                            fz = force;
+
                             // Nếu là Gravity, SAP thường để giá trị âm cho tải xuống.
                             // Nếu gió bốc, giá trị dương -> Fz dương.
-                            if (loadDir.Contains("GRAV")) fz = -Math.Abs(force); 
+                            if (loadDir.Contains("GRAV")) fz = -Math.Abs(force);
                         }
                         else if (loadDir.Contains("X")) fx = force;
                         else if (loadDir.Contains("Y")) fy = force;
@@ -719,7 +723,9 @@ namespace DTS_Engine.Core.Engines
                         TotalForce = force,
                         Direction = dirDisplay,
                         DirectionSign = sign,
-                        ForceX = fx, ForceY = fy, ForceZ = fz,
+                        ForceX = fx,
+                        ForceY = fy,
+                        ForceZ = fz,
                         ElementList = elementNames,
                         StructuralType = isSlab ? "Slab Elements" : "Wall Elements"
                     });
@@ -746,14 +752,14 @@ namespace DTS_Engine.Core.Engines
             // Group by term
             var groups = terms.GroupBy(t => t)
                               .Select(g => g.Count() > 1 ? $"{g.Count()}*({g.Key})" : g.Key);
-            
+
             return string.Join("+", groups);
         }
 
         private string GetGroupGridLocation(List<string> elements)
         {
             if (elements == null || elements.Count == 0) return "Unknown";
-            
+
             // 1. Calculate Bounding Box of the group
             double minX = double.MaxValue, maxX = double.MinValue;
             double minY = double.MaxValue, maxY = double.MinValue;
@@ -766,22 +772,22 @@ namespace DTS_Engine.Core.Engines
 
                 if (info.FrameGeometry != null)
                 {
-                     minX = Math.Min(minX, Math.Min(info.FrameGeometry.StartPt.X, info.FrameGeometry.EndPt.X));
-                     maxX = Math.Max(maxX, Math.Max(info.FrameGeometry.StartPt.X, info.FrameGeometry.EndPt.X));
-                     minY = Math.Min(minY, Math.Min(info.FrameGeometry.StartPt.Y, info.FrameGeometry.EndPt.Y));
-                     maxY = Math.Max(maxY, Math.Max(info.FrameGeometry.StartPt.Y, info.FrameGeometry.EndPt.Y));
-                     found = true;
+                    minX = Math.Min(minX, Math.Min(info.FrameGeometry.StartPt.X, info.FrameGeometry.EndPt.X));
+                    maxX = Math.Max(maxX, Math.Max(info.FrameGeometry.StartPt.X, info.FrameGeometry.EndPt.X));
+                    minY = Math.Min(minY, Math.Min(info.FrameGeometry.StartPt.Y, info.FrameGeometry.EndPt.Y));
+                    maxY = Math.Max(maxY, Math.Max(info.FrameGeometry.StartPt.Y, info.FrameGeometry.EndPt.Y));
+                    found = true;
                 }
                 else if (info.AreaGeometry != null && info.AreaGeometry.BoundaryPoints.Count > 0)
                 {
-                     foreach (var pt in info.AreaGeometry.BoundaryPoints)
-                     {
-                         minX = Math.Min(minX, pt.X);
-                         maxX = Math.Max(maxX, pt.X);
-                         minY = Math.Min(minY, pt.Y);
-                         maxY = Math.Max(maxY, pt.Y);
-                     }
-                     found = true;
+                    foreach (var pt in info.AreaGeometry.BoundaryPoints)
+                    {
+                        minX = Math.Min(minX, pt.X);
+                        maxX = Math.Max(maxX, pt.X);
+                        minY = Math.Min(minY, pt.Y);
+                        maxY = Math.Max(maxY, pt.Y);
+                    }
+                    found = true;
                 }
             }
 
@@ -800,7 +806,7 @@ namespace DTS_Engine.Core.Engines
 
             // Tolerance for snapping (200mm)
             double tol = 200.0;
-            
+
             var startGrid = grids.FirstOrDefault(g => Math.Abs(g.Coordinate - min) < tol);
             var endGrid = grids.LastOrDefault(g => Math.Abs(g.Coordinate - max) < tol);
 
@@ -812,18 +818,18 @@ namespace DTS_Engine.Core.Engines
 
             // If range covers multiple grids
             var covered = grids.Where(g => g.Coordinate >= min - tol && g.Coordinate <= max + tol).ToList();
-            if (covered.Count > 1) 
+            if (covered.Count > 1)
                 return $"{covered.First().Name}-{covered.Last().Name}";
             if (covered.Count == 1)
                 return covered.First().Name;
 
             // [FIX v4.8] Robust Nearest Grid + Offset logic
             // Instead of displaying raw coordinates (~7300..7300), find the closest grid.
-            
+
             double width = max - min;
-            
+
             // Case A: Narrow object (Wall/Beam) -> Single Nearest Grid
-            if (width < 1000.0) 
+            if (width < 1000.0)
             {
                 double center = (min + max) / 2.0;
                 var nearest = grids.OrderBy(g => Math.Abs(g.Coordinate - center)).FirstOrDefault();
@@ -831,7 +837,7 @@ namespace DTS_Engine.Core.Engines
                 {
                     double offset = center - nearest.Coordinate;
                     double offsetM = offset / 1000.0;
-                    
+
                     // Format: "A (+1.2m)" or "A (-0.5m)" or just "A" if very close
                     if (Math.Abs(offset) < 50.0) return nearest.Name; // Practically on grid
                     return $"{nearest.Name} ({offsetM:+#.0;-#.0}m)";
@@ -840,23 +846,23 @@ namespace DTS_Engine.Core.Engines
             // Case B: Wide range (Slab width) -> Start & End Nearest Grids
             else
             {
-                 var nearStart = grids.OrderBy(g => Math.Abs(g.Coordinate - min)).FirstOrDefault();
-                 var nearEnd = grids.OrderBy(g => Math.Abs(g.Coordinate - max)).FirstOrDefault();
-                 
-                 if (nearStart != null && nearEnd != null)
-                 {
-                     if (nearStart == nearEnd) return nearStart.Name; // Should be covered by Case A usually
-                     
-                     double offStart = min - nearStart.Coordinate;
-                     double offEnd = max - nearEnd.Coordinate;
-                     
-                     string sPart = Math.Abs(offStart) < 50 ? nearStart.Name : $"{nearStart.Name}({offStart/1000.0:+#.0;-#.0}m)";
-                     string ePart = Math.Abs(offEnd) < 50 ? nearEnd.Name : $"{nearEnd.Name}({offEnd/1000.0:+#.0;-#.0}m)";
-                     
-                     return $"{sPart}-{ePart}";
-                 }
+                var nearStart = grids.OrderBy(g => Math.Abs(g.Coordinate - min)).FirstOrDefault();
+                var nearEnd = grids.OrderBy(g => Math.Abs(g.Coordinate - max)).FirstOrDefault();
+
+                if (nearStart != null && nearEnd != null)
+                {
+                    if (nearStart == nearEnd) return nearStart.Name; // Should be covered by Case A usually
+
+                    double offStart = min - nearStart.Coordinate;
+                    double offEnd = max - nearEnd.Coordinate;
+
+                    string sPart = Math.Abs(offStart) < 50 ? nearStart.Name : $"{nearStart.Name}({offStart / 1000.0:+#.0;-#.0}m)";
+                    string ePart = Math.Abs(offEnd) < 50 ? nearEnd.Name : $"{nearEnd.Name}({offEnd / 1000.0:+#.0;-#.0}m)";
+
+                    return $"{sPart}-{ePart}";
+                }
             }
-        
+
             // Ultimate fallback
             return $"(~{min:0}..{max:0})";
         }
@@ -1191,7 +1197,7 @@ namespace DTS_Engine.Core.Engines
         private void ProcessFrameLoads(List<RawSapLoad> loads, double loadVal, string dir, List<AuditEntry> targetList)
         {
             Log($"[ProcessFrameLoads v8.2] Processing {loads.Count} loads. Val={loadVal}, Dir={dir}");
-            
+
             var frameItems = new List<FrameAuditItem>();
             int skipCount = 0;
 
@@ -1203,25 +1209,25 @@ namespace DTS_Engine.Core.Engines
 
                 var frame = info.FrameGeometry;
                 string primaryGrid = DeterminePrimaryGrid(frame);
-                
+
                 // Calculate lengths
                 double frameLen = frame.Length3D * UnitManager.Info.LengthScaleToMeter;
                 double startM = 0, endM = 0;
-                
-                if (load.IsRelative) 
+
+                if (load.IsRelative)
                 {
                     startM = load.DistStart * frameLen;
                     endM = load.DistEnd * frameLen;
-                } 
-                else 
+                }
+                else
                 {
                     startM = load.DistStart * UnitManager.Info.LengthScaleToMeter;
                     endM = load.DistEnd * UnitManager.Info.LengthScaleToMeter;
                 }
-                
+
                 double loadLen = Math.Abs(endM - startM);
-                if (loadLen < 1e-6) loadLen = frameLen; 
-                
+                if (loadLen < 1e-6) loadLen = frameLen;
+
                 // Initial check (check từng mảnh lẻ)
                 bool isFull = false;
                 if (frameLen > 0.001)
@@ -1252,7 +1258,7 @@ namespace DTS_Engine.Core.Engines
             // 2. [NEW LOGIC] MERGE SPLIT SEGMENTS (GỘP CÁC ĐOẠN LẺ)
             // Nhóm theo tên phần tử để kiểm tra xem tổng các đoạn có phủ kín thanh không
             var elementGroups = frameItems.GroupBy(f => f.Load.ElementName).ToList();
-            
+
             foreach (var grp in elementGroups)
             {
                 var items = grp.ToList();
@@ -1277,7 +1283,7 @@ namespace DTS_Engine.Core.Engines
             {
                 string gridName = grp.Key.Grid;
                 string structType = grp.Key.Type;
-                
+
                 string rangeDesc = DetermineCrossAxisRange(grp.ToList());
                 string fullGridLoc = string.IsNullOrEmpty(rangeDesc) ? gridName : $"{gridName} x {rangeDesc}";
 
@@ -1288,12 +1294,13 @@ namespace DTS_Engine.Core.Engines
                     // Gom các đoạn của cùng 1 thanh lại để không bị tính trùng số lượng phần tử
                     // VD: Thanh 580 có 2 đoạn -> chỉ tính là 1 thanh 580
                     var uniqueElements = fullLoads.GroupBy(f => f.Load.ElementName)
-                                                  .Select(g => new { 
-                                                      Name = g.Key, 
-                                                      TotalLen = g.First().Frame.Length3D * UnitManager.Info.LengthScaleToMeter 
+                                                  .Select(g => new
+                                                  {
+                                                      Name = g.Key,
+                                                      TotalLen = g.First().Frame.Length3D * UnitManager.Info.LengthScaleToMeter
                                                   })
                                                   .ToList();
-                    
+
                     // Tạo entry tổng hợp
                     // Pass danh sách gốc (fullLoads) để tính Force chính xác (dựa trên từng đoạn tải)
                     CreateFullLoadEntry(fullLoads, uniqueElements.Count, uniqueElements.Sum(e => e.TotalLen), uniqueElements.Select(e => e.TotalLen).ToList(), fullGridLoc, loadVal, dir, structType, targetList);
@@ -1301,10 +1308,10 @@ namespace DTS_Engine.Core.Engines
 
                 // GROUP 2: Partial Loads (Thực sự lẻ)
                 var partialLoads = grp.Where(f => !f.IsFullLoad).ToList();
-                
+
                 // [NEW] Gộp các partial loads của cùng 1 thanh thành 1 dòng duy nhất
                 var partialByElement = partialLoads.GroupBy(p => p.Load.ElementName);
-                
+
                 foreach (var pGrp in partialByElement)
                 {
                     CreateMergedPartialEntry(pGrp.ToList(), fullGridLoc, loadVal, dir, structType, targetList);
@@ -1316,10 +1323,10 @@ namespace DTS_Engine.Core.Engines
         private double CalculateEffectiveCoverage(List<FrameAuditItem> items)
         {
             if (items.Count == 0) return 0;
-            
+
             // Sắp xếp theo điểm bắt đầu
             var sorted = items.OrderBy(i => i.StartM).ToList();
-            
+
             double totalCovered = 0;
             double currentStart = sorted[0].StartM;
             double currentEnd = sorted[0].EndM;
@@ -1353,11 +1360,11 @@ namespace DTS_Engine.Core.Engines
             // Tạo chuỗi mô tả gộp: "I=0to2.3, 2.3to4.5" -> gộp logic nếu liền nhau
             var sorted = items.OrderBy(i => i.StartM).ToList();
             var intervals = new List<string>();
-            
+
             // Logic gộp chuỗi hiển thị
             double printStart = sorted[0].StartM;
             double printEnd = sorted[0].EndM;
-            
+
             for (int i = 1; i < sorted.Count; i++)
             {
                 if (Math.Abs(sorted[i].StartM - printEnd) < 0.01) // Liền nhau
@@ -1372,11 +1379,11 @@ namespace DTS_Engine.Core.Engines
                 }
             }
             intervals.Add($"{printStart:0.##}to{printEnd:0.##}");
-            
+
             string rangeStr = string.Join(" & ", intervals);
             string explanation = $"{elemName}, I={rangeStr}";
 
-            AddFrameEntry(location, explanation, totalLen, loadVal, force, dir, 
+            AddFrameEntry(location, explanation, totalLen, loadVal, force, dir,
                          new List<string> { elemName }, structType, targetList);
         }
 
@@ -1385,13 +1392,13 @@ namespace DTS_Engine.Core.Engines
         // [UPDATED v8.2] SỬA LỖI HIỂN THỊ "SUM=..." - Hiện công thức cộng dồn
         private void CreateFullLoadEntry(List<FrameAuditItem> allSegments, int uniqueElemCount, double totalLenUnique, List<double> uniqueLengths, string location, double loadVal, string dir, string structType, List<AuditEntry> targetList)
         {
-            double totalForceLen = allSegments.Sum(i => i.Length); 
+            double totalForceLen = allSegments.Sum(i => i.Length);
             double force = totalForceLen * loadVal;
-            
+
             // Tạo công thức cộng dồn: 4x5.0+3.0...
             var lenGroups = uniqueLengths.GroupBy(l => Math.Round(l, 2))
                                          .OrderByDescending(g => g.Key);
-            
+
             var parts = new List<string>();
             foreach (var g in lenGroups)
             {
@@ -1404,10 +1411,10 @@ namespace DTS_Engine.Core.Engines
                 }
             }
             string formula = string.Join("+", parts);
-            
+
             // [FIXED] Đã xóa dòng lệnh if (formula.Length > 50)...
             // Bây giờ nó sẽ luôn hiện công thức đầy đủ
-            
+
             var elementNames = allSegments.Select(x => x.Load.ElementName).Distinct().ToList();
             AddFrameEntry(location, formula, totalLenUnique, loadVal, force, dir, elementNames, structType, targetList);
         }
@@ -1416,7 +1423,7 @@ namespace DTS_Engine.Core.Engines
         /// <summary>
         /// Helper to create AuditEntry with consistent direction/vector handling
         /// </summary>
-        private void AddFrameEntry(string loc, string expl, double qty, double unitLoad, double force, string dir, 
+        private void AddFrameEntry(string loc, string expl, double qty, double unitLoad, double force, string dir,
                                    List<string> elems, string structType, List<AuditEntry> targetList)
         {
             double fx = 0, fy = 0, fz = 0;
@@ -1426,7 +1433,7 @@ namespace DTS_Engine.Core.Engines
             // [FIX v7.1] Direction mapping - GRAVITY must be checked first!
             // "GRAVITY" contains "Y" so naive Contains check failed
             string dirDisplay = "?";
-            
+
             if (dUpper.Contains("GRAV") || dUpper == "10" || dUpper == "11")
             {
                 // Gravity load = -Z direction
@@ -1466,8 +1473,8 @@ namespace DTS_Engine.Core.Engines
                 TotalForce = force,
                 Direction = dirDisplay,
                 DirectionSign = sign,
-                ForceX = fx, 
-                ForceY = fy, 
+                ForceX = fx,
+                ForceY = fy,
                 ForceZ = fz,
                 ElementList = elems,
                 StructuralType = structType
@@ -1562,7 +1569,7 @@ namespace DTS_Engine.Core.Engines
         private string DeterminePrimaryGrid(SapFrame frame)
         {
             // Ưu tiên check Cột trước (Vertical Column)
-            if (frame.IsVertical || frame.Length2D < 1e-4) 
+            if (frame.IsVertical || frame.Length2D < 1e-4)
             {
                 // Với cột, tìm giao điểm gần nhất của lưới X và Y
                 string gridX = FindAxisRange(frame.StartPt.X, frame.StartPt.X, _xGrids, true);
@@ -1575,13 +1582,13 @@ namespace DTS_Engine.Core.Engines
             while (angle > Math.PI) angle -= Math.PI;
 
             bool isHorizontal = (angle < 0.1 || Math.Abs(angle - Math.PI) < 0.1);
-            
+
             Point2D mid = frame.Midpoint;
 
             if (isHorizontal) return "Grid " + FindAxisRange(mid.Y, mid.Y, _yGrids, true);
-            
+
             // Nếu không ngang thì check dọc (cho dầm dọc)
-            if (Math.Abs(angle - Math.PI / 2) < 0.1) 
+            if (Math.Abs(angle - Math.PI / 2) < 0.1)
                 return "Grid " + FindAxisRange(mid.X, mid.X, _xGrids, true);
 
             return "Diagonal";
@@ -1633,8 +1640,8 @@ namespace DTS_Engine.Core.Engines
         /// <summary>
         /// Helper struct for storing Global Axis coordinates of load intervals
         /// </summary>
-        private struct GlobalInterval 
-        { 
+        private struct GlobalInterval
+        {
             public double Start;  // Global X or Y (mm)
             public double End;    // Global X or Y (mm)
         }
@@ -1649,7 +1656,7 @@ namespace DTS_Engine.Core.Engines
             double dx = frame.EndPt.X - frame.StartPt.X;
             double dy = frame.EndPt.Y - frame.StartPt.Y;
             double len2D = Math.Sqrt(dx * dx + dy * dy);
-            
+
             // Vertical column or very short element - use Z for interval
             if (len2D < 1e-6)
             {
@@ -1665,7 +1672,7 @@ namespace DTS_Engine.Core.Engines
             // Get load distances (convert to mm if needed)
             double frameLenMM = frame.Length3D;
             double dStartMM, dEndMM;
-            
+
             if (load.IsRelative)
             {
                 dStartMM = load.DistStart * frameLenMM;
@@ -1697,10 +1704,10 @@ namespace DTS_Engine.Core.Engines
             }
 
             // Normalize order
-            return new GlobalInterval 
-            { 
-                Start = Math.Min(gStart, gEnd), 
-                End = Math.Max(gStart, gEnd) 
+            return new GlobalInterval
+            {
+                Start = Math.Min(gStart, gEnd),
+                End = Math.Max(gStart, gEnd)
             };
         }
 
@@ -1714,24 +1721,24 @@ namespace DTS_Engine.Core.Engines
 
             // 1. Sort by Global Start
             var sorted = items.OrderBy(i => i.GlobalStart).ToList();
-            
+
             // 2. Merge Intervals (Tolerance = 200mm for beam connection gaps)
             const double MERGE_TOLERANCE = 200.0;
             var merged = new List<GlobalInterval>();
-            
+
             if (sorted.Count > 0)
             {
-                var current = new GlobalInterval 
-                { 
-                    Start = sorted[0].GlobalStart, 
-                    End = sorted[0].GlobalEnd 
+                var current = new GlobalInterval
+                {
+                    Start = sorted[0].GlobalStart,
+                    End = sorted[0].GlobalEnd
                 };
-                
+
                 for (int i = 1; i < sorted.Count; i++)
                 {
                     var next = sorted[i];
                     // If overlap or close enough (gap < tolerance)
-                    if (next.GlobalStart <= current.End + MERGE_TOLERANCE) 
+                    if (next.GlobalStart <= current.End + MERGE_TOLERANCE)
                     {
                         current.End = Math.Max(current.End, next.GlobalEnd);
                     }
@@ -1747,15 +1754,15 @@ namespace DTS_Engine.Core.Engines
             // 3. Map merged intervals to Grid Names
             // Determine which grid set to use based on frame orientation
             var crossingGrids = isVerticalGroup ? _yGrids : _xGrids;
-            
+
             var parts = new List<string>();
             foreach (var range in merged)
             {
                 string startG = FindNearestGrid(range.Start, crossingGrids);
                 string endG = FindNearestGrid(range.End, crossingGrids);
-                
+
                 double lenM = (range.End - range.Start) / 1000.0;
-                
+
                 if (startG == endG)
                     parts.Add($"at {startG}");
                 else
@@ -1763,7 +1770,7 @@ namespace DTS_Engine.Core.Engines
             }
 
             if (parts.Count == 0) return "No Span";
-            
+
             // Join multiple spans (if discontinuous)
             return "Span " + string.Join(" & ", parts);
         }
@@ -1776,7 +1783,7 @@ namespace DTS_Engine.Core.Engines
             if (grids == null || grids.Count == 0) return "?";
             var nearest = grids.OrderBy(g => Math.Abs(g.Coordinate - coord)).First();
             // If close enough (<200mm), return grid name
-            if (Math.Abs(nearest.Coordinate - coord) < 200) 
+            if (Math.Abs(nearest.Coordinate - coord) < 200)
                 return nearest.Name;
             // Otherwise include offset indicator
             return nearest.Name;
@@ -1822,7 +1829,7 @@ namespace DTS_Engine.Core.Engines
             // --- FORCE DIRECTION CALCULATION (FIXED v4.5) ---
             double fx = 0, fy = 0, fz = 0;
             string loadDir = dir.ToUpper();
-            
+
             if (loadDir.Contains("GRAVITY"))
             {
                 fz = -Math.Abs(signedForce);
@@ -1864,8 +1871,8 @@ namespace DTS_Engine.Core.Engines
             else if (dir.Contains("Z")) dirDisplay = (Math.Sign(signedForce) > 0 ? "+" : "-") + "Z";
 
             // Generate Calculator formula: count × loadVal (e.g., "8×(-1.2)")
-            string formula = loadVal < 0 
-                ? $"{count}×({loadVal:0.00})" 
+            string formula = loadVal < 0
+                ? $"{count}×({loadVal:0.00})"
                 : $"{count}×{loadVal:0.00}";
 
             // CRITICAL v4.4: Store signed values - these will be displayed and summed
@@ -2001,7 +2008,7 @@ namespace DTS_Engine.Core.Engines
                 // Primary axis is X (numeric grids like 1,2,3)
                 string xRange = string.Join(",", uniqueXGrids.OrderBy(x => x));
                 if (uniqueXGrids.Count == 1) xRange = uniqueXGrids.First();
-                
+
                 string yRange = GetOrderedRange(uniqueYGrids);
                 return $"{xRange} x {yRange}";
             }
@@ -2010,7 +2017,7 @@ namespace DTS_Engine.Core.Engines
                 // Primary axis is Y (letter grids like A,B,C)
                 string yRange = GetOrderedRange(uniqueYGrids);
                 if (uniqueYGrids.Count == 1) yRange = uniqueYGrids.First();
-                
+
                 string xRange = string.Join("-", new[] { uniqueXGrids.Min(), uniqueXGrids.Max() }.Distinct().OrderBy(x => x));
                 return $"{yRange} x {xRange}";
             }
@@ -2190,7 +2197,7 @@ namespace DTS_Engine.Core.Engines
                         string hUnit = $"Unit Load".PadRight(15);
                         string hDir = (isVN ? "Hướng" : "Dir").PadRight(8);
                         string hForce = $"Force({targetUnit})".PadRight(15);
-                        string hElem = structHeader; 
+                        string hElem = structHeader;
 
                         sb.AppendLine($"    {hGrid}{hCalc}{hValue}{hUnit}{hDir}{hForce}{hElem}");
                         sb.AppendLine($"    {new string('-', 160)}");
@@ -2218,7 +2225,7 @@ namespace DTS_Engine.Core.Engines
                     }
                     sb.AppendLine();
                 }
-                sb.AppendLine(); 
+                sb.AppendLine();
             }
 
             // SUMMARY
@@ -2255,14 +2262,14 @@ namespace DTS_Engine.Core.Engines
             if (dir == "-Y") return 4;
             if (dir == "+Z") return 5;
             if (dir == "-Z") return 6;
-            return 10; 
+            return 10;
         }
 
         // [Priority 2] Sắp xếp tên trục: Số trước, Chữ sau
         private double GetAxisSortValue(string axis)
         {
             if (string.IsNullOrEmpty(axis)) return 9999999;
-            
+
             // Nếu là số (1, 2, 10...) -> Dùng chính giá trị đó
             if (double.TryParse(axis, out double val)) return val;
 
@@ -2324,8 +2331,8 @@ namespace DTS_Engine.Core.Engines
             {
                 // Point loads: show "count×(unitLoad)" with converted unit
                 int count = (int)entry.Quantity;
-                calc = displayUnitLoad < 0 
-                    ? $"{count}×({displayUnitLoad:0.00})" 
+                calc = displayUnitLoad < 0
+                    ? $"{count}×({displayUnitLoad:0.00})"
                     : $"{count}×{displayUnitLoad:0.00}";
             }
             else

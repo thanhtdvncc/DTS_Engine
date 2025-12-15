@@ -1,13 +1,10 @@
 ﻿using Autodesk.AutoCAD.EditorInput;
 using Autodesk.AutoCAD.Runtime;
-using DTS_Engine.Core.Data;
 using DTS_Engine.Core.Interfaces;
 using DTS_Engine.Core.Utils;
-using DTS_Engine.Core.Primitives;
 using System;
 using System.Collections.Generic;
 using System.Linq;
-using System.Text;
 
 namespace DTS_Engine.Commands
 {
@@ -404,7 +401,7 @@ namespace DTS_Engine.Commands
 
                 // [DEBUG] Print raw frame geometry to trace zero-length bug
                 WriteMessage("\n[STEP 1.5] Frame Geometry Sample (First 5 Frames with loads)...");
-                
+
                 // Get distributed loads
                 var distLoads = SapUtils.GetAllFrameDistributedLoads(pattern);
                 var frameNamesWithLoad = distLoads.Select(l => l.ElementName).Distinct().Take(5).ToList();
@@ -439,7 +436,7 @@ namespace DTS_Engine.Commands
 
                 // Initialize Engine (Business Logic)
                 var engine = new DTS_Engine.Core.Engines.AuditEngine(loadReader, inventory);
-                
+
                 // ENABLE DEBUG TRACING
                 engine.DebugLogger = (debugMsg) => WriteMessage(debugMsg);
 
@@ -449,7 +446,7 @@ namespace DTS_Engine.Commands
                 // TEST 1: Vector-based Load Reading (Logged by Engine now)
                 // ===============================================================
                 WriteMessage("\n[STEP 2] Running Audit with Full Tracing...");
-                
+
                 var report = engine.RunSingleAudit(pattern);
 
                 WriteMessage($"    Stories Processed: {report.Stories.Count}");

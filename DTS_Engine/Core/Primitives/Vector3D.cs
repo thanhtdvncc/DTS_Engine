@@ -1,10 +1,10 @@
-using System;
+Ôªøusing System;
 
 namespace DTS_Engine.Core.Primitives
 {
     /// <summary>
-    /// Vector 3D v?i c·c phÈp to·n c? b?n cho tÌnh to·n l?c v‡ tr?c ??a ph??ng.
-    /// Thi?t k? nh?, ??c l?p v?i AutoCAD API ?? Core layer ho‡n to‡n portable.
+    /// Vector 3D v?i c√°c ph√©p to√°n c? b?n cho t√≠nh to√°n l?c v√† tr?c ??a ph??ng.
+    /// Thi?t k? nh?, ??c l?p v?i AutoCAD API ?? Core layer ho√†n to√†n portable.
     /// </summary>
     public struct Vector3D
     {
@@ -26,31 +26,31 @@ namespace DTS_Engine.Core.Primitives
         #region Properties
 
         /// <summary>
-        /// ?? d‡i (magnitude) c?a vector
+        /// ?? d√†i (magnitude) c?a vector
         /// </summary>
         public double Length => Math.Sqrt(X * X + Y * Y + Z * Z);
 
         /// <summary>
-        /// BÏnh ph??ng ?? d‡i (nhanh h?n khi ch? c?n so s·nh)
+        /// B√¨nh ph??ng ?? d√†i (nhanh h?n khi ch? c?n so s√°nh)
         /// </summary>
         public double LengthSquared => X * X + Y * Y + Z * Z;
 
         /// <summary>
-        /// Vector ??n v? c˘ng h??ng
+        /// Vector ??n v? c√πng h??ng
         /// </summary>
         public Vector3D Normalized
         {
             get
             {
                 double len = Length;
-                return len > GeometryConstants.EPSILON 
-                    ? new Vector3D(X / len, Y / len, Z / len) 
+                return len > GeometryConstants.EPSILON
+                    ? new Vector3D(X / len, Y / len, Z / len)
                     : Zero;
             }
         }
 
         /// <summary>
-        /// Ki?m tra vector cÛ g?n b?ng zero khÙng
+        /// Ki?m tra vector c√≥ g?n b?ng zero kh√¥ng
         /// </summary>
         public bool IsZero => LengthSquared < GeometryConstants.EPSILON;
 
@@ -58,22 +58,22 @@ namespace DTS_Engine.Core.Primitives
 
         #region Operators
 
-        public static Vector3D operator +(Vector3D a, Vector3D b) 
+        public static Vector3D operator +(Vector3D a, Vector3D b)
             => new Vector3D(a.X + b.X, a.Y + b.Y, a.Z + b.Z);
 
-        public static Vector3D operator -(Vector3D a, Vector3D b) 
+        public static Vector3D operator -(Vector3D a, Vector3D b)
             => new Vector3D(a.X - b.X, a.Y - b.Y, a.Z - b.Z);
 
-        public static Vector3D operator *(Vector3D v, double s) 
+        public static Vector3D operator *(Vector3D v, double s)
             => new Vector3D(v.X * s, v.Y * s, v.Z * s);
 
-        public static Vector3D operator *(double s, Vector3D v) 
+        public static Vector3D operator *(double s, Vector3D v)
             => new Vector3D(v.X * s, v.Y * s, v.Z * s);
 
-        public static Vector3D operator /(Vector3D v, double s) 
+        public static Vector3D operator /(Vector3D v, double s)
             => new Vector3D(v.X / s, v.Y / s, v.Z / s);
 
-        public static Vector3D operator -(Vector3D v) 
+        public static Vector3D operator -(Vector3D v)
             => new Vector3D(-v.X, -v.Y, -v.Z);
 
         public static bool operator ==(Vector3D a, Vector3D b) => a.Equals(b);
@@ -84,7 +84,7 @@ namespace DTS_Engine.Core.Primitives
         #region Vector Operations
 
         /// <summary>
-        /// TÌch vÙ h??ng (Dot product): a∑b = |a||b|cos(?)
+        /// T√≠ch v√¥ h??ng (Dot product): a¬∑b = |a||b|cos(?)
         /// </summary>
         public double Dot(Vector3D other)
         {
@@ -92,8 +92,8 @@ namespace DTS_Engine.Core.Primitives
         }
 
         /// <summary>
-        /// TÌch cÛ h??ng (Cross product): a ◊ b
-        /// K?t qu? l‡ vector vuÙng gÛc v?i c? a v‡ b
+        /// T√≠ch c√≥ h??ng (Cross product): a √ó b
+        /// K?t qu? l√† vector vu√¥ng g√≥c v?i c? a v√† b
         /// </summary>
         public Vector3D Cross(Vector3D other)
         {
@@ -105,21 +105,21 @@ namespace DTS_Engine.Core.Primitives
         }
 
         /// <summary>
-        /// HÏnh chi?u c?a vector n‡y lÍn vector kh·c
-        /// proj_b(a) = (a∑b / |b|≤) * b
+        /// H√¨nh chi?u c?a vector n√†y l√™n vector kh√°c
+        /// proj_b(a) = (a¬∑b / |b|¬≤) * b
         /// </summary>
         public Vector3D ProjectOnto(Vector3D other)
         {
             double lenSq = other.LengthSquared;
             if (lenSq < GeometryConstants.EPSILON)
                 return Zero;
-            
+
             double scale = Dot(other) / lenSq;
             return other * scale;
         }
 
         /// <summary>
-        /// GÛc gi?a hai vector (radians, 0 ??n ?)
+        /// G√≥c gi?a hai vector (radians, 0 ??n ?)
         /// </summary>
         public double AngleTo(Vector3D other)
         {
@@ -131,7 +131,7 @@ namespace DTS_Engine.Core.Primitives
                 return 0;
 
             double cos = dot / (len1 * len2);
-            cos = Math.Max(-1, Math.Min(1, cos)); // Clamp ?? tr·nh l?i Acos
+            cos = Math.Max(-1, Math.Min(1, cos)); // Clamp ?? tr√°nh l?i Acos
             return Math.Acos(cos);
         }
 
@@ -157,7 +157,7 @@ namespace DTS_Engine.Core.Primitives
 
         /// <summary>
         /// Bi?n ??i t? h? tr?c ??a ph??ng sang Global
-        /// localToGlobal: Ma tr?n cÛ 3 c?t l‡ 3 vector tr?c ??a ph??ng (L1, L2, L3)
+        /// localToGlobal: Ma tr?n c√≥ 3 c?t l√† 3 vector tr?c ??a ph??ng (L1, L2, L3)
         /// </summary>
         public Vector3D TransformLocalToGlobal(double[] localToGlobal)
         {
@@ -198,7 +198,7 @@ namespace DTS_Engine.Core.Primitives
 
         public override string ToString() => $"({X:0.###}, {Y:0.###}, {Z:0.###})";
 
-        public string ToString(string format) 
+        public string ToString(string format)
             => $"({X.ToString(format)}, {Y.ToString(format)}, {Z.ToString(format)})";
 
         #endregion
@@ -231,13 +231,13 @@ namespace DTS_Engine.Core.Primitives
         public static Vector3D Gravity => new Vector3D(0, 0, -1);
 
         /// <summary>
-        /// T?o vector t? 3 gi· tr? trong m?ng
+        /// T?o vector t? 3 gi√° tr? trong m?ng
         /// </summary>
         public static Vector3D FromArray(double[] values, int startIndex = 0)
         {
             if (values == null || values.Length < startIndex + 3)
                 return Zero;
-            
+
             return new Vector3D(
                 values[startIndex],
                 values[startIndex + 1],
@@ -258,8 +258,8 @@ namespace DTS_Engine.Core.Primitives
         #region Utility Methods
 
         /// <summary>
-        /// Ki?m tra vector cÛ song song v?i tr?c Global n‡o khÙng
-        /// Tr? v?: "X", "Y", "Z" ho?c null n?u khÙng song song v?i tr?c n‡o
+        /// Ki?m tra vector c√≥ song song v?i tr?c Global n√†o kh√¥ng
+        /// Tr? v?: "X", "Y", "Z" ho?c null n?u kh√¥ng song song v?i tr?c n√†o
         /// </summary>
         public string GetDominantAxis(double tolerance = 0.1)
         {
@@ -283,7 +283,7 @@ namespace DTS_Engine.Core.Primitives
         }
 
         /// <summary>
-        /// L?y tr?c ch? ??o (cÛ component l?n nh?t)
+        /// L?y tr?c ch? ??o (c√≥ component l?n nh?t)
         /// </summary>
         public string GetPrimaryAxis()
         {
@@ -297,8 +297,8 @@ namespace DTS_Engine.Core.Primitives
         }
 
         /// <summary>
-        /// Ki?m tra cÛ ph?i t?i ngang (lateral) khÙng
-        /// TiÍu chÌ: max(|X|, |Y|) > 0.5 * |Z|
+        /// Ki?m tra c√≥ ph?i t?i ngang (lateral) kh√¥ng
+        /// Ti√™u ch√≠: max(|X|, |Y|) > 0.5 * |Z|
         /// </summary>
         public bool IsLateral
         {

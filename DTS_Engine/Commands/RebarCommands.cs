@@ -28,7 +28,7 @@ namespace DTS_Engine.Commands
                     return;
                 }
             }
-            
+
             SapDesignEngine engine = new SapDesignEngine();
             if (!engine.IsReady)
             {
@@ -48,7 +48,7 @@ namespace DTS_Engine.Commands
             pIntOpt.AllowNegative = false;
             pIntOpt.LowerLimit = 0;
             pIntOpt.UpperLimit = 3;
-            
+
             var pIntRes = ed.GetInteger(pIntOpt);
             int displayMode = 0; // Default = Combined
             if (pIntRes.Status == PromptStatus.OK)
@@ -66,9 +66,9 @@ namespace DTS_Engine.Commands
 
             // 5. Geometry Match Strategy
             WriteMessage("Đang đồng bộ hình học để tìm tên phần tử SAP...");
-            
+
             var allSapFrames = SapUtils.GetAllFramesGeometry();
-            
+
             List<string> matchedNames = new List<string>();
             Dictionary<ObjectId, string> cadToSap = new Dictionary<ObjectId, string>();
 
@@ -82,7 +82,7 @@ namespace DTS_Engine.Commands
                     Point3d start = curve.StartPoint;
                     Point3d end = curve.EndPoint;
 
-                    var match = allSapFrames.FirstOrDefault(f => 
+                    var match = allSapFrames.FirstOrDefault(f =>
                         (IsSamePt(f.StartPt, start) && IsSamePt(f.EndPt, end)) ||
                         (IsSamePt(f.StartPt, end) && IsSamePt(f.EndPt, start))
                     );
@@ -137,7 +137,7 @@ namespace DTS_Engine.Commands
                         string[] displayTopStr = new string[3];
                         string[] displayBotStr = new string[3];
 
-                        for(int i=0; i<3; i++)
+                        for (int i = 0; i < 3; i++)
                         {
                             switch (displayMode)
                             {
@@ -179,7 +179,7 @@ namespace DTS_Engine.Commands
                     }
                 }
             });
-            
+
             string[] modeNames = { "Tổng hợp", "Thép dọc", "Thép xoắn", "Thép Đai/Sườn" };
             WriteSuccess($"Đã cập nhật Label thép ({modeNames[displayMode]}) cho {successCount} dầm.");
         }
@@ -225,9 +225,9 @@ namespace DTS_Engine.Commands
                 {
                     DBObject obj = tr.GetObject(id, OpenMode.ForWrite);
                     var data = XDataUtils.ReadElementData(obj) as BeamResultData;
-                    
+
                     if (data == null) continue;
-                    
+
                     // Validate Dimensions
                     if (data.Width <= 0 || data.SectionHeight <= 0)
                     {
@@ -268,7 +268,7 @@ namespace DTS_Engine.Commands
                     // Update Labels on screen
                     // Format: Top line = Longitudinal + Stirrup, Bot line = Longitudinal + WebBar
                     var curve = obj as Curve;
-                    if(curve != null)
+                    if (curve != null)
                     {
                         Point3d pStart = curve.StartPoint;
                         Point3d pEnd = curve.EndPoint;
@@ -290,7 +290,7 @@ namespace DTS_Engine.Commands
                             LabelPlotter.PlotRebarLabel(btr, tr, pStart, pEnd, botText, i, false);
                         }
                     }
-                    
+
                     count++;
                 }
             });
@@ -311,14 +311,14 @@ namespace DTS_Engine.Commands
             var pZone = new PromptStringOptions($"\nNhập tỷ lệ chia vùng dầm [Start Mid End] (Hiện tại: {currentZone}): ");
             pZone.AllowSpaces = true;
             var resZone = ed.GetString(pZone);
-            
+
             if (resZone.Status == PromptStatus.OK && !string.IsNullOrWhiteSpace(resZone.StringResult))
             {
                 var parts = resZone.StringResult.Split(new[] { ' ', ',' }, StringSplitOptions.RemoveEmptyEntries);
                 if (parts.Length == 3)
                 {
-                    if (double.TryParse(parts[0], out double s) && 
-                        double.TryParse(parts[1], out double m) && 
+                    if (double.TryParse(parts[0], out double s) &&
+                        double.TryParse(parts[1], out double m) &&
                         double.TryParse(parts[2], out double e))
                     {
                         if (Math.Abs(s + m + e - 1.0) > 0.01)
@@ -346,7 +346,7 @@ namespace DTS_Engine.Commands
             var pCov = new PromptDoubleOptions($"\nNhập lớp bảo vệ (mm) (Hiện tại: {settings.CoverTop}): ");
             pCov.AllowNone = true;
             var resC = ed.GetDouble(pCov);
-            if (resC.Status == PromptStatus.OK) 
+            if (resC.Status == PromptStatus.OK)
             {
                 settings.CoverTop = resC.Value;
                 settings.CoverBot = resC.Value;
@@ -358,7 +358,7 @@ namespace DTS_Engine.Commands
             var resS = ed.GetString(pStr);
             if (resS.Status == PromptStatus.OK && !string.IsNullOrWhiteSpace(resS.StringResult))
             {
-                var nums = resS.StringResult.Split(new[]{' ', ','}, StringSplitOptions.RemoveEmptyEntries)
+                var nums = resS.StringResult.Split(new[] { ' ', ',' }, StringSplitOptions.RemoveEmptyEntries)
                     .Select(s => int.TryParse(s, out int v) ? v : 0)
                     .Where(v => v > 0).ToList();
                 if (nums.Count > 0) settings.PreferredDiameters = nums;
@@ -381,7 +381,7 @@ namespace DTS_Engine.Commands
             pWeb.AllowNone = true;
             var resWeb = ed.GetInteger(pWeb);
             if (resWeb.Status == PromptStatus.OK) settings.WebBarDiameter = resWeb.Value;
-            
+
             WriteMessage("\nĐã cập nhật cài đặt tính toán.");
         }
 
@@ -406,13 +406,13 @@ namespace DTS_Engine.Commands
             UsingTransaction(tr =>
             {
                 var btr = tr.GetObject(AcadUtils.Db.CurrentSpaceId, OpenMode.ForRead) as BlockTableRecord;
-                foreach(ObjectId id in btr)
+                foreach (ObjectId id in btr)
                 {
                     var obj = tr.GetObject(id, OpenMode.ForRead);
-                    if(obj is Curve crv)
+                    if (obj is Curve crv)
                     {
                         string layer = (obj as Entity)?.Layer ?? "";
-                        if(layer.ToUpper().Contains("GRID") || layer.ToUpper().Contains("AXIS"))
+                        if (layer.ToUpper().Contains("GRID") || layer.ToUpper().Contains("AXIS"))
                         {
                             gridLines.Add(crv);
                         }
@@ -420,16 +420,16 @@ namespace DTS_Engine.Commands
                 }
 
                 // Tìm các giao điểm lưới
-                for(int i=0; i<gridLines.Count; i++)
+                for (int i = 0; i < gridLines.Count; i++)
                 {
-                    for(int j=i+1; j<gridLines.Count; j++)
+                    for (int j = i + 1; j < gridLines.Count; j++)
                     {
                         var pts = new Point3dCollection();
                         // Dùng ExtendBoth để phòng đường Grid vẽ chưa chạm nhau
                         gridLines[i].IntersectWith(gridLines[j], Intersect.ExtendBoth, pts, IntPtr.Zero, IntPtr.Zero);
-                        foreach(Point3d p in pts)
+                        foreach (Point3d p in pts)
                         {
-                            if(!gridIntersections.Any(x => x.DistanceTo(p) < 100))
+                            if (!gridIntersections.Any(x => x.DistanceTo(p) < 100))
                                 gridIntersections.Add(p);
                         }
                     }
@@ -449,10 +449,10 @@ namespace DTS_Engine.Commands
                 // Sort beams by Y then X (based on midpoint)
                 var beamsData = new List<(ObjectId Id, Point3d Mid, bool IsGirder)>();
 
-                foreach(ObjectId id in selectedIds)
+                foreach (ObjectId id in selectedIds)
                 {
                     var curve = tr.GetObject(id, OpenMode.ForRead) as Curve;
-                    if(curve == null) continue;
+                    if (curve == null) continue;
 
                     Point3d mid = curve.StartPoint + (curve.EndPoint - curve.StartPoint) * 0.5;
 
@@ -474,14 +474,14 @@ namespace DTS_Engine.Commands
 
                 var btr = tr.GetObject(AcadUtils.Db.CurrentSpaceId, OpenMode.ForWrite) as BlockTableRecord;
 
-                foreach(var beam in sortedBeams)
+                foreach (var beam in sortedBeams)
                 {
                     var curve = tr.GetObject(beam.Id, OpenMode.ForWrite) as Curve;
-                    if(curve == null) continue;
+                    if (curve == null) continue;
 
                     string prefix = beam.IsGirder ? "G" : "B";
                     int number = beam.IsGirder ? girderCount++ : beamCount++;
-                    
+
                     string beamName = $"{currentStory}{prefix}{number}";
 
                     // Plot Name Label at Mid
@@ -495,7 +495,7 @@ namespace DTS_Engine.Commands
                 }
             });
 
-            WriteSuccess($"Đã đặt tên cho {selectedIds.Count} dầm ({girderCount-1} Girder, {beamCount-1} Beam).");
+            WriteSuccess($"Đã đặt tên cho {selectedIds.Count} dầm ({girderCount - 1} Girder, {beamCount - 1} Beam).");
         }
 
         [CommandMethod("DTS_REBAR_UPDATE")]
@@ -601,7 +601,7 @@ namespace DTS_Engine.Commands
                     // Create Section Name based on convention
                     // Format: [SapName]_[WxH]_[Top0]_[Top2]_[Bot0]_[Bot2]
                     string newSectionName = $"{sapName}_{(int)data.Width}x{(int)data.SectionHeight}_{(int)topProv[0]}_{(int)topProv[2]}_{(int)botProv[0]}_{(int)botProv[2]}";
-                    
+
                     // Limit length for SAP
                     if (newSectionName.Length > 31)
                     {
@@ -627,7 +627,7 @@ namespace DTS_Engine.Commands
 
             if (failCount > 0)
                 WriteMessage($"Cảnh báo: {failCount} dầm không thể cập nhật.");
-            
+
             WriteSuccess($"Đã cập nhật {successCount} dầm về SAP2000.");
         }
 

@@ -1,7 +1,7 @@
+﻿using DTS_Engine.Core.Data;
 using System;
 using System.Collections.Generic;
 using System.Linq;
-using DTS_Engine.Core.Data;
 
 namespace DTS_Engine.Core.Algorithms
 {
@@ -23,26 +23,26 @@ namespace DTS_Engine.Core.Algorithms
             // - Thỏa mãn As >= AreaReq
             // - Thỏa mãn khoảng hở (min spacing)
             // - Ít thanh nhất hoặc dư ít nhất? (Thường ưu tiên số thanh chẵn/hợp lý và dư ít nhất)
-            
+
             // Chiến thuật "Vét cạn" đơn giản hóa (Greedy per diameter):
             // Thử từng D, xem cần bao nhiêu thanh. Check spacing. Nếu 1 lớp không đủ -> 2 lớp.
-            
+
             string bestSol = "";
             double minAreaExcess = double.MaxValue;
 
             foreach (int d in diameters)
             {
                 double as1 = Math.PI * d * d / 400.0; // cm2 per bar
-                
+
                 // Số thanh lý thuyết
                 int nTotal = (int)Math.Ceiling(areaReq / as1);
-                
+
                 // Check Max thanh 1 lớp
                 int nMaxOneLayer = GetMaxBarsPerLayer(b, settings.CoverTop, d, settings.MinSpacing);
-                
+
                 // Xử lý bố trí
                 string currentSol = "";
-                
+
                 if (nTotal <= nMaxOneLayer)
                 {
                     // 1 Lớp đủ
@@ -57,24 +57,24 @@ namespace DTS_Engine.Core.Algorithms
                     // Lớp 2: nTotal - nMax
                     // Ràng buộc số lớp tối đa? User settings usually imply limit.
                     // Let's assume max 2 layers for simplicity first version.
-                    
+
                     int nL1 = nMaxOneLayer;
                     int nL2 = nTotal - nL1;
-                    
+
                     // Logic VBA: n_chaysuot (Run-through).
                     // Thường lớp 1 là chạy suốt, lớp 2 gia cường.
                     // Nếu nL2 quá ít (1 cây), có thể tăng nL2 lên 2.
                     if (nL2 < 2) nL2 = 2;
-                    
+
                     // Re-check total area with adjusted counts
                     nTotal = nL1 + nL2;
-                    
+
                     currentSol = $"{nL1}d{d} + {nL2}d{d}";
                 }
 
                 double areaProv = nTotal * as1;
                 double excess = areaProv - areaReq;
-                
+
                 // Chọn phương án dư ít nhất (Economy)
                 if (excess >= 0 && excess < minAreaExcess)
                 {
@@ -109,15 +109,15 @@ namespace DTS_Engine.Core.Algorithms
             // cover: (mm)
             // d: (mm)
             // space: (mm)
-            
+
             // Valid width = b - 2*cover - 2*stirrup (assume 10mm stirrup)
-            double workingWidth = b - 2 * cover - 2 * 10; 
-            
+            double workingWidth = b - 2 * cover - 2 * 10;
+
             // n * d + (n-1)*s <= workingWidth
             // n(d+s) - s <= workingWidth
             // n(d+s) <= workingWidth + s
             // n <= (workingWidth + s) / (d + s)
-            
+
             double val = (workingWidth + minSpacing) / (d + minSpacing);
             int n = (int)Math.Floor(val);
             return n < 2 ? 2 : n; // Min 2 bars usually
@@ -168,7 +168,7 @@ namespace DTS_Engine.Core.Algorithms
                 {
                     return $"{nLegs}-d{d}a{selectedSpacing}";
                 }
-                
+
                 // Nếu bước đai nhỏ nhất trong spacings vẫn <= maxSpacing nhưng < minSpacing
                 // thì tăng nhánh và thử lại
             }

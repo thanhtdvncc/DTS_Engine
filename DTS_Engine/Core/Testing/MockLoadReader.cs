@@ -1,4 +1,4 @@
-using DTS_Engine.Core.Data;
+ï»¿using DTS_Engine.Core.Data;
 using DTS_Engine.Core.Interfaces;
 using System;
 using System.Collections.Generic;
@@ -9,9 +9,9 @@ namespace DTS_Engine.Core.Testing
     /// Mock implementation c?a ISapLoadReader cho Unit Testing.
     /// 
     /// RATIONALE:
-    /// - Dependency Injection cho phép test AuditEngine mà không c?n SAP2000
-    /// - Mock này tr? v? d? li?u gi? l?p ?? verify logic
-    /// - Tuân th? Test Driven Development (TDD)
+    /// - Dependency Injection cho phÃ©p test AuditEngine mÃ  khÃ´ng c?n SAP2000
+    /// - Mock nÃ y tr? v? d? li?u gi? l?p ?? verify logic
+    /// - TuÃ¢n th? Test Driven Development (TDD)
     /// 
     /// USAGE:
     /// var mockReader = new MockLoadReader();
@@ -29,9 +29,9 @@ namespace DTS_Engine.Core.Testing
         }
 
         /// <summary>
-        /// Thêm t?i tr?ng gi? l?p vào Mock Reader.
+        /// ThÃªm t?i tr?ng gi? l?p vÃ o Mock Reader.
         /// </summary>
-        public void AddMockLoad(string elementName, string pattern, double value, string loadType, 
+        public void AddMockLoad(string elementName, string pattern, double value, string loadType,
             double dirX = 0, double dirY = 0, double dirZ = -1, double elemZ = 0)
         {
             var load = new RawSapLoad
@@ -48,7 +48,7 @@ namespace DTS_Engine.Core.Testing
         }
 
         /// <summary>
-        /// Thêm t?i tr?ng gi? l?p v?i ??y ?? thông tin.
+        /// ThÃªm t?i tr?ng gi? l?p v?i ??y ?? thÃ´ng tin.
         /// </summary>
         public void AddMockLoad(RawSapLoad load)
         {
@@ -65,7 +65,7 @@ namespace DTS_Engine.Core.Testing
 
         /// <summary>
         /// Implementation c?a ISapLoadReader.ReadAllLoads
-        /// Tr? v? mock data thay vì ??c t? SAP.
+        /// Tr? v? mock data thay vÃ¬ ??c t? SAP.
         /// </summary>
         public List<RawSapLoad> ReadAllLoads(string patternFilter)
         {
@@ -94,7 +94,7 @@ namespace DTS_Engine.Core.Testing
 
             // Area Uniform Load (Gravity)
             mock.AddMockLoad("F1", "DL", 5.0, "AreaUniform", 0, 0, -5, 3000);
-            
+
             // Lateral Point Load (Wind)
             mock.AddMockLoad("J1", "WX", 50.0, "PointForce", 50, 0, 0, 6000);
 

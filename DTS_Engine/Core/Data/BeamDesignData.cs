@@ -54,11 +54,11 @@ namespace DTS_Engine.Core.Data
         public double[] ShearArea { get; set; } = new double[3]; // VMajor Shear Area
 
         public string DesignCombo { get; set; }
-        
+
         // ===== Section Info =====
         public string SectionName { get; set; }
         public double Width { get; set; } // cm
-        public new double SectionHeight { get; set; } // cm (Depth t3) - renamed to avoid hiding
+        public double SectionHeight { get; set; } // cm (Depth t3)
 
         // ===== Cấu hình tính toán =====
         public double TorsionFactorUsed { get; set; } = 0.25;
@@ -134,7 +134,7 @@ namespace DTS_Engine.Core.Data
             if (obj is object[] arr)
             {
                 double[] res = new double[arr.Length];
-                for(int i=0; i<arr.Length; i++) res[i] = Convert.ToDouble(arr[i]);
+                for (int i = 0; i < arr.Length; i++) res[i] = Convert.ToDouble(arr[i]);
                 return res;
             }
             if (obj is System.Collections.ArrayList list)
@@ -151,7 +151,7 @@ namespace DTS_Engine.Core.Data
             if (obj is object[] arr)
             {
                 string[] res = new string[arr.Length];
-                for(int i=0; i<arr.Length; i++) res[i] = arr[i]?.ToString();
+                for (int i = 0; i < arr.Length; i++) res[i] = arr[i]?.ToString();
                 return res;
             }
             if (obj is System.Collections.ArrayList list)
@@ -220,33 +220,33 @@ namespace DTS_Engine.Core.Data
 
         private string[] ConvertToStringArray(object obj)
         {
-             if (obj is object[] arr)
+            if (obj is object[] arr)
             {
                 string[] res = new string[arr.Length];
-                for(int i=0; i<arr.Length; i++) res[i] = arr[i]?.ToString();
+                for (int i = 0; i < arr.Length; i++) res[i] = arr[i]?.ToString();
                 return res;
             }
             if (obj is System.Collections.ArrayList list)
             {
-                 string[] res = new string[list.Count];
-                 for (int i = 0; i < list.Count; i++) res[i] = list[i]?.ToString();
-                 return res;
+                string[] res = new string[list.Count];
+                for (int i = 0; i < list.Count; i++) res[i] = list[i]?.ToString();
+                return res;
             }
             return new string[3];
         }
-         private double[] ConvertToDoubleArray(object obj)
+        private double[] ConvertToDoubleArray(object obj)
         {
             if (obj is object[] arr)
             {
                 double[] res = new double[arr.Length];
-                for(int i=0; i<arr.Length; i++) res[i] = Convert.ToDouble(arr[i]);
+                for (int i = 0; i < arr.Length; i++) res[i] = Convert.ToDouble(arr[i]);
                 return res;
             }
-             if (obj is System.Collections.ArrayList list)
+            if (obj is System.Collections.ArrayList list)
             {
-                 double[] res = new double[list.Count];
-                 for (int i = 0; i < list.Count; i++) res[i] = Convert.ToDouble(list[i]);
-                 return res;
+                double[] res = new double[list.Count];
+                for (int i = 0; i < list.Count; i++) res[i] = Convert.ToDouble(list[i]);
+                return res;
             }
             return new double[3];
         }
@@ -276,9 +276,9 @@ namespace DTS_Engine.Core.Data
 
         // Backward compatibility
         [Obsolete("Use TorsionFactorTop/Bot instead")]
-        public double TorsionDistributionFactor 
-        { 
-            get => TorsionFactorTop; 
+        public double TorsionDistributionFactor
+        {
+            get => TorsionFactorTop;
             set { TorsionFactorTop = value; TorsionFactorBot = value; TorsionFactorSide = 1 - 2 * value; }
         }
         public double TorsionRatioTop { get => TorsionFactorTop; set => TorsionFactorTop = value; }

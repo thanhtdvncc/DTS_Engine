@@ -25,7 +25,7 @@ namespace DTS_Engine.Core.Utils
         #region Constants
 
         private const string SHEET_NAME = "Load Audit Report";
-        
+
         // Colors (ClosedXML format)
         private static readonly XLColor HEADER_COLOR = XLColor.FromArgb(68, 114, 196); // Blue
         private static readonly XLColor SUBHEADER_COLOR = XLColor.FromArgb(217, 225, 242); // Light blue
@@ -41,8 +41,8 @@ namespace DTS_Engine.Core.Utils
         /// Returns the full path to the generated file.
         /// </summary>
         public static string GenerateExcelReport(
-            AuditReport report, 
-            string targetUnit = "kN", 
+            AuditReport report,
+            string targetUnit = "kN",
             string language = "English",
             string outputPath = null)
         {
@@ -57,7 +57,7 @@ namespace DTS_Engine.Core.Utils
             using (var workbook = new XLWorkbook())
             {
                 var worksheet = workbook.Worksheets.Add(SHEET_NAME);
-                
+
                 int currentRow = 1;
 
                 // 1. Report Header
@@ -76,8 +76,8 @@ namespace DTS_Engine.Core.Utils
                 if (string.IsNullOrEmpty(outputPath))
                 {
                     string tempFolder = Path.GetTempPath();
-                    string safeModel = string.IsNullOrWhiteSpace(report.ModelName) 
-                        ? "Model" 
+                    string safeModel = string.IsNullOrWhiteSpace(report.ModelName)
+                        ? "Model"
                         : Path.GetFileNameWithoutExtension(report.ModelName);
                     string fileName = $"DTS_Audit_{safeModel}_{report.LoadPattern}_{DateTime.Now:yyyyMMdd_HHmmss}.xlsx";
                     outputPath = Path.Combine(tempFolder, fileName);
@@ -117,8 +117,8 @@ namespace DTS_Engine.Core.Utils
 
             // Title
             var titleCell = ws.Cell(row, 1);
-            titleCell.Value = isVN 
-                ? "KIỂM TOÁN TẢI TRỌNG SAP2000 (DTS ENGINE v11.0)" 
+            titleCell.Value = isVN
+                ? "KIỂM TOÁN TẢI TRỌNG SAP2000 (DTS ENGINE v11.0)"
                 : "SAP2000 LOAD AUDIT REPORT (DTS ENGINE v11.0)";
             titleCell.Style.Font.Bold = true;
             titleCell.Style.Font.FontSize = 14;
@@ -148,11 +148,11 @@ namespace DTS_Engine.Core.Utils
         }
 
         private static int WriteStoryDetails(
-            IXLWorksheet ws, 
-            AuditReport report, 
-            double forceFactor, 
-            string targetUnit, 
-            bool isVN, 
+            IXLWorksheet ws,
+            AuditReport report,
+            double forceFactor,
+            string targetUnit,
+            bool isVN,
             int startRow)
         {
             int row = startRow;
@@ -207,7 +207,7 @@ namespace DTS_Engine.Core.Utils
 
                         // [v11.0] Column headers
                         string valueUnit = subGroup.FirstOrDefault()?.QuantityUnit ?? "m²";
-                        
+
                         string[] headers = isVN
                             ? new[] { "Vị trí trục", "Chi tiết tính toán", $"Value({valueUnit})", $"Unit Load", "Hướng", $"Force({targetUnit})", "Phần tử" }
                             : new[] { "Grid Location", "Calculator", $"Value({valueUnit})", $"Unit Load", "Dir", $"Force({targetUnit})", "Elements" };
@@ -236,15 +236,15 @@ namespace DTS_Engine.Core.Utils
                             ws.Cell(row, 2).Value = entry.Explanation ?? "";
                             ws.Cell(row, 3).Value = entry.Quantity;
                             ws.Cell(row, 3).Style.NumberFormat.Format = "0.00";
-                            
+
                             // Apply forceFactor to UnitLoad for display consistency
                             double displayUnitLoad = entry.UnitLoad * forceFactor;
                             ws.Cell(row, 4).Value = displayUnitLoad;
                             ws.Cell(row, 4).Style.NumberFormat.Format = "0.00";
-                            
+
                             // Direction
                             ws.Cell(row, 5).Value = entry.Direction ?? "";
-                            
+
                             // Display primary force component (matching text report logic)
                             double forceX = entry.ForceX * forceFactor;
                             double forceY = entry.ForceY * forceFactor;
@@ -256,12 +256,12 @@ namespace DTS_Engine.Core.Utils
                                 displayForce = forceY;
                             else
                                 displayForce = forceZ;
-                            
+
                             ws.Cell(row, 6).Value = displayForce;
                             ws.Cell(row, 6).Style.NumberFormat.Format = "0.00";
-                            
+
                             // [v11.0] FULL element list (NO truncation for Excel)
-                            ws.Cell(row, 7).Value = entry.ElementList != null && entry.ElementList.Count > 0 
+                            ws.Cell(row, 7).Value = entry.ElementList != null && entry.ElementList.Count > 0
                                 ? string.Join(", ", entry.ElementList)
                                 : "";
 
@@ -326,11 +326,11 @@ namespace DTS_Engine.Core.Utils
         #endregion
 
         private static int WriteSummary(
-            IXLWorksheet ws, 
-            AuditReport report, 
-            double forceFactor, 
-            string targetUnit, 
-            bool isVN, 
+            IXLWorksheet ws,
+            AuditReport report,
+            double forceFactor,
+            string targetUnit,
+            bool isVN,
             int startRow)
         {
             int row = startRow;
@@ -403,8 +403,8 @@ namespace DTS_Engine.Core.Utils
             }
             else
             {
-                ws.Cell(row, 1).Value = isVN 
-                    ? "Lưu ý: Chưa phân tích - Vui lòng kiểm tra thủ công" 
+                ws.Cell(row, 1).Value = isVN
+                    ? "Lưu ý: Chưa phân tích - Vui lòng kiểm tra thủ công"
                     : "Note: Not analyzed - Please verify manually";
                 ws.Range(row, 1, row, 3).Merge();
                 row++;

@@ -1,4 +1,4 @@
-using DTS_Engine.Core.Data;
+﻿using DTS_Engine.Core.Data;
 using DTS_Engine.Core.Utils;
 using SAP2000v1;
 using System;
@@ -64,26 +64,26 @@ namespace DTS_Engine.Core.Engines
                     // Gọi API cho từng phần tử (hoặc Group nếu tối ưu, nhưng ở đây ta loop danh sách chọn)
                     // ItemType = 0 (Object)
                     int ret = _model.DesignConcrete.GetSummaryResultsBeam(
-                        name, 
-                        ref numberItems, 
-                        ref frames, 
-                        ref location, 
-                        ref topCombo, ref topArea, 
-                        ref botCombo, ref botArea, 
-                        ref vMajorCombo, ref vMajorArea, 
-                        ref tlCombo, ref tlArea, 
-                        ref ttCombo, ref ttArea, 
-                        ref errorSummary, ref warningSummary, 
+                        name,
+                        ref numberItems,
+                        ref frames,
+                        ref location,
+                        ref topCombo, ref topArea,
+                        ref botCombo, ref botArea,
+                        ref vMajorCombo, ref vMajorArea,
+                        ref tlCombo, ref tlArea,
+                        ref ttCombo, ref ttArea,
+                        ref errorSummary, ref warningSummary,
                         eItemType.Objects);
 
                     if (ret == 0 && numberItems > 0)
                     {
                         var data = new BeamResultData();
                         var zoneSetting = RebarSettings.Instance;
-                        
+
                         // SAP trả về nhiều Station (location[]).
                         // Thay vì lấy điểm, ta quét Max trong từng vùng theo ZoneRatio.
-                        
+
                         // 1. Get Length
                         double L = location[numberItems - 1];
 
@@ -133,19 +133,19 @@ namespace DTS_Engine.Core.Engines
                         if (_model.FrameObj.GetSection(name, ref propName, ref sAuto) == 0)
                         {
                             data.SectionName = propName;
-                            
+
                             // Get Dims (Rectangular assumed)
                             string matProp = "";
                             double t3 = 0, t2 = 0; // t3=depth, t2=width
                             int color = -1;
                             string notes = "", guid = "";
-                            
+
                             // Check if Auto-Select list? If so, we need actual section used?
                             // For design results, the API usually bases on the ANALYSIS section or DESIGN section.
                             // The `GetSection` returns the assigned property.
                             // If auto-select, we might need `GetSection` at station?
                             // For simplicity, assume Rectangular Section assigned directly.
-                            
+
                             if (_model.PropFrame.GetRectangle(propName, ref propName, ref matProp, ref t3, ref t2, ref color, ref notes, ref guid) == 0)
                             {
                                 // SAP Units are kN_cm_C
@@ -182,8 +182,8 @@ namespace DTS_Engine.Core.Engines
         /// 2. Gán thép cho Section mới (SetRebarBeam).
         /// 3. Gán Section mới cho Frame.
         /// </summary>
-        public bool UpdateBeamRebar(string frameName, string newSectionName, 
-            double[] topAreaProv, double[] botAreaProv, 
+        public bool UpdateBeamRebar(string frameName, string newSectionName,
+            double[] topAreaProv, double[] botAreaProv,
             double coverTop, double coverBot)
         {
             if (_model == null) return false;
@@ -219,16 +219,16 @@ namespace DTS_Engine.Core.Engines
                 // SetRebarBeam requires Material Names, Covers, and Areas.
                 // We assume MatPropLong is same as used in original, or we fetch it.
                 // For simplicity, let's try to get existing rebar props first.
-                
+
                 string matLong = "", matConf = "";
-                double cTop=0, cBot=0, tl=0, tr=0, bl=0, br=0;
-                
+                double cTop = 0, cBot = 0, tl = 0, tr = 0, bl = 0, br = 0;
+
                 // Get existing rebar to get Materials
                 if (_model.PropFrame.GetRebarBeam(newSectionName, ref matLong, ref matConf, ref cTop, ref cBot, ref tl, ref tr, ref bl, ref br) != 0)
                 {
                     // Nếu chưa có rebar data, có thể do section mới clone chưa set.
                     // Lấy từ section gốc 'propName' (trước khi đổi tên)
-                     _model.PropFrame.GetRebarBeam(propName, ref matLong, ref matConf, ref cTop, ref cBot, ref tl, ref tr, ref bl, ref br);
+                    _model.PropFrame.GetRebarBeam(propName, ref matLong, ref matConf, ref cTop, ref cBot, ref tl, ref tr, ref bl, ref br);
                 }
 
                 // Update Values
@@ -250,7 +250,7 @@ namespace DTS_Engine.Core.Engines
                 // TopRightArea = Top Area at End (J)
                 // BotLeftArea = Bot Area at Start (I)
                 // BotRightArea = Bot Area at End (J)
-                
+
                 // But wait, what about Mid? 
                 // SAP Section Property only defines I and J reinforcement for checking? 
                 // Yes, standard concrete check often interpolates.
@@ -260,22 +260,22 @@ namespace DTS_Engine.Core.Engines
                 // TopRight -> TopAreaProv[2] (End)
                 // BotLeft -> BotAreaProv[0] (Start)
                 // BotRight -> BotAreaProv[2] (End)
-                
+
                 double topStart = topAreaProv[0];
                 double topEnd = topAreaProv[2];
                 double botStart = botAreaProv[0];
                 double botEnd = botAreaProv[2];
 
-                int retRebar = _model.PropFrame.SetRebarBeam(newSectionName, matLong, matConf, 
-                    coverTop/10.0, coverBot/10.0, // mm -> cm (since we set unit to kN_cm_C at function start? No, need to be careful)
+                int retRebar = _model.PropFrame.SetRebarBeam(newSectionName, matLong, matConf,
+                    coverTop / 10.0, coverBot / 10.0, // mm -> cm (since we set unit to kN_cm_C at function start? No, need to be careful)
                     topStart, topEnd, botStart, botEnd);
-                
+
                 // Note: We need to handle Units carefully. This function assumes the context is set by caller or we set it.
                 // Let's force unit set inside this scope if we want safety, but better to set outside.
-                
+
                 return retRebar == 0;
             }
-            catch(Exception ex)
+            catch (Exception ex)
             {
                 System.Diagnostics.Debug.WriteLine("UpdateBeamRebar Error: " + ex.Message);
                 return false;
@@ -298,13 +298,13 @@ namespace DTS_Engine.Core.Engines
             double t3 = 0, t2 = 0;
             int color = -1;
             string notes = "", guid = "";
-            
+
             // Try GetRectangular
             if (_model.PropFrame.GetRectangle(sourceName, ref fileName, ref matProp, ref t3, ref t2, ref color, ref notes, ref guid) == 0)
             {
                 return _model.PropFrame.SetRectangle(destName, matProp, t3, t2, -1, notes, "") == 0;
             }
-            
+
             // WARNING: Non-rectangular sections not supported yet
             System.Diagnostics.Debug.WriteLine($"[SapDesignEngine] WARNING: Cannot clone section '{sourceName}' - not a rectangular section (T, I, etc. not supported).");
             return false;

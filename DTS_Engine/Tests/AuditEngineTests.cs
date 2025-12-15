@@ -1,9 +1,7 @@
-using System;
-using System.Collections.Generic;
-using System.Diagnostics;
-using DTS_Engine.Core.Data;
-using DTS_Engine.Core.Engines;
+﻿using DTS_Engine.Core.Data;
 using DTS_Engine.Core.Primitives;
+using System;
+using System.Diagnostics;
 
 // This file provides both a lightweight manual test runner (AuditEngineTestRunner)
 // and an optional MSTest class (compiled only when UNIT_TESTS symbol is defined).
@@ -20,7 +18,7 @@ namespace DTS_Engine.Tests
             // Test 1: Vector3D basic operations
             var v1 = new Vector3D(3, 4, 0);
             var v2 = new Vector3D(0, 0, 5);
-            
+
             Debug.WriteLine($"Test1: v1={v1}, Length={v1.Length:F3} (expected 5.000)");
             if (Math.Abs(v1.Length - 5.0) > 0.001)
                 throw new Exception("Vector3D.Length failed");
@@ -40,10 +38,10 @@ namespace DTS_Engine.Tests
             // Test 4: IsLateral check
             var gravityLoad = new Vector3D(0, 0, -10);
             var lateralLoad = new Vector3D(5, 0, -1);
-            
+
             Debug.WriteLine($"Test4: Gravity.IsLateral={gravityLoad.IsLateral} (expected False)");
             Debug.WriteLine($"Test4: Lateral.IsLateral={lateralLoad.IsLateral} (expected True)");
-            
+
             if (gravityLoad.IsLateral)
                 throw new Exception("Gravity incorrectly identified as lateral");
             if (!lateralLoad.IsLateral)
@@ -56,13 +54,13 @@ namespace DTS_Engine.Tests
                 LoadPattern = "DL",
                 Value1 = 10.0
             };
-            
+
             var forceVector = new Vector3D(0, 0, -10);
             load.SetForceVector(forceVector);
-            
+
             Debug.WriteLine($"Test5: Load DirectionZ={load.DirectionZ:F2} (expected -10.00)");
             Debug.WriteLine($"Test5: Load GlobalAxis={load.GlobalAxis} (expected Z)");
-            
+
             if (Math.Abs(load.DirectionZ + 10) > 0.001)
                 throw new Exception("RawSapLoad.SetForceVector failed");
             if (load.GlobalAxis != "Z")
