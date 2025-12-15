@@ -211,35 +211,46 @@ namespace DTS_Engine.Core.Data
         private static RebarSettings _instance;
         public static RebarSettings Instance => _instance ?? (_instance = new RebarSettings());
 
-        // --- Torsion Distribution (3-part ratio) ---
-        // Mặc định: 0.25 (Top) + 0.5 (Side/Web) + 0.25 (Bot) = 1.0
-        public double TorsionRatioTop { get; set; } = 0.25;
-        public double TorsionRatioSide { get; set; } = 0.50;
-        public double TorsionRatioBot { get; set; } = 0.25;
+        // ===== 1. ZONE RATIOS (Chia vùng chiều dài dầm) =====
+        // Dùng để quét Max nội lực trong từng vùng
+        // Mặc định: Start 25% - Mid 50% - End 25%
+        public double ZoneRatioStart { get; set; } = 0.25;  // 0 → 0.25L
+        public double ZoneRatioEnd { get; set; } = 0.25;    // 0.75L → L
+        // Mid tự động = 1 - Start - End = 0.5
 
-        // Backward compatibility (để code cũ không bị lỗi)
-        [Obsolete("Use TorsionRatioTop/Bot instead")]
+        // ===== 2. TORSION FACTOR (Phân bổ xoắn vào tiết diện) =====
+        // Dùng trong công thức: As = Aflex + Al × Factor
+        // Mặc định: 0.25 (chia đều 4 mặt tiết diện)
+        public double TorsionFactorTop { get; set; } = 0.25;
+        public double TorsionFactorBot { get; set; } = 0.25;
+        public double TorsionFactorSide { get; set; } = 0.50; // Phần còn lại cho Web/Sườn
+
+        // Backward compatibility
+        [Obsolete("Use TorsionFactorTop/Bot instead")]
         public double TorsionDistributionFactor 
         { 
-            get => TorsionRatioTop; 
-            set { TorsionRatioTop = value; TorsionRatioBot = value; TorsionRatioSide = 1 - 2 * value; }
+            get => TorsionFactorTop; 
+            set { TorsionFactorTop = value; TorsionFactorBot = value; TorsionFactorSide = 1 - 2 * value; }
         }
+        public double TorsionRatioTop { get => TorsionFactorTop; set => TorsionFactorTop = value; }
+        public double TorsionRatioBot { get => TorsionFactorBot; set => TorsionFactorBot = value; }
+        public double TorsionRatioSide { get => TorsionFactorSide; set => TorsionFactorSide = value; }
 
-        // --- Cover ---
+        // ===== 3. COVER =====
         public double CoverTop { get; set; } = 35.0; // mm
         public double CoverBot { get; set; } = 35.0; // mm
 
-        // --- Longitudinal Rebar ---
+        // ===== 4. LONGITUDINAL REBAR =====
         public List<int> PreferredDiameters { get; set; } = new List<int> { 16, 18, 20, 22, 25 };
         public double MinSpacing { get; set; } = 30.0; // mm
         public bool MaxBotRebar { get; set; } = true;
 
-        // --- Stirrup (Thép đai) ---
+        // ===== 5. STIRRUP (Thép đai) =====
         public int StirrupDiameter { get; set; } = 8;  // mm
         public int StirrupLegs { get; set; } = 2;       // Số nhánh
         public List<int> StirrupSpacings { get; set; } = new List<int> { 100, 150, 200, 250 };
 
-        // --- Web Bars (Thép sườn/giá) ---
+        // ===== 6. WEB BARS (Thép sườn/giá) =====
         public int WebBarDiameter { get; set; } = 12;   // mm
         public double WebBarMinHeight { get; set; } = 700; // mm
     }

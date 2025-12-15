@@ -79,48 +79,51 @@ namespace DTS_Engine.Core.Engines
                     if (ret == 0 && numberItems > 0)
                     {
                         var data = new BeamResultData();
+                        var zoneSetting = RebarSettings.Instance;
                         
-                        // SAP trả về nhiều Station. Cần lấy Start (0), End (L), Mid (L/2)
-                        // Giả sử location đã sort sẵn? API SAP thường trả về sort theo Station.
-                        // Tìm 3 điểm đại diện.
+                        // SAP trả về nhiều Station (location[]).
+                        // Thay vì lấy điểm, ta quét Max trong từng vùng theo ZoneRatio.
                         
                         // 1. Get Length
-                        double length = location[numberItems - 1]; // Max location
+                        double L = location[numberItems - 1];
 
-                        // Indices
-                        int idxStart = 0;
-                        int idxEnd = numberItems - 1;
-                        // Find Mid (closest to L/2)
-                        int idxMid = 0;
-                        double minDiff = double.MaxValue;
-                        for(int i=0; i<numberItems; i++)
+                        // 2. Define Zone Limits
+                        double limitStart = L * zoneSetting.ZoneRatioStart;       // 0 → 25%L
+                        double limitEnd = L * (1.0 - zoneSetting.ZoneRatioEnd);   // 75%L → L
+
+                        // 3. Local function: Get Max value within a zone
+                        double GetMaxInZone(double[] values, double fromLoc, double toLoc)
                         {
-                            double diff = Math.Abs(location[i] - length / 2.0);
-                            if(diff < minDiff)
+                            double maxVal = 0;
+                            for (int i = 0; i < numberItems; i++)
                             {
-                                minDiff = diff;
-                                idxMid = i;
+                                double loc = location[i];
+                                if (loc >= fromLoc - 0.001 && loc <= toLoc + 0.001)
+                                {
+                                    if (values[i] > maxVal) maxVal = values[i];
+                                }
                             }
+                            return maxVal;
                         }
 
-                        // Assign Data - Flexure
-                        data.TopArea[0] = topArea[idxStart];
-                        data.TopArea[1] = topArea[idxMid];
-                        data.TopArea[2] = topArea[idxEnd];
+                        // 4. Assign Data - Flexure (Max trong từng vùng)
+                        data.TopArea[0] = GetMaxInZone(topArea, 0, limitStart);          // Start Zone
+                        data.TopArea[1] = GetMaxInZone(topArea, limitStart, limitEnd);   // Mid Zone
+                        data.TopArea[2] = GetMaxInZone(topArea, limitEnd, L);            // End Zone
 
-                        data.BotArea[0] = botArea[idxStart];
-                        data.BotArea[1] = botArea[idxMid];
-                        data.BotArea[2] = botArea[idxEnd];
+                        data.BotArea[0] = GetMaxInZone(botArea, 0, limitStart);
+                        data.BotArea[1] = GetMaxInZone(botArea, limitStart, limitEnd);
+                        data.BotArea[2] = GetMaxInZone(botArea, limitEnd, L);
 
-                        // Assign Data - Torsion
-                        data.TorsionArea[0] = tlArea[idxStart];
-                        data.TorsionArea[1] = tlArea[idxMid];
-                        data.TorsionArea[2] = tlArea[idxEnd];
+                        // 5. Assign Data - Torsion (Max trong từng vùng)
+                        data.TorsionArea[0] = GetMaxInZone(tlArea, 0, limitStart);
+                        data.TorsionArea[1] = GetMaxInZone(tlArea, limitStart, limitEnd);
+                        data.TorsionArea[2] = GetMaxInZone(tlArea, limitEnd, L);
 
-                        // Assign Data - Shear (VMajor)
-                        data.ShearArea[0] = vMajorArea[idxStart];
-                        data.ShearArea[1] = vMajorArea[idxMid];
-                        data.ShearArea[2] = vMajorArea[idxEnd];
+                        // 6. Assign Data - Shear/VMajor (Max trong từng vùng)
+                        data.ShearArea[0] = GetMaxInZone(vMajorArea, 0, limitStart);
+                        data.ShearArea[1] = GetMaxInZone(vMajorArea, limitStart, limitEnd);
+                        data.ShearArea[2] = GetMaxInZone(vMajorArea, limitEnd, L);
 
                         data.DesignCombo = topCombo[0]; // Lấy combo đầu làm mẫu
 

@@ -305,44 +305,41 @@ namespace DTS_Engine.Commands
             var settings = RebarSettings.Instance;
 
             // Simple Prompt UI
-            // 1. Torsion Distribution (3-part ratio: Top Side Bot)
-            string currentRatio = $"{settings.TorsionRatioTop} {settings.TorsionRatioSide} {settings.TorsionRatioBot}";
-            var pOpt = new PromptStringOptions($"\nNhập tỷ lệ phân bổ xoắn [Top Side Bot] (Hiện tại: {currentRatio}): ");
-            pOpt.AllowNone = true;
-            var res = ed.GetString(pOpt);
+            // 1. ZONE RATIOS (Chia vùng chiều dài dầm để quét Max)
+            double midRatio = 1.0 - settings.ZoneRatioStart - settings.ZoneRatioEnd;
+            string currentZone = $"{settings.ZoneRatioStart} {midRatio:F2} {settings.ZoneRatioEnd}";
+            var pZone = new PromptStringOptions($"\nNhập tỷ lệ chia vùng dầm [Start Mid End] (Hiện tại: {currentZone}): ");
+            pZone.AllowNone = true;
+            var resZone = ed.GetString(pZone);
             
-            if (res.Status == PromptStatus.OK && !string.IsNullOrWhiteSpace(res.StringResult))
+            if (resZone.Status == PromptStatus.OK && !string.IsNullOrWhiteSpace(resZone.StringResult))
             {
-                var parts = res.StringResult.Split(new[] { ' ', ',' }, StringSplitOptions.RemoveEmptyEntries);
+                var parts = resZone.StringResult.Split(new[] { ' ', ',' }, StringSplitOptions.RemoveEmptyEntries);
                 if (parts.Length == 3)
                 {
-                    if (double.TryParse(parts[0], out double t) && 
-                        double.TryParse(parts[1], out double s) && 
-                        double.TryParse(parts[2], out double b))
+                    if (double.TryParse(parts[0], out double s) && 
+                        double.TryParse(parts[1], out double m) && 
+                        double.TryParse(parts[2], out double e))
                     {
-                        // Cảnh báo nếu tổng != 1.0
-                        if (Math.Abs(t + s + b - 1.0) > 0.01)
+                        if (Math.Abs(s + m + e - 1.0) > 0.01)
                             ed.WriteMessage("\nCảnh báo: Tổng tỷ lệ không bằng 1.0.");
 
-                        settings.TorsionRatioTop = t;
-                        settings.TorsionRatioSide = s;
-                        settings.TorsionRatioBot = b;
+                        settings.ZoneRatioStart = s;
+                        settings.ZoneRatioEnd = e;
+                        // Mid không lưu, tự động = 1 - Start - End
                     }
                 }
-                else if (parts.Length == 1)
-                {
-                    // Backward compatible: nhập 1 số = factor cũ
-                    if (double.TryParse(parts[0], out double factor))
-                    {
-                        settings.TorsionRatioTop = factor;
-                        settings.TorsionRatioBot = factor;
-                        settings.TorsionRatioSide = 1 - 2 * factor;
-                    }
-                }
-                else
-                {
-                    ed.WriteMessage("\nLỗi: Vui lòng nhập 3 số (Top Side Bot) hoặc 1 số (factor).");
-                }
+            }
+
+            // 2. TORSION FACTOR (Hệ số phân bổ xoắn vào tiết diện)
+            var pTor = new PromptDoubleOptions($"\nNhập hệ số xoắn Top/Bot (Hiện tại: {settings.TorsionFactorTop}): ");
+            pTor.AllowNone = true;
+            var resTor = ed.GetDouble(pTor);
+            if (resTor.Status == PromptStatus.OK)
+            {
+                settings.TorsionFactorTop = resTor.Value;
+                settings.TorsionFactorBot = resTor.Value;
+                settings.TorsionFactorSide = 1 - 2 * resTor.Value;
             }
 
             // 2. Cover
