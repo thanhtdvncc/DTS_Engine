@@ -350,6 +350,23 @@ namespace DTS_Engine.Commands
             }
         }
 
+        [CommandMethod("DTS_REBAR_CALCULATE_SETTING")]
+        public void DTS_REBAR_CALCULATE_SETTING()
+        {
+            try
+            {
+                // Sử dụng RebarConfigDialog với WebView2 Modern UI
+                var dialog = new DTS_Engine.UI.Forms.RebarConfigDialog();
+                
+                // ShowModalDialog giúp khóa CAD lại cho đến khi tắt form
+                Autodesk.AutoCAD.ApplicationServices.Application.ShowModalDialog(dialog);
+            }
+            catch (System.Exception ex)
+            {
+                WriteError("Lỗi hệ thống UI: " + ex.Message);
+            }
+        }
+
         [CommandMethod("DTS_REBAR_CALCULATE")]
         public void DTS_REBAR_CALCULATE()
         {
@@ -446,92 +463,6 @@ namespace DTS_Engine.Commands
             WriteSuccess($"Đã tính toán và cập nhật cho {count} dầm.");
         }
 
-        [CommandMethod("DTS_REBAR_CALCULATE_SETTING")]
-        public void DTS_REBAR_CALCULATE_SETTING()
-        {
-            var ed = AcadUtils.Ed;
-            var settings = RebarSettings.Instance;
-
-            // Simple Prompt UI
-            // 1. ZONE RATIOS (Chia vùng chiều dài dầm để quét Max)
-            double midRatio = 1.0 - settings.ZoneRatioStart - settings.ZoneRatioEnd;
-            string currentZone = $"{settings.ZoneRatioStart} {midRatio:F2} {settings.ZoneRatioEnd}";
-            var pZone = new PromptStringOptions($"\nNhập tỷ lệ chia vùng dầm [Start Mid End] (Hiện tại: {currentZone}): ");
-            pZone.AllowSpaces = true;
-            var resZone = ed.GetString(pZone);
-
-            if (resZone.Status == PromptStatus.OK && !string.IsNullOrWhiteSpace(resZone.StringResult))
-            {
-                var parts = resZone.StringResult.Split(new[] { ' ', ',' }, StringSplitOptions.RemoveEmptyEntries);
-                if (parts.Length == 3)
-                {
-                    if (double.TryParse(parts[0], out double s) &&
-                        double.TryParse(parts[1], out double m) &&
-                        double.TryParse(parts[2], out double e))
-                    {
-                        if (Math.Abs(s + m + e - 1.0) > 0.01)
-                            ed.WriteMessage("\nCảnh báo: Tổng tỷ lệ không bằng 1.0.");
-
-                        settings.ZoneRatioStart = s;
-                        settings.ZoneRatioEnd = e;
-                        // Mid không lưu, tự động = 1 - Start - End
-                    }
-                }
-            }
-
-            // 2. TORSION FACTOR (Hệ số phân bổ xoắn vào tiết diện)
-            var pTor = new PromptDoubleOptions($"\nNhập hệ số xoắn Top/Bot (Hiện tại: {settings.TorsionFactorTop}): ");
-            pTor.AllowNone = true;
-            var resTor = ed.GetDouble(pTor);
-            if (resTor.Status == PromptStatus.OK)
-            {
-                settings.TorsionFactorTop = resTor.Value;
-                settings.TorsionFactorBot = resTor.Value;
-                settings.TorsionFactorSide = 1 - 2 * resTor.Value;
-            }
-
-            // 2. Cover
-            var pCov = new PromptDoubleOptions($"\nNhập lớp bảo vệ (mm) (Hiện tại: {settings.CoverTop}): ");
-            pCov.AllowNone = true;
-            var resC = ed.GetDouble(pCov);
-            if (resC.Status == PromptStatus.OK)
-            {
-                settings.CoverTop = resC.Value;
-                settings.CoverBot = resC.Value;
-            }
-
-            // 3. Longitudinal Diameters
-            var pStr = new PromptStringOptions($"\nNhập đường kính thép dọc (phân cách space, hiện tại: {string.Join(" ", settings.PreferredDiameters)}): ");
-            pStr.AllowSpaces = true;
-            var resS = ed.GetString(pStr);
-            if (resS.Status == PromptStatus.OK && !string.IsNullOrWhiteSpace(resS.StringResult))
-            {
-                var nums = resS.StringResult.Split(new[] { ' ', ',' }, StringSplitOptions.RemoveEmptyEntries)
-                    .Select(s => int.TryParse(s, out int v) ? v : 0)
-                    .Where(v => v > 0).ToList();
-                if (nums.Count > 0) settings.PreferredDiameters = nums;
-            }
-
-            // 4. Stirrup Diameter
-            var pStir = new PromptIntegerOptions($"\nNhập đường kính Đai (mm) (Hiện tại: {settings.StirrupDiameter}): ");
-            pStir.AllowNone = true;
-            var resStir = ed.GetInteger(pStir);
-            if (resStir.Status == PromptStatus.OK) settings.StirrupDiameter = resStir.Value;
-
-            // 5. Stirrup Legs
-            var pLegs = new PromptIntegerOptions($"\nNhập số nhánh Đai (Hiện tại: {settings.StirrupLegs}): ");
-            pLegs.AllowNone = true;
-            var resLegs = ed.GetInteger(pLegs);
-            if (resLegs.Status == PromptStatus.OK) settings.StirrupLegs = resLegs.Value;
-
-            // 6. Web Bar Diameter
-            var pWeb = new PromptIntegerOptions($"\nNhập đường kính thép Sườn (mm) (Hiện tại: {settings.WebBarDiameter}): ");
-            pWeb.AllowNone = true;
-            var resWeb = ed.GetInteger(pWeb);
-            if (resWeb.Status == PromptStatus.OK) settings.WebBarDiameter = resWeb.Value;
-
-            WriteMessage("\nĐã cập nhật cài đặt tính toán.");
-        }
 
         private bool IsSamePt(Core.Primitives.Point2D p2d, Point3d p3d, double tol = 200.0)
         {
