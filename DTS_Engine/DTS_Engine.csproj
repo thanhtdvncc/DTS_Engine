@@ -125,6 +125,7 @@
     <Compile Include="Commands\OriginCommands.cs" />
     <Compile Include="Commands\PlotCommands.cs" />
     <Compile Include="Commands\ProcessCommands.cs" />
+    <Compile Include="Commands\RebarCommands.cs" />
     <Compile Include="Commands\SapCommands.cs" />
     <Compile Include="Commands\SapLoadDiagnostics.cs" />
     <Compile Include="Commands\ScanCommands.cs" />
@@ -136,8 +137,10 @@
     <Compile Include="Core\Algorithms\MergeAlgorithms.cs" />
     <Compile Include="Core\Algorithms\OverlapAlgorithms.cs" />
     <Compile Include="Core\Algorithms\ProjectionAlgorithms.cs" />
+    <Compile Include="Core\Algorithms\RebarCalculator.cs" />
     <Compile Include="Core\Data\AuditData.cs" />
     <Compile Include="Core\Data\BeamData.cs" />
+    <Compile Include="Core\Data\BeamDesignData.cs" />
     <Compile Include="Core\Data\ColumnData.cs" />
     <Compile Include="Core\Data\ElementData.cs" />
     <Compile Include="Core\Data\ElementType.cs" />
@@ -158,6 +161,7 @@
     <Compile Include="Core\Engines\LoadCalculator.cs" />
     <Compile Include="Core\Engines\MappingEngine.cs" />
     <Compile Include="Core\Engines\ModelInventory.cs" />
+    <Compile Include="Core\Engines\SapDesignEngine.cs" />
     <Compile Include="Core\Engines\SyncEngine.cs" />
     <Compile Include="Core\Engines\WallSegmentProcessor.cs" />
     <Compile Include="Core\GeoAlgo.cs" />
@@ -182,6 +186,7 @@
     <Compile Include="Core\Utils\LinkRules.cs" />
     <Compile Include="Core\Utils\AuditConfig.cs" />
     <Compile Include="Core\Utils\ElementClassifier.cs" />
+    <Compile Include="Core\Utils\RebarStringParser.cs" />
     <Compile Include="Core\Utils\SapDatabaseReader.cs" />
     <Compile Include="Core\Utils\SapUtils.cs" />
     <Compile Include="Core\Utils\UnitManager.cs" />

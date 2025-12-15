@@ -424,6 +424,5 @@ namespace DTS_Engine.Core.Utils
             PlotLabel(btr, tr, startPt, endPt, content, labelPos, textHeight, "dts_rebar_text");
         }
 
-        #endregion
     }
 }

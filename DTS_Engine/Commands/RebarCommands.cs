@@ -1,4 +1,4 @@
-using Autodesk.AutoCAD.DatabaseServices;
+﻿using Autodesk.AutoCAD.DatabaseServices;
 using Autodesk.AutoCAD.EditorInput;
 using Autodesk.AutoCAD.Geometry;
 using Autodesk.AutoCAD.Runtime;
@@ -41,7 +41,7 @@ namespace DTS_Engine.Commands
             // 1 = Flex only (Thép dọc chịu uốn)
             // 2 = Torsion only (Thép xoắn)
             // 3 = Stirrup/Web (Thép đai/Sườn)
-            var ed = AcadUtils.Editor;
+            var ed = AcadUtils.Ed;
             var pIntOpt = new PromptIntegerOptions("\nChọn chế độ hiển thị [0=Tổng hợp | 1=Thép dọc | 2=Thép xoắn | 3=Thép Đai/Sườn]: ");
             pIntOpt.AllowNone = true;
             pIntOpt.DefaultValue = 0;
@@ -57,7 +57,7 @@ namespace DTS_Engine.Commands
                 return; // User cancelled
 
             // 3. Select Frames on Screen
-            var selectedIds = AcadUtils.SelectObjects("Chọn các đường Dầm (Frame) để lấy nội lực: ");
+            var selectedIds = AcadUtils.SelectObjectsOnScreen("Chọn các đường Dầm (Frame) để lấy nội lực: ");
             if (selectedIds.Count == 0) return;
 
             // 4. Clear old rebar labels on layer "dts_rebar_text"
@@ -114,6 +114,7 @@ namespace DTS_Engine.Commands
 
             // 7. Update XData and Plot Labels based on displayMode
             int successCount = 0;
+            var settings = RebarSettings.Instance;
 
             UsingTransaction(tr =>
             {
@@ -126,12 +127,11 @@ namespace DTS_Engine.Commands
 
                     if (results.TryGetValue(sapName, out var designData))
                     {
-                        designData.TorsionFactorUsed = torFactor;
+                        designData.TorsionFactorUsed = settings.TorsionFactorTop;
                         DBObject obj = tr.GetObject(cadId, OpenMode.ForWrite);
                         XDataUtils.UpdateElementData(obj, designData, tr);
 
                         // Calculate display values based on mode
-                        var settings = RebarSettings.Instance;
                         double[] displayTop = new double[3];
                         double[] displayBot = new double[3];
                         string[] displayTopStr = new string[3];
@@ -159,7 +159,7 @@ namespace DTS_Engine.Commands
                                     // Top: Thép đai
                                     displayTopStr[i] = RebarCalculator.CalculateStirrup(designData.ShearArea[i], settings);
                                     // Bot: Thép sườn (dùng TorsionTotal và RatioSide)
-                                    displayBotStr[i] = RebarCalculator.CalculateWebBars(designData.TorsionArea[i], settings.TorsionRatioSide, designData.Height * 10, settings);
+                                    displayBotStr[i] = RebarCalculator.CalculateWebBars(designData.TorsionArea[i], settings.TorsionRatioSide, designData.SectionHeight * 10, settings);
                                     break;
                             }
                         }
@@ -211,7 +211,7 @@ namespace DTS_Engine.Commands
         {
             WriteMessage("=== REBAR: TÍNH TOÁN CỐT THÉP ===");
 
-            var selectedIds = AcadUtils.SelectObjects("Chọn các đường Dầm cần tính thép: ");
+            var selectedIds = AcadUtils.SelectObjectsOnScreen("Chọn các đường Dầm cần tính thép: ");
             if (selectedIds.Count == 0) return;
 
             int count = 0;
@@ -229,12 +229,12 @@ namespace DTS_Engine.Commands
                     if (data == null) continue;
                     
                     // Validate Dimensions
-                    if (data.Width <= 0 || data.Height <= 0)
+                    if (data.Width <= 0 || data.SectionHeight <= 0)
                     {
                         // Try fallback to defaults or user data?
                         // For safe fail, skip or assume 20x30
                         data.Width = 22; // Default fallback
-                        data.Height = 30;
+                        data.SectionHeight = 30;
                     }
 
                     // Calculate Rebar and update directly into data object
@@ -244,8 +244,8 @@ namespace DTS_Engine.Commands
                         double asTop = data.TopArea[i] + data.TorsionArea[i] * settings.TorsionRatioTop;
                         double asBot = data.BotArea[i] + data.TorsionArea[i] * settings.TorsionRatioBot;
 
-                        string sTop = RebarCalculator.Calculate(asTop, data.Width * 10, data.Height * 10, settings);
-                        string sBot = RebarCalculator.Calculate(asBot, data.Width * 10, data.Height * 10, settings);
+                        string sTop = RebarCalculator.Calculate(asTop, data.Width * 10, data.SectionHeight * 10, settings);
+                        string sBot = RebarCalculator.Calculate(asBot, data.Width * 10, data.SectionHeight * 10, settings);
 
                         data.TopRebarString[i] = sTop;
                         data.BotRebarString[i] = sBot;
@@ -258,7 +258,7 @@ namespace DTS_Engine.Commands
 
                         // === Web Bars (Thép sườn) ===
                         // Dùng TorsionTotal và RatioSide từ settings
-                        string sWeb = RebarCalculator.CalculateWebBars(data.TorsionArea[i], settings.TorsionRatioSide, data.Height * 10, settings);
+                        string sWeb = RebarCalculator.CalculateWebBars(data.TorsionArea[i], settings.TorsionRatioSide, data.SectionHeight * 10, settings);
                         data.WebBarString[i] = sWeb;
                     }
 
@@ -301,7 +301,7 @@ namespace DTS_Engine.Commands
         [CommandMethod("DTS_REBAR_CALCULATE_SETTING")]
         public void DTS_REBAR_CALCULATE_SETTING()
         {
-            var ed = AcadUtils.Editor;
+            var ed = AcadUtils.Ed;
             var settings = RebarSettings.Instance;
 
             // Simple Prompt UI
@@ -309,7 +309,7 @@ namespace DTS_Engine.Commands
             double midRatio = 1.0 - settings.ZoneRatioStart - settings.ZoneRatioEnd;
             string currentZone = $"{settings.ZoneRatioStart} {midRatio:F2} {settings.ZoneRatioEnd}";
             var pZone = new PromptStringOptions($"\nNhập tỷ lệ chia vùng dầm [Start Mid End] (Hiện tại: {currentZone}): ");
-            pZone.AllowNone = true;
+            pZone.AllowSpaces = true;
             var resZone = ed.GetString(pZone);
             
             if (resZone.Status == PromptStatus.OK && !string.IsNullOrWhiteSpace(resZone.StringResult))
@@ -354,7 +354,7 @@ namespace DTS_Engine.Commands
 
             // 3. Longitudinal Diameters
             var pStr = new PromptStringOptions($"\nNhập đường kính thép dọc (phân cách space, hiện tại: {string.Join(" ", settings.PreferredDiameters)}): ");
-            pStr.AllowNone = true;
+            pStr.AllowSpaces = true;
             var resS = ed.GetString(pStr);
             if (resS.Status == PromptStatus.OK && !string.IsNullOrWhiteSpace(resS.StringResult))
             {
@@ -385,7 +385,7 @@ namespace DTS_Engine.Commands
             WriteMessage("\nĐã cập nhật cài đặt tính toán.");
         }
 
-        private bool IsSamePt(SapUtils.Point2D p2d, Point3d p3d, double tol = 200.0)
+        private bool IsSamePt(Core.Primitives.Point2D p2d, Point3d p3d, double tol = 200.0)
         {
             return Math.Abs(p2d.X - p3d.X) < tol && Math.Abs(p2d.Y - p3d.Y) < tol;
         }
@@ -395,7 +395,7 @@ namespace DTS_Engine.Commands
         {
             WriteMessage("=== REBAR: ĐẶT TÊN DẦM TỰ ĐỘNG ===");
 
-            var selectedIds = AcadUtils.SelectObjects("Chọn các đường Dầm cần đặt tên: ");
+            var selectedIds = AcadUtils.SelectObjectsOnScreen("Chọn các đường Dầm cần đặt tên: ");
             if (selectedIds.Count == 0) return;
 
             // Lấy thông tin lưới trục từ bản vẽ
@@ -521,7 +521,7 @@ namespace DTS_Engine.Commands
             }
 
             // 2. Select Frames
-            var selectedIds = AcadUtils.SelectObjects("Chọn các đường Dầm cần cập nhật về SAP: ");
+            var selectedIds = AcadUtils.SelectObjectsOnScreen("Chọn các đường Dầm cần cập nhật về SAP: ");
             if (selectedIds.Count == 0) return;
 
             // 3. Get SAP Frame Mapping (same as DTS_REBAR_SAP_RESULT)
@@ -586,8 +586,8 @@ namespace DTS_Engine.Commands
                             double asTop = data.TopArea[i] + data.TorsionArea[i] * settings.TorsionRatioTop;
                             double asBot = data.BotArea[i] + data.TorsionArea[i] * settings.TorsionRatioBot;
 
-                            string sTop = RebarCalculator.Calculate(asTop, data.Width * 10, data.Height * 10, settings);
-                            string sBot = RebarCalculator.Calculate(asBot, data.Width * 10, data.Height * 10, settings);
+                            string sTop = RebarCalculator.Calculate(asTop, data.Width * 10, data.SectionHeight * 10, settings);
+                            string sBot = RebarCalculator.Calculate(asBot, data.Width * 10, data.SectionHeight * 10, settings);
 
                             data.TopAreaProv[i] = RebarStringParser.Parse(sTop);
                             data.BotAreaProv[i] = RebarStringParser.Parse(sBot);
@@ -600,7 +600,7 @@ namespace DTS_Engine.Commands
 
                     // Create Section Name based on convention
                     // Format: [SapName]_[WxH]_[Top0]_[Top2]_[Bot0]_[Bot2]
-                    string newSectionName = $"{sapName}_{(int)data.Width}x{(int)data.Height}_{(int)topProv[0]}_{(int)topProv[2]}_{(int)botProv[0]}_{(int)botProv[2]}";
+                    string newSectionName = $"{sapName}_{(int)data.Width}x{(int)data.SectionHeight}_{(int)topProv[0]}_{(int)topProv[2]}_{(int)botProv[0]}_{(int)botProv[2]}";
                     
                     // Limit length for SAP
                     if (newSectionName.Length > 31)
@@ -637,7 +637,7 @@ namespace DTS_Engine.Commands
             WriteMessage("=== REBAR: CHUYỂN ĐỔI CHẾ ĐỘ HIỂN THỊ ===");
 
             // Chọn chế độ hiển thị
-            var ed = AcadUtils.Editor;
+            var ed = AcadUtils.Ed;
             var pIntOpt = new PromptIntegerOptions("\nChọn chế độ hiển thị [0=Diện tích | 1=Bố trí thép | 2=Cả hai | 3=Thép Đai/Sườn]: ");
             pIntOpt.AllowNone = true;
             pIntOpt.DefaultValue = 1;
@@ -653,7 +653,7 @@ namespace DTS_Engine.Commands
                 return;
 
             // Select Frames
-            var selectedIds = AcadUtils.SelectObjects("Chọn các đường Dầm cần hiển thị: ");
+            var selectedIds = AcadUtils.SelectObjectsOnScreen("Chọn các đường Dầm cần hiển thị: ");
             if (selectedIds.Count == 0) return;
 
             // Clear existing labels
@@ -723,7 +723,7 @@ namespace DTS_Engine.Commands
                                     botText = data.WebBarString[i];
                                 else
                                 {
-                                    botText = RebarCalculator.CalculateWebBars(data.TorsionArea[i], settings.TorsionRatioSide, data.Height * 10, settings);
+                                    botText = RebarCalculator.CalculateWebBars(data.TorsionArea[i], settings.TorsionRatioSide, data.SectionHeight * 10, settings);
                                 }
                                 break;
                         }

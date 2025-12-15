@@ -1,4 +1,4 @@
-using System;
+﻿using System;
 using System.Collections.Generic;
 
 namespace DTS_Engine.Core.Data
@@ -12,10 +12,39 @@ namespace DTS_Engine.Core.Data
     {
         public BeamResultData()
         {
-            // Default xType
         }
 
-        public override string xType => "REBAR_DATA"; // Thống nhất 1 type
+        // ===== Required ElementData implementations =====
+        public override ElementType ElementType => ElementType.Beam;
+        public override string XType => "REBAR_DATA";
+
+        public override bool HasValidData()
+        {
+            return TopArea != null && TopArea.Length == 3;
+        }
+
+        public override ElementData Clone()
+        {
+            var clone = new BeamResultData();
+            CopyBaseTo(clone);
+            clone.TopArea = (double[])TopArea?.Clone();
+            clone.BotArea = (double[])BotArea?.Clone();
+            clone.TorsionArea = (double[])TorsionArea?.Clone();
+            clone.ShearArea = (double[])ShearArea?.Clone();
+            clone.DesignCombo = DesignCombo;
+            clone.SectionName = SectionName;
+            clone.Width = Width;
+            clone.SectionHeight = SectionHeight;
+            clone.TorsionFactorUsed = TorsionFactorUsed;
+            clone.TopRebarString = (string[])TopRebarString?.Clone();
+            clone.BotRebarString = (string[])BotRebarString?.Clone();
+            clone.TopAreaProv = (double[])TopAreaProv?.Clone();
+            clone.BotAreaProv = (double[])BotAreaProv?.Clone();
+            clone.StirrupString = (string[])StirrupString?.Clone();
+            clone.WebBarString = (string[])WebBarString?.Clone();
+            clone.BeamName = BeamName;
+            return clone;
+        }
 
         // ===== Raw Data từ SAP (cm2) =====
         // Array[3]: 0=Start, 1=Mid, 2=End
@@ -29,7 +58,7 @@ namespace DTS_Engine.Core.Data
         // ===== Section Info =====
         public string SectionName { get; set; }
         public double Width { get; set; } // cm
-        public double Height { get; set; } // cm (Depth t3)
+        public new double SectionHeight { get; set; } // cm (Depth t3) - renamed to avoid hiding
 
         // ===== Cấu hình tính toán =====
         public double TorsionFactorUsed { get; set; } = 0.25;
@@ -49,7 +78,8 @@ namespace DTS_Engine.Core.Data
 
         public override Dictionary<string, object> ToDictionary()
         {
-            var dict = base.ToDictionary();
+            var dict = new Dictionary<string, object>();
+            WriteBaseProperties(dict);
             // Raw Data
             dict["TopArea"] = TopArea;
             dict["BotArea"] = BotArea;
@@ -59,7 +89,7 @@ namespace DTS_Engine.Core.Data
             // Section
             dict["SectionName"] = SectionName;
             dict["Width"] = Width;
-            dict["Height"] = Height;
+            dict["SectionHeight"] = SectionHeight;
             dict["TorsionFactorUsed"] = TorsionFactorUsed;
             // Longitudinal Solution
             dict["TopRebarString"] = TopRebarString;
@@ -75,7 +105,7 @@ namespace DTS_Engine.Core.Data
 
         public override void FromDictionary(Dictionary<string, object> dict)
         {
-            base.FromDictionary(dict);
+            ReadBaseProperties(dict);
             // Raw
             if (dict.TryGetValue("TopArea", out var t)) TopArea = ConvertToDoubleArray(t);
             if (dict.TryGetValue("BotArea", out var b)) BotArea = ConvertToDoubleArray(b);
@@ -85,7 +115,8 @@ namespace DTS_Engine.Core.Data
             // Section
             if (dict.TryGetValue("SectionName", out var sn)) SectionName = sn?.ToString();
             if (dict.TryGetValue("Width", out var w)) Width = Convert.ToDouble(w);
-            if (dict.TryGetValue("Height", out var h)) Height = Convert.ToDouble(h);
+            if (dict.TryGetValue("SectionHeight", out var h)) SectionHeight = Convert.ToDouble(h);
+            else if (dict.TryGetValue("Height", out var h2)) SectionHeight = Convert.ToDouble(h2); // Backward compat
             if (dict.TryGetValue("TorsionFactorUsed", out var tf)) TorsionFactorUsed = Convert.ToDouble(tf);
             // Longitudinal
             if (dict.TryGetValue("TopRebarString", out var trs)) TopRebarString = ConvertToStringArray(trs);
@@ -139,7 +170,24 @@ namespace DTS_Engine.Core.Data
     [Obsolete("Use BeamResultData instead. This class is kept for backward compatibility.")]
     public class BeamRebarSolution : ElementData
     {
-        public override string xType => "REBAR_SOLUTION";
+        public override ElementType ElementType => ElementType.Beam;
+        public override string XType => "REBAR_SOLUTION";
+
+        public override bool HasValidData()
+        {
+            return TopRebarString != null && TopRebarString.Length == 3;
+        }
+
+        public override ElementData Clone()
+        {
+            var clone = new BeamRebarSolution();
+            CopyBaseTo(clone);
+            clone.TopRebarString = (string[])TopRebarString?.Clone();
+            clone.BotRebarString = (string[])BotRebarString?.Clone();
+            clone.TopAreaProv = (double[])TopAreaProv?.Clone();
+            clone.BotAreaProv = (double[])BotAreaProv?.Clone();
+            return clone;
+        }
 
         // Chuỗi thép hiển thị (VD: "3d20 + 2d25")
         // Array[3]: Start, Mid, End
@@ -152,7 +200,8 @@ namespace DTS_Engine.Core.Data
 
         public override Dictionary<string, object> ToDictionary()
         {
-            var dict = base.ToDictionary();
+            var dict = new Dictionary<string, object>();
+            WriteBaseProperties(dict);
             dict["TopRebarString"] = TopRebarString;
             dict["BotRebarString"] = BotRebarString;
             dict["TopAreaProv"] = TopAreaProv;
@@ -162,7 +211,7 @@ namespace DTS_Engine.Core.Data
 
         public override void FromDictionary(Dictionary<string, object> dict)
         {
-            base.FromDictionary(dict);
+            ReadBaseProperties(dict);
             if (dict.TryGetValue("TopRebarString", out var tr)) TopRebarString = ConvertToStringArray(tr);
             if (dict.TryGetValue("BotRebarString", out var br)) BotRebarString = ConvertToStringArray(br);
             if (dict.TryGetValue("TopAreaProv", out var ta)) TopAreaProv = ConvertToDoubleArray(ta);

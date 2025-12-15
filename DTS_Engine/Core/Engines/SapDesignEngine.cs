@@ -74,7 +74,7 @@ namespace DTS_Engine.Core.Engines
                         ref tlCombo, ref tlArea, 
                         ref ttCombo, ref ttArea, 
                         ref errorSummary, ref warningSummary, 
-                        eItemType.Object);
+                        eItemType.Objects);
 
                     if (ret == 0 && numberItems > 0)
                     {
@@ -149,7 +149,7 @@ namespace DTS_Engine.Core.Engines
                             if (_model.PropFrame.GetRectangle(propName, ref propName, ref matProp, ref t3, ref t2, ref color, ref notes, ref guid) == 0)
                             {
                                 // SAP Units are kN_cm_C
-                                data.Height = t3; // cm
+                                data.SectionHeight = t3; // cm
                                 data.Width = t2;  // cm
                             }
                             else
@@ -212,7 +212,7 @@ namespace DTS_Engine.Core.Engines
                     }
 
                     // Gán Section mới cho Frame
-                    _model.FrameObj.SetSection(frameName, newSectionName, eItemType.Object);
+                    _model.FrameObj.SetSection(frameName, newSectionName, eItemType.Objects);
                 }
 
                 // 2. Set Rebar cho Section (newSectionName)
