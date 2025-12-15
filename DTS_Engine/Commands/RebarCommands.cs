@@ -219,24 +219,24 @@ namespace DTS_Engine.Commands
                                     case 0: // Combined (Flex + Torsion phân bổ)
                                         displayTop[i] = designData.TopArea[i] + designData.TorsionArea[i] * settings.TorsionRatioTop;
                                         displayBot[i] = designData.BotArea[i] + designData.TorsionArea[i] * settings.TorsionRatioBot;
-                                        displayTopStr[i] = FormatArea(displayTop[i]);
-                                        displayBotStr[i] = FormatArea(displayBot[i]);
+                                        displayTopStr[i] = FormatValue(displayTop[i]);
+                                        displayBotStr[i] = FormatValue(displayBot[i]);
                                         break;
                                     case 1: // Flex only (Thép dọc chịu uốn thuần)
-                                        displayTopStr[i] = FormatArea(designData.TopArea[i]);
-                                        displayBotStr[i] = FormatArea(designData.BotArea[i]);
+                                        displayTopStr[i] = FormatValue(designData.TopArea[i]);
+                                        displayBotStr[i] = FormatValue(designData.BotArea[i]);
                                         break;
                                     case 2: // Torsion (Top=At/s, Bot=Al)
                                         // Top: TTArea = At/s (Đai xoắn trên đơn vị dài)
                                         // Bot: TorsionArea = Al (Tổng thép dọc xoắn)
-                                        displayTopStr[i] = FormatArea(designData.TTArea[i]);
-                                        displayBotStr[i] = FormatArea(designData.TorsionArea[i]);
+                                        displayTopStr[i] = FormatValue(designData.TTArea[i]);
+                                        displayBotStr[i] = FormatValue(designData.TorsionArea[i]);
                                         break;
                                     case 3: // Shear & Web (Top=Av/s, Bot=Al×SideRatio)
                                         // Top: ShearArea = Av/s (Đai cắt trên đơn vị dài)
                                         // Bot: TorsionArea × SideRatio = Thép dọc xoắn phân bổ cho sườn
-                                        displayTopStr[i] = FormatArea(designData.ShearArea[i]);
-                                        displayBotStr[i] = FormatArea(designData.TorsionArea[i] * settings.TorsionRatioSide);
+                                        displayTopStr[i] = FormatValue(designData.ShearArea[i]);
+                                        displayBotStr[i] = FormatValue(designData.TorsionArea[i] * settings.TorsionRatioSide);
                                         break;
                                 }
                             }
@@ -331,13 +331,14 @@ namespace DTS_Engine.Commands
         /// <summary>
         /// Format số thép: Làm tròn LÊN 1 chữ số, bỏ số 0 thừa (2.0→2, 13.62→13.7)
         /// </summary>
-        private string FormatArea(double val)
+        private string FormatValue(double val)
         {
-            if (Math.Abs(val) < 0.05) return "0";
-            // Làm tròn LÊN (Ceiling) 1 chữ số thập phân
-            double ceiling = Math.Ceiling(val * 10) / 10;
-            // Bỏ số 0 thừa: 2.0 → 2
-            return ceiling == Math.Floor(ceiling) ? $"{(int)ceiling}" : $"{ceiling:F1}";
+            if (Math.Abs(val) < 0.005) return "0";
+            // Làm tròn LÊN 1 chữ số thập phân, bỏ số 0 thừa (2.0 -> 2)
+            double ceiling = Math.Ceiling(val * 10) / 10.0;
+            return (ceiling % 1 == 0) 
+                ? ceiling.ToString("F0", System.Globalization.CultureInfo.InvariantCulture) 
+                : ceiling.ToString("F1", System.Globalization.CultureInfo.InvariantCulture);
         }
 
         [CommandMethod("DTS_REBAR_CALCULATE")]
@@ -850,8 +851,8 @@ namespace DTS_Engine.Commands
                                     double asProvTop = RebarCalculator.ParseRebarArea(topRebar);
                                     double asProvBot = RebarCalculator.ParseRebarArea(botRebar);
                                     // Format: Aprov/Areq \n RebarString
-                                    topText = $"{FormatArea(asProvTop)}/{FormatArea(asReqTop)}\\P{topRebar}";
-                                    botText = $"{FormatArea(asProvBot)}/{FormatArea(asReqBot)}\\P{botRebar}";
+                                    topText = $"{FormatValue(asProvTop)}/{FormatValue(asReqTop)}\\P{topRebar}";
+                                    botText = $"{FormatValue(asProvBot)}/{FormatValue(asReqBot)}\\P{botRebar}";
                                 }
                                 break;
 
@@ -865,14 +866,14 @@ namespace DTS_Engine.Commands
                                     string stirrupStr = data.StirrupString?[i] ?? "-";
                                     // Parse Aprov từ stirrup string (e.g., "d10a150")
                                     double stirrupProv = RebarCalculator.ParseStirrupAreaPerLen(stirrupStr);
-                                    topText = $"{FormatArea(stirrupProv)}/{FormatArea(stirrupReq)}({FormatArea(2 * ats)})\\P{stirrupStr}";
+                                    topText = $"{FormatValue(stirrupProv)}/{FormatValue(stirrupReq)}({FormatValue(2 * ats)})\\P{stirrupStr}";
 
                                     // Bot: Web - Aprov/Areq (Areq = TorsionArea × SideRatio)
                                     double webReq = (data.TorsionArea?[i] ?? 0) * settings.TorsionRatioSide;
                                     string webStr = data.WebBarString?[i] ?? "-";
                                     // Parse Aprov từ web string (e.g., "2d12")
                                     double webProv = RebarCalculator.ParseRebarArea(webStr);
-                                    botText = $"{FormatArea(webProv)}/{FormatArea(webReq)}\\P{webStr}";
+                                    botText = $"{FormatValue(webProv)}/{FormatValue(webReq)}\\P{webStr}";
                                 }
                                 break;
                         }

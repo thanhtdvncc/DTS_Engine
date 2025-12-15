@@ -125,100 +125,70 @@ namespace DTS_Engine.Core.Algorithms
 
         /// <summary>
         /// Tính toán bước đai từ diện tích cắt và xoắn yêu cầu.
-        /// Input: 
-        ///   - shearArea (cm2/cm) = Av/s - Diện tích thép đai cắt trên 1 đơn vị dài
-        ///   - ttArea (cm2/cm) = At/s - Diện tích thép đai xoắn trên 1 đơn vị dài
-        /// Công thức ACI 318-19: Atotal/s = Av/s + 2×At/s
+        /// Công thức ACI/TCVN: Atotal/s = Av/s + 2×At/s
         /// Output: String dạng "2-d8a150" (số nhánh - phi - bước)
-        /// Logic: Tự động tăng số nhánh (2→3→4) nếu bước đai quá nhỏ
         /// </summary>
         public static string CalculateStirrup(double shearArea, double ttArea, RebarSettings settings)
         {
-            // ACI 318-19: Atotal/s = Av/s + 2*At/s
-            double totalArea = shearArea + 2 * ttArea;
+            // ACI/TCVN: Tổng diện tích đai trên đơn vị dài = Av/s + 2 * At/s
+            double totalAreaPerLen = shearArea + 2 * ttArea; 
             
-            if (totalArea <= 0.01) return "-"; // Không cần đai
+            if (totalAreaPerLen <= 0.001) return "-";
 
             int d = settings.StirrupDiameter;
             var spacings = settings.StirrupSpacings;
-            int minSpacing = 100; // Bước đai tối thiểu thi công được (mm)
+            int minSpacing = 100;
 
             if (spacings == null || spacings.Count == 0)
                 spacings = new List<int> { 100, 150, 200, 250 };
 
-            // Diện tích 1 nhánh đai (cm2)
-            double as1 = Math.PI * d * d / 400.0;
+            int nLegs = settings.StirrupLegs; 
+            double as1Layer = (Math.PI * d * d / 400.0) * nLegs;
 
-            // Thử từ 2 nhánh đến 4 nhánh
-            for (int nLegs = 2; nLegs <= 4; nLegs++)
+            // Tính bước đai max (mm)
+            double maxSpacingReq = (as1Layer / totalAreaPerLen) * 10.0;
+
+            int selectedSpacing = -1;
+            foreach (var s in spacings.OrderByDescending(x => x))
             {
-                double asTotal = as1 * nLegs;
-
-                // Tính bước đai tối đa cho phép
-                // Công thức: Asw/s >= totalArea => s <= Asw / totalArea
-                double maxSpacing = (asTotal / totalArea) * 10; // cm → mm
-
-                // Chọn bước đai chuẩn lớn nhất thỏa mãn
-                int selectedSpacing = -1;
-                foreach (var s in spacings.OrderByDescending(x => x))
+                if (s <= maxSpacingReq)
                 {
-                    if (s <= maxSpacing)
-                    {
-                        selectedSpacing = s;
-                        break;
-                    }
+                    selectedSpacing = s;
+                    break;
                 }
-
-                // Nếu tìm được bước đai >= minSpacing
-                if (selectedSpacing >= minSpacing)
-                {
-                    return $"{nLegs}-d{d}a{selectedSpacing}";
-                }
-
-                // Nếu bước đai nhỏ nhất trong spacings vẫn <= maxSpacing nhưng < minSpacing
-                // thì tăng nhánh và thử lại
             }
 
-            // Fallback: Dùng 4 nhánh với bước nhỏ nhất
-            return $"4-d{d}a{spacings.Min()}*";
+            // Nếu bước đai tính ra nhỏ hơn minSpacing (100), trả về bước nhỏ nhất + dấu *
+            if (selectedSpacing < minSpacing)
+                return $"{nLegs}-d{d}a{spacings.Min()}*";
+
+            return $"{nLegs}-d{d}a{selectedSpacing}";
         }
+
         /// <summary>
         /// Tính toán cốt giá/sườn (Web bars).
-        /// Logic: Max(Diện tích chịu xoắn phân bổ, Diện tích cấu tạo theo chiều cao).
-        /// Input:
-        /// - torsionTotal: Tổng diện tích xoắn Al (cm2) lấy từ SAP.
-        /// - torsionRatioSide: Tỷ lệ phân bổ vào sườn (VD: 0.5).
-        /// - heightMm: Chiều cao dầm (mm).
+        /// Logic: Envelope(Torsion, Constructive) và làm chẵn.
         /// </summary>
         public static string CalculateWebBars(double torsionTotal, double torsionRatioSide, double heightMm, RebarSettings settings)
         {
             int d = settings.WebBarDiameter;
-            double as1 = Math.PI * d * d / 400.0; // cm2 per bar
+            double as1 = Math.PI * d * d / 400.0;
 
-            // 1. Tính toán theo Chịu lực (Torsion)
-            // Diện tích cần cho 2 mặt bên = Al * RatioSide
-            double reqAreaSide = torsionTotal * torsionRatioSide;
+            // a. Theo chịu lực xoắn
+            double reqArea = torsionTotal * torsionRatioSide;
             int nTorsion = 0;
-            if (reqAreaSide > 0.01)
-            {
-                nTorsion = (int)Math.Ceiling(reqAreaSide / as1);
-                if (nTorsion % 2 != 0) nTorsion++; // Luôn chẵn (đối xứng)
-            }
+            if (reqArea > 0.01)
+                nTorsion = (int)Math.Ceiling(reqArea / as1);
 
-            // 2. Tính toán theo Cấu tạo (Constructive)
+            // b. Theo cấu tạo (Dầm cao >= 700mm)
             int nConstructive = 0;
-            if (heightMm >= settings.WebBarMinHeight)
-            {
-                // Rule: H>=700 -> 2 cây; H>=1000 -> 4 cây
-                nConstructive = 2;
-                if (heightMm >= 1000) nConstructive = 4;
-            }
+            if (heightMm >= 700) nConstructive = 2;
 
-            // 3. Lấy Max (Envelope)
+            // c. Lấy Max và làm chẵn
             int nFinal = Math.Max(nTorsion, nConstructive);
+            if (nFinal % 2 != 0) nFinal++;
 
             if (nFinal == 0) return "-";
-
             return $"{nFinal}d{d}";
         }
 
@@ -250,23 +220,36 @@ namespace DTS_Engine.Core.Algorithms
         }
 
         /// <summary>
-        /// Parse diện tích đai trên đơn vị dài từ chuỗi bố trí (VD: "d10a150").
-        /// Trả về A/s (cm2/cm), giả sử đai 2 nhánh.
+        /// Parse diện tích đai trên đơn vị dài từ chuỗi bố trí (VD: "d10a150", "4-d8a100").
+        /// Trả về A/s (cm2/cm). Tự động nhận diện số nhánh nếu có tiền tố "N-".
         /// </summary>
-        public static double ParseStirrupAreaPerLen(string stirrupStr, int nLegs = 2)
+        public static double ParseStirrupAreaPerLen(string stirrupStr, int defaultLegs = 2)
         {
             if (string.IsNullOrEmpty(stirrupStr) || stirrupStr == "-") return 0;
 
-            // Expected format: dDaS (e.g., "d10a150", "d8a100")
-            var match = System.Text.RegularExpressions.Regex.Match(stirrupStr, @"[dD](\d+)[aA](\d+)");
+            // Regex bắt cả số nhánh (Group 1 - Optional)
+            // Format: "4-d8a100" hoặc "d8a150"
+            var match = System.Text.RegularExpressions.Regex.Match(stirrupStr, @"(?:(\d+)-)?[dD](\d+)[aA](\d+)");
+            
             if (match.Success)
             {
-                int d = int.Parse(match.Groups[1].Value);
-                int spacing = int.Parse(match.Groups[2].Value); // mm
+                // 1. Xác định số nhánh
+                int nLegs = defaultLegs;
+                if (match.Groups[1].Success && int.TryParse(match.Groups[1].Value, out int n))
+                {
+                    nLegs = n;
+                }
+
+                // 2. Lấy đường kính và bước
+                int d = int.Parse(match.Groups[2].Value);
+                int spacing = int.Parse(match.Groups[3].Value); // mm
+                
                 if (spacing <= 0) return 0;
 
                 double as1 = Math.PI * d * d / 400.0; // cm2 per bar
-                double areaPerLen = (nLegs * as1) / (spacing / 10.0); // cm2/cm
+                
+                // 3. Tính cm2/cm: (nLegs * As1) / (Spacing_cm)
+                double areaPerLen = (nLegs * as1) / (spacing / 10.0); 
                 return areaPerLen;
             }
             return 0;

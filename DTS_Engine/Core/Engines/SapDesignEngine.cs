@@ -26,53 +26,53 @@ namespace DTS_Engine.Core.Engines
         public bool IsReady => _model != null;
 
         /// <summary>
-        /// Lấy kết quả thiết kế dầm (Summary Results)
-        /// Phân tách rõ ràng Flexure Area và Torsion Area.
+        /// Lấy kết quả thiết kế dầm (Summary Results) chuẩn theo tài liệu SAP2000.
         /// </summary>
         public Dictionary<string, BeamResultData> GetBeamResults(List<string> frameNames)
         {
             var results = new Dictionary<string, BeamResultData>();
             if (_model == null || frameNames == null || frameNames.Count == 0) return results;
 
-            // Đảm bảo đơn vị cm2 cho Diện tích thép
+            // Thiết lập đơn vị kN_cm_C
+            // -> Area sẽ là cm2
+            // -> Area/Length sẽ là cm2/cm
             var originalUnit = _model.GetPresentUnits();
             try
             {
-                // Sử dụng kNM_cm_C để lấy diện tích cm2 trực tiếp
-                // Hoặc kN_mm_C -> area sẽ là mm2. User thường quen cm2.
-                // Let's use kN_cm_C for convenience in rebar area (cm2)
                 _model.SetPresentUnits(eUnits.kN_cm_C);
 
                 foreach (var name in frameNames)
                 {
+                    // Các biến hứng dữ liệu từ API (Ref Parameters)
                     int numberItems = 0;
                     string[] frames = null;
                     double[] location = null;
-                    string[] topCombo = null;
-                    double[] topArea = null;
-                    string[] botCombo = null;
-                    double[] botArea = null;
-                    string[] vMajorCombo = null;
-                    double[] vMajorArea = null;
-                    string[] tlCombo = null;
-                    double[] tlArea = null; // Torsion Longitudinal
-                    string[] ttCombo = null;
-                    double[] ttArea = null;
-                    string[] errorSummary = null;
-                    string[] warningSummary = null;
+                    
+                    // Flexure (Uốn)
+                    string[] topCombo = null; double[] topArea = null; // TopArea [L2]
+                    string[] botCombo = null; double[] botArea = null; // BotArea [L2]
+                    
+                    // Shear (Cắt)
+                    string[] vMajorCombo = null; double[] vMajorArea = null; // VmajorArea [L2/L] -> Av/s
+                    
+                    // Torsion (Xoắn)
+                    string[] tlCombo = null; double[] tlArea = null; // TLArea [L2] -> Total Longitudinal Al
+                    string[] ttCombo = null; double[] ttArea = null; // TTArea [L2/L] -> Transverse At/s
 
-                    // Gọi API cho từng phần tử (hoặc Group nếu tối ưu, nhưng ở đây ta loop danh sách chọn)
-                    // ItemType = 0 (Object)
+                    // Errors
+                    string[] errorSummary = null; string[] warningSummary = null;
+
+                    // Gọi API chuẩn theo thứ tự tham số tài liệu cung cấp
                     int ret = _model.DesignConcrete.GetSummaryResultsBeam(
-                        name,
-                        ref numberItems,
-                        ref frames,
+                        name, 
+                        ref numberItems, 
+                        ref frames, 
                         ref location,
-                        ref topCombo, ref topArea,
+                        ref topCombo, ref topArea, 
                         ref botCombo, ref botArea,
-                        ref vMajorCombo, ref vMajorArea,
-                        ref tlCombo, ref tlArea,
-                        ref ttCombo, ref ttArea,
+                        ref vMajorCombo, ref vMajorArea, // Shear
+                        ref tlCombo, ref tlArea,         // Torsion Long
+                        ref ttCombo, ref ttArea,         // Torsion Trans
                         ref errorSummary, ref warningSummary,
                         eItemType.Objects);
 
@@ -81,17 +81,37 @@ namespace DTS_Engine.Core.Engines
                         var data = new BeamResultData();
                         var zoneSetting = RebarSettings.Instance;
 
-                        // SAP trả về nhiều Station (location[]).
-                        // Thay vì lấy điểm, ta quét Max trong từng vùng theo ZoneRatio.
+                        // --- BLOCK QUAN TRỌNG: Lấy Width/Height chính xác ---
+                        string propName = "";
+                        string sAuto = "";
+                        if (_model.FrameObj.GetSection(name, ref propName, ref sAuto) == 0)
+                        {
+                            data.SectionName = propName;
+                            string matProp = "";
+                            double t3 = 0, t2 = 0; // t3=Depth, t2=Width
+                            int color = -1;
+                            string notes = "", guid = "";
 
-                        // 1. Get Length
+                            // Cố gắng lấy properties hình chữ nhật
+                            if (_model.PropFrame.GetRectangle(propName, ref propName, ref matProp, ref t3, ref t2, ref color, ref notes, ref guid) == 0)
+                            {
+                                data.SectionHeight = t3; 
+                                data.Width = t2;         
+                            }
+                            else
+                            {
+                                // Fallback an toàn nếu không phải chữ nhật
+                                data.SectionHeight = 30;
+                                data.Width = 20;
+                            }
+                        }
+                        // ----------------------------------------------------
+
+                        // Helper lấy max trong vùng
                         double L = location[numberItems - 1];
+                        double limitStart = L * zoneSetting.ZoneRatioStart;
+                        double limitEnd = L * (1.0 - zoneSetting.ZoneRatioEnd);
 
-                        // 2. Define Zone Limits
-                        double limitStart = L * zoneSetting.ZoneRatioStart;       // 0 → 25%L
-                        double limitEnd = L * (1.0 - zoneSetting.ZoneRatioEnd);   // 75%L → L
-
-                        // 3. Local function: Get Max value within a zone
                         double GetMaxInZone(double[] values, double fromLoc, double toLoc)
                         {
                             double maxVal = 0;
@@ -99,71 +119,28 @@ namespace DTS_Engine.Core.Engines
                             {
                                 double loc = location[i];
                                 if (loc >= fromLoc - 0.001 && loc <= toLoc + 0.001)
-                                {
                                     if (values[i] > maxVal) maxVal = values[i];
-                                }
                             }
                             return maxVal;
                         }
 
-                        // 4. Assign Data - Flexure (Max trong từng vùng)
-                        data.TopArea[0] = GetMaxInZone(topArea, 0, limitStart);          // Start Zone
-                        data.TopArea[1] = GetMaxInZone(topArea, limitStart, limitEnd);   // Mid Zone
-                        data.TopArea[2] = GetMaxInZone(topArea, limitEnd, L);            // End Zone
-
-                        data.BotArea[0] = GetMaxInZone(botArea, 0, limitStart);
-                        data.BotArea[1] = GetMaxInZone(botArea, limitStart, limitEnd);
-                        data.BotArea[2] = GetMaxInZone(botArea, limitEnd, L);
-
-                        // 5. Assign Data - Torsion (Max trong từng vùng)
-                        data.TorsionArea[0] = GetMaxInZone(tlArea, 0, limitStart);
-                        data.TorsionArea[1] = GetMaxInZone(tlArea, limitStart, limitEnd);
-                        data.TorsionArea[2] = GetMaxInZone(tlArea, limitEnd, L);
-
-                        // 6. Assign Data - Shear/VMajor (Max trong từng vùng)
-                        data.ShearArea[0] = GetMaxInZone(vMajorArea, 0, limitStart);
-                        data.ShearArea[1] = GetMaxInZone(vMajorArea, limitStart, limitEnd);
-                        data.ShearArea[2] = GetMaxInZone(vMajorArea, limitEnd, L);
-
-                        // 7. Assign Data - Torsion Transverse (At/s) Max trong từng vùng
-                        data.TTArea[0] = GetMaxInZone(ttArea, 0, limitStart);
-                        data.TTArea[1] = GetMaxInZone(ttArea, limitStart, limitEnd);
-                        data.TTArea[2] = GetMaxInZone(ttArea, limitEnd, L);
-
-                        data.DesignCombo = topCombo[0]; // Lấy combo đầu làm mẫu
-
-                        // --- Get Section Props ---
-                        string propName = "";
-                        string sAuto = "";
-                        if (_model.FrameObj.GetSection(name, ref propName, ref sAuto) == 0)
+                        // Gán dữ liệu vào 3 vùng
+                        for (int z = 0; z < 3; z++)
                         {
-                            data.SectionName = propName;
+                            double start = z == 0 ? 0 : (z == 1 ? limitStart : limitEnd);
+                            double end = z == 0 ? limitStart : (z == 1 ? limitEnd : L);
 
-                            // Get Dims (Rectangular assumed)
-                            string matProp = "";
-                            double t3 = 0, t2 = 0; // t3=depth, t2=width
-                            int color = -1;
-                            string notes = "", guid = "";
-
-                            // Check if Auto-Select list? If so, we need actual section used?
-                            // For design results, the API usually bases on the ANALYSIS section or DESIGN section.
-                            // The `GetSection` returns the assigned property.
-                            // If auto-select, we might need `GetSection` at station?
-                            // For simplicity, assume Rectangular Section assigned directly.
-
-                            if (_model.PropFrame.GetRectangle(propName, ref propName, ref matProp, ref t3, ref t2, ref color, ref notes, ref guid) == 0)
-                            {
-                                // SAP Units are kN_cm_C
-                                data.SectionHeight = t3; // cm
-                                data.Width = t2;  // cm
-                            }
-                            else
-                            {
-                                // Try Concrete T, etc?
-                                // For now, set 0.
-                            }
+                            data.TopArea[z] = GetMaxInZone(topArea, start, end);
+                            data.BotArea[z] = GetMaxInZone(botArea, start, end);
+                            
+                            // Mapping chuẩn theo tài liệu:
+                            data.ShearArea[z] = GetMaxInZone(vMajorArea, start, end); // Av/s (Shear Only)
+                            data.TorsionArea[z] = GetMaxInZone(tlArea, start, end);   // Al (Total Long Torsion)
+                            data.TTArea[z] = GetMaxInZone(ttArea, start, end);        // At/s (Transverse Torsion)
                         }
 
+                        data.DesignCombo = topCombo[0];
+                        data.SapElementName = name;
                         results[name] = data;
                     }
                 }

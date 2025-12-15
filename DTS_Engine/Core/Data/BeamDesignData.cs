@@ -52,11 +52,27 @@ namespace DTS_Engine.Core.Data
 
         // ===== Raw Data từ SAP (cm2) =====
         // Array[3]: 0=Start, 1=Mid, 2=End
+        
         public double[] TopArea { get; set; } = new double[3];
         public double[] BotArea { get; set; } = new double[3];
-        public double[] TorsionArea { get; set; } = new double[3]; // TLArea (Al) - Longitudinal Torsion
-        public double[] ShearArea { get; set; } = new double[3]; // VMajor Shear Area (Av/s)
-        public double[] TTArea { get; set; } = new double[3]; // Transverse Torsion (At/s) cm2/cm
+
+        /// <summary>
+        /// TLArea: Total Longitudinal Rebar Area for Torsion [L2] (cm2)
+        /// Tổng diện tích cốt dọc chịu xoắn (Al). Cần phân bổ vào Top/Bot/Side.
+        /// </summary>
+        public double[] TorsionArea { get; set; } = new double[3]; 
+
+        /// <summary>
+        /// VmajorArea: Transverse Shear Reinforcing per Unit Length [L2/L] (cm2/cm)
+        /// Diện tích đai cắt trên 1 đơn vị dài (Av/s).
+        /// </summary>
+        public double[] ShearArea { get; set; } = new double[3]; 
+
+        /// <summary>
+        /// TTArea: Transverse Torsional Shear Reinforcing per Unit Length [L2/L] (cm2/cm)
+        /// Diện tích đai xoắn trên 1 đơn vị dài (At/s).
+        /// </summary>
+        public double[] TTArea { get; set; } = new double[3];
 
         public string DesignCombo { get; set; }
 
