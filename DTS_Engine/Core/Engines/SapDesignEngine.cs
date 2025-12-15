@@ -103,7 +103,7 @@ namespace DTS_Engine.Core.Engines
                             }
                         }
 
-                        // Assign Data
+                        // Assign Data - Flexure
                         data.TopArea[0] = topArea[idxStart];
                         data.TopArea[1] = topArea[idxMid];
                         data.TopArea[2] = topArea[idxEnd];
@@ -112,10 +112,15 @@ namespace DTS_Engine.Core.Engines
                         data.BotArea[1] = botArea[idxMid];
                         data.BotArea[2] = botArea[idxEnd];
 
-
+                        // Assign Data - Torsion
                         data.TorsionArea[0] = tlArea[idxStart];
                         data.TorsionArea[1] = tlArea[idxMid];
                         data.TorsionArea[2] = tlArea[idxEnd];
+
+                        // Assign Data - Shear (VMajor)
+                        data.ShearArea[0] = vMajorArea[idxStart];
+                        data.ShearArea[1] = vMajorArea[idxMid];
+                        data.ShearArea[2] = vMajorArea[idxEnd];
 
                         data.DesignCombo = topCombo[0]; // Lấy combo đầu làm mẫu
 

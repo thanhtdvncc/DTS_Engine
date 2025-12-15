@@ -122,5 +122,71 @@ namespace DTS_Engine.Core.Algorithms
             int n = (int)Math.Floor(val);
             return n < 2 ? 2 : n; // Min 2 bars usually
         }
+
+        /// <summary>
+        /// Tính toán bước đai từ diện tích cắt yêu cầu.
+        /// Input: shearArea (cm2) - Diện tích thép đai trên 1 đơn vị dài (thường SAP trả về cm2/cm)
+        /// Output: String dạng "d8a150"
+        /// </summary>
+        public static string CalculateStirrup(double shearArea, RebarSettings settings)
+        {
+            if (shearArea <= 0.01) return "-"; // Không cần đai cấu tạo
+
+            int d = settings.StirrupDiameter;
+            int legs = settings.StirrupLegs;
+            var spacings = settings.StirrupSpacings;
+
+            if (spacings == null || spacings.Count == 0)
+                spacings = new List<int> { 100, 150, 200, 250 };
+
+            // Diện tích 1 nhánh đai (cm2)
+            double as1 = Math.PI * d * d / 400.0;
+            
+            // Tổng diện tích các nhánh đai
+            double asTotal = as1 * legs;
+
+            // Tính bước đai tối đa cho phép
+            // shearArea = asTotal / s  =>  s = asTotal / shearArea
+            double maxSpacing = (asTotal / shearArea) * 10; // Chuyển từ cm về mm
+
+            // Chọn bước đai chuẩn nhỏ hơn hoặc bằng max
+            int selectedSpacing = spacings.Min(); // Default nhỏ nhất
+            foreach (var s in spacings.OrderByDescending(x => x))
+            {
+                if (s <= maxSpacing)
+                {
+                    selectedSpacing = s;
+                    break;
+                }
+            }
+
+            return $"d{d}a{selectedSpacing}";
+        }
+
+        /// <summary>
+        /// Tính toán thép sườn (thép giá, web bars) từ diện tích xoắn phần dư.
+        /// Logic: Chiều cao > 700mm mới cần thép sườn, số thanh luôn chẵn (đối xứng).
+        /// </summary>
+        public static string CalculateWebBars(double torsionAreaSide, double heightMm, RebarSettings settings)
+        {
+            // Kiểm tra chiều cao tối thiểu
+            if (heightMm < settings.WebBarMinHeight)
+                return "-";
+
+            if (torsionAreaSide <= 0.01)
+                return "-";
+
+            int d = settings.WebBarDiameter;
+            double as1 = Math.PI * d * d / 400.0; // cm2
+
+            // Số thanh cần thiết (1 bên)
+            int nOneSide = (int)Math.Ceiling(torsionAreaSide / as1);
+            if (nOneSide < 1) nOneSide = 1;
+
+            // Nhân đôi cho đối xứng 2 bên
+            int nTotal = nOneSide * 2;
+
+            return $"{nTotal}d{d}";
+        }
     }
 }

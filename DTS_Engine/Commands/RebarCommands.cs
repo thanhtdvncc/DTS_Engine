@@ -237,40 +237,55 @@ namespace DTS_Engine.Commands
 
                     for (int i = 0; i < 3; i++)
                     {
+                        // === Longitudinal Rebar ===
                         double asTop = data.TopArea[i] + data.TorsionArea[i] * torFactor;
                         double asBot = data.BotArea[i] + data.TorsionArea[i] * torFactor;
 
                         string sTop = RebarCalculator.Calculate(asTop, data.Width * 10, data.Height * 10, settings);
                         string sBot = RebarCalculator.Calculate(asBot, data.Width * 10, data.Height * 10, settings);
 
-                        // Update directly into data object (NOT creating new BeamRebarSolution)
                         data.TopRebarString[i] = sTop;
                         data.BotRebarString[i] = sBot;
                         data.TopAreaProv[i] = RebarStringParser.Parse(sTop);
                         data.BotAreaProv[i] = RebarStringParser.Parse(sBot);
+
+                        // === Stirrup (Thép đai) ===
+                        string sStirrup = RebarCalculator.CalculateStirrup(data.ShearArea[i], settings);
+                        data.StirrupString[i] = sStirrup;
+
+                        // === Web Bars (Thép sườn) ===
+                        // Torsion phần dư sau khi đã phân bổ cho Top/Bot = (1 - 2*torFactor) * TorsionArea
+                        double torsionSide = data.TorsionArea[i] * (1 - 2 * torFactor) / 2.0; // Chia 2 bên
+                        string sWeb = RebarCalculator.CalculateWebBars(torsionSide, data.Height * 10, settings);
+                        data.WebBarString[i] = sWeb;
                     }
 
                     // Save updated data back to XData (preserves raw areas)
                     XDataUtils.UpdateElementData(obj, data, tr);
 
                     // Update Labels on screen
+                    // Format: Top line = Longitudinal + Stirrup, Bot line = Longitudinal + WebBar
                     var curve = obj as Curve;
                     if(curve != null)
                     {
                         Point3d pStart = curve.StartPoint;
                         Point3d pEnd = curve.EndPoint;
 
-                        // Start (Index 0)
-                        LabelPlotter.PlotRebarLabel(btr, tr, pStart, pEnd, data.TopRebarString[0], 0, true);
-                        LabelPlotter.PlotRebarLabel(btr, tr, pStart, pEnd, data.BotRebarString[0], 0, false);
+                        for (int i = 0; i < 3; i++)
+                        {
+                            // Top line: "3d20 | d8a150"
+                            string topText = data.TopRebarString[i];
+                            if (!string.IsNullOrEmpty(data.StirrupString[i]) && data.StirrupString[i] != "-")
+                                topText += " | " + data.StirrupString[i];
 
-                        // Mid (Index 1)
-                        LabelPlotter.PlotRebarLabel(btr, tr, pStart, pEnd, data.TopRebarString[1], 1, true);
-                        LabelPlotter.PlotRebarLabel(btr, tr, pStart, pEnd, data.BotRebarString[1], 1, false);
+                            // Bot line: "3d20 | 2d12"
+                            string botText = data.BotRebarString[i];
+                            if (!string.IsNullOrEmpty(data.WebBarString[i]) && data.WebBarString[i] != "-")
+                                botText += " | " + data.WebBarString[i];
 
-                        // End (Index 2)
-                        LabelPlotter.PlotRebarLabel(btr, tr, pStart, pEnd, data.TopRebarString[2], 2, true);
-                        LabelPlotter.PlotRebarLabel(btr, tr, pStart, pEnd, data.BotRebarString[2], 2, false);
+                            LabelPlotter.PlotRebarLabel(btr, tr, pStart, pEnd, topText, i, true);
+                            LabelPlotter.PlotRebarLabel(btr, tr, pStart, pEnd, botText, i, false);
+                        }
                     }
                     
                     count++;
@@ -296,15 +311,15 @@ namespace DTS_Engine.Commands
             // 2. Cover
             var pCov = new PromptDoubleOptions($"\nNhập lớp bảo vệ (mm) (Hiện tại: {settings.CoverTop}): ");
             pCov.AllowNone = true;
-             var resC = ed.GetDouble(pCov);
+            var resC = ed.GetDouble(pCov);
             if (resC.Status == PromptStatus.OK) 
             {
                 settings.CoverTop = resC.Value;
                 settings.CoverBot = resC.Value;
             }
 
-            // 3. Diameters (Simple input string)
-            var pStr = new PromptStringOptions($"\nNhập đường kính ưu tiên (phân cách space, hiện tại: {string.Join(" ", settings.PreferredDiameters)}): ");
+            // 3. Longitudinal Diameters
+            var pStr = new PromptStringOptions($"\nNhập đường kính thép dọc (phân cách space, hiện tại: {string.Join(" ", settings.PreferredDiameters)}): ");
             pStr.AllowNone = true;
             var resS = ed.GetString(pStr);
             if (resS.Status == PromptStatus.OK && !string.IsNullOrWhiteSpace(resS.StringResult))
@@ -314,6 +329,24 @@ namespace DTS_Engine.Commands
                     .Where(v => v > 0).ToList();
                 if (nums.Count > 0) settings.PreferredDiameters = nums;
             }
+
+            // 4. Stirrup Diameter
+            var pStir = new PromptIntegerOptions($"\nNhập đường kính Đai (mm) (Hiện tại: {settings.StirrupDiameter}): ");
+            pStir.AllowNone = true;
+            var resStir = ed.GetInteger(pStir);
+            if (resStir.Status == PromptStatus.OK) settings.StirrupDiameter = resStir.Value;
+
+            // 5. Stirrup Legs
+            var pLegs = new PromptIntegerOptions($"\nNhập số nhánh Đai (Hiện tại: {settings.StirrupLegs}): ");
+            pLegs.AllowNone = true;
+            var resLegs = ed.GetInteger(pLegs);
+            if (resLegs.Status == PromptStatus.OK) settings.StirrupLegs = resLegs.Value;
+
+            // 6. Web Bar Diameter
+            var pWeb = new PromptIntegerOptions($"\nNhập đường kính thép Sườn (mm) (Hiện tại: {settings.WebBarDiameter}): ");
+            pWeb.AllowNone = true;
+            var resWeb = ed.GetInteger(pWeb);
+            if (resWeb.Status == PromptStatus.OK) settings.WebBarDiameter = resWeb.Value;
             
             WriteMessage("\nĐã cập nhật cài đặt tính toán.");
         }
@@ -563,6 +596,112 @@ namespace DTS_Engine.Commands
                 WriteMessage($"Cảnh báo: {failCount} dầm không thể cập nhật.");
             
             WriteSuccess($"Đã cập nhật {successCount} dầm về SAP2000.");
+        }
+
+        [CommandMethod("DTS_REBAR_SHOW")]
+        public void DTS_REBAR_SHOW()
+        {
+            WriteMessage("=== REBAR: CHUYỂN ĐỔI CHẾ ĐỘ HIỂN THỊ ===");
+
+            // Chọn chế độ hiển thị
+            var ed = AcadUtils.Editor;
+            var pIntOpt = new PromptIntegerOptions("\nChọn chế độ hiển thị:");
+            pIntOpt.Keywords.Add("Area");
+            pIntOpt.Keywords.Add("Rebar");
+            pIntOpt.Keywords.Add("Both");
+            pIntOpt.Message = "\n[0=Diện tích | 1=Bố trí thép | 2=Cả hai]: ";
+            pIntOpt.AllowNone = true;
+            pIntOpt.DefaultValue = 1;
+            pIntOpt.AllowNegative = false;
+            pIntOpt.LowerLimit = 0;
+            pIntOpt.UpperLimit = 2;
+
+            var pIntRes = ed.GetInteger(pIntOpt);
+            int mode = 1; // Default = Rebar
+            if (pIntRes.Status == PromptStatus.OK)
+                mode = pIntRes.Value;
+            else if (pIntRes.Status == PromptStatus.Keyword)
+            {
+                switch (pIntRes.StringResult.ToUpper())
+                {
+                    case "AREA": mode = 0; break;
+                    case "REBAR": mode = 1; break;
+                    case "BOTH": mode = 2; break;
+                }
+            }
+            else if (pIntRes.Status != PromptStatus.None)
+                return;
+
+            // Select Frames
+            var selectedIds = AcadUtils.SelectObjects("Chọn các đường Dầm cần hiển thị: ");
+            if (selectedIds.Count == 0) return;
+
+            // Clear existing labels
+            ClearRebarLabels();
+
+            int count = 0;
+            double torFactor = RebarSettings.Instance.TorsionDistributionFactor;
+
+            UsingTransaction(tr =>
+            {
+                var btr = tr.GetObject(AcadUtils.Db.CurrentSpaceId, OpenMode.ForWrite) as BlockTableRecord;
+
+                foreach (ObjectId id in selectedIds)
+                {
+                    DBObject obj = tr.GetObject(id, OpenMode.ForRead);
+                    var data = XDataUtils.ReadElementData(obj) as BeamResultData;
+                    if (data == null) continue;
+
+                    var curve = obj as Curve;
+                    if (curve == null) continue;
+
+                    Point3d pStart = curve.StartPoint;
+                    Point3d pEnd = curve.EndPoint;
+
+                    for (int i = 0; i < 3; i++)
+                    {
+                        string topText = "";
+                        string botText = "";
+
+                        switch (mode)
+                        {
+                            case 0: // Area (Diện tích)
+                                double asTop = data.TopArea[i] + data.TorsionArea[i] * torFactor;
+                                double asBot = data.BotArea[i] + data.TorsionArea[i] * torFactor;
+                                topText = $"{asTop:F1}";
+                                botText = $"{asBot:F1}";
+                                break;
+
+                            case 1: // Rebar (Bố trí)
+                                topText = data.TopRebarString[i] ?? "-";
+                                if (!string.IsNullOrEmpty(data.StirrupString[i]) && data.StirrupString[i] != "-")
+                                    topText += " | " + data.StirrupString[i];
+
+                                botText = data.BotRebarString[i] ?? "-";
+                                if (!string.IsNullOrEmpty(data.WebBarString[i]) && data.WebBarString[i] != "-")
+                                    botText += " | " + data.WebBarString[i];
+                                break;
+
+                            case 2: // Both (Cả hai)
+                                double asTopB = data.TopArea[i] + data.TorsionArea[i] * torFactor;
+                                double asBotB = data.BotArea[i] + data.TorsionArea[i] * torFactor;
+                                string topRebar = data.TopRebarString[i] ?? "-";
+                                string botRebar = data.BotRebarString[i] ?? "-";
+                                topText = $"{asTopB:F1} | {topRebar}";
+                                botText = $"{asBotB:F1} | {botRebar}";
+                                break;
+                        }
+
+                        LabelPlotter.PlotRebarLabel(btr, tr, pStart, pEnd, topText, i, true);
+                        LabelPlotter.PlotRebarLabel(btr, tr, pStart, pEnd, botText, i, false);
+                    }
+
+                    count++;
+                }
+            });
+
+            string modeText = mode == 0 ? "Diện tích" : (mode == 1 ? "Bố trí thép" : "Cả hai");
+            WriteSuccess($"Đã hiển thị {count} dầm theo chế độ: {modeText}.");
         }
     }
 }

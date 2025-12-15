@@ -22,6 +22,7 @@ namespace DTS_Engine.Core.Data
         public double[] TopArea { get; set; } = new double[3];
         public double[] BotArea { get; set; } = new double[3];
         public double[] TorsionArea { get; set; } = new double[3];
+        public double[] ShearArea { get; set; } = new double[3]; // VMajor Shear Area
 
         public string DesignCombo { get; set; }
         
@@ -33,14 +34,15 @@ namespace DTS_Engine.Core.Data
         // ===== Cấu hình tính toán =====
         public double TorsionFactorUsed { get; set; } = 0.25;
 
-        // ===== Phương án bố trí thép (Merged from BeamRebarSolution) =====
-        // Chuỗi thép hiển thị (VD: "3d20 + 2d25")
+        // ===== Phương án bố trí thép dọc =====
         public string[] TopRebarString { get; set; } = new string[3];
         public string[] BotRebarString { get; set; } = new string[3];
-        
-        // Diện tích thực tế đã bố trí (cm2)
         public double[] TopAreaProv { get; set; } = new double[3];
         public double[] BotAreaProv { get; set; } = new double[3];
+
+        // ===== Phương án thép đai & thép sườn =====
+        public string[] StirrupString { get; set; } = new string[3]; // VD: "d8a150"
+        public string[] WebBarString { get; set; } = new string[3];  // VD: "2d12"
 
         // ===== Beam Name (from Naming command) =====
         public string BeamName { get; set; }
@@ -52,17 +54,21 @@ namespace DTS_Engine.Core.Data
             dict["TopArea"] = TopArea;
             dict["BotArea"] = BotArea;
             dict["TorsionArea"] = TorsionArea;
+            dict["ShearArea"] = ShearArea;
             dict["DesignCombo"] = DesignCombo;
             // Section
             dict["SectionName"] = SectionName;
             dict["Width"] = Width;
             dict["Height"] = Height;
             dict["TorsionFactorUsed"] = TorsionFactorUsed;
-            // Solution
+            // Longitudinal Solution
             dict["TopRebarString"] = TopRebarString;
             dict["BotRebarString"] = BotRebarString;
             dict["TopAreaProv"] = TopAreaProv;
             dict["BotAreaProv"] = BotAreaProv;
+            // Stirrup & Web Solution
+            dict["StirrupString"] = StirrupString;
+            dict["WebBarString"] = WebBarString;
             dict["BeamName"] = BeamName;
             return dict;
         }
@@ -74,17 +80,21 @@ namespace DTS_Engine.Core.Data
             if (dict.TryGetValue("TopArea", out var t)) TopArea = ConvertToDoubleArray(t);
             if (dict.TryGetValue("BotArea", out var b)) BotArea = ConvertToDoubleArray(b);
             if (dict.TryGetValue("TorsionArea", out var tor)) TorsionArea = ConvertToDoubleArray(tor);
+            if (dict.TryGetValue("ShearArea", out var shear)) ShearArea = ConvertToDoubleArray(shear);
             if (dict.TryGetValue("DesignCombo", out var dc)) DesignCombo = dc?.ToString();
             // Section
             if (dict.TryGetValue("SectionName", out var sn)) SectionName = sn?.ToString();
             if (dict.TryGetValue("Width", out var w)) Width = Convert.ToDouble(w);
             if (dict.TryGetValue("Height", out var h)) Height = Convert.ToDouble(h);
             if (dict.TryGetValue("TorsionFactorUsed", out var tf)) TorsionFactorUsed = Convert.ToDouble(tf);
-            // Solution
+            // Longitudinal
             if (dict.TryGetValue("TopRebarString", out var trs)) TopRebarString = ConvertToStringArray(trs);
             if (dict.TryGetValue("BotRebarString", out var brs)) BotRebarString = ConvertToStringArray(brs);
             if (dict.TryGetValue("TopAreaProv", out var tap)) TopAreaProv = ConvertToDoubleArray(tap);
             if (dict.TryGetValue("BotAreaProv", out var bap)) BotAreaProv = ConvertToDoubleArray(bap);
+            // Stirrup & Web
+            if (dict.TryGetValue("StirrupString", out var ss)) StirrupString = ConvertToStringArray(ss);
+            if (dict.TryGetValue("WebBarString", out var ws)) WebBarString = ConvertToStringArray(ws);
             if (dict.TryGetValue("BeamName", out var bn)) BeamName = bn?.ToString();
         }
 
@@ -202,19 +212,24 @@ namespace DTS_Engine.Core.Data
         public static RebarSettings Instance => _instance ?? (_instance = new RebarSettings());
 
         // --- Torsion ---
-        // 0.25 (chia 4 mặt) hoặc 0.5 (dồn top/bot)
         public double TorsionDistributionFactor { get; set; } = 0.25; 
 
         // --- Cover ---
         public double CoverTop { get; set; } = 35.0; // mm
         public double CoverBot { get; set; } = 35.0; // mm
 
-        // --- Materials ---
+        // --- Longitudinal Rebar ---
         public List<int> PreferredDiameters { get; set; } = new List<int> { 16, 18, 20, 22, 25 };
-        
-        // --- Strategy ---
-        public bool MaxBotRebar { get; set; } = true; // True = Option 1 (Max All), False = Option 2
-
         public double MinSpacing { get; set; } = 30.0; // mm
+        public bool MaxBotRebar { get; set; } = true;
+
+        // --- Stirrup (Thép đai) ---
+        public int StirrupDiameter { get; set; } = 8;  // mm
+        public int StirrupLegs { get; set; } = 2;       // Số nhánh
+        public List<int> StirrupSpacings { get; set; } = new List<int> { 100, 150, 200, 250 }; // Bước đai chuẩn
+
+        // --- Web Bars (Thép sườn/giá) ---
+        public int WebBarDiameter { get; set; } = 12;   // mm
+        public double WebBarMinHeight { get; set; } = 700; // mm - Chiều cao tối thiểu cần thép sườn
     }
 }
