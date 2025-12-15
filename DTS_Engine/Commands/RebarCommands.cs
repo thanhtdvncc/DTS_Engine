@@ -329,16 +329,25 @@ namespace DTS_Engine.Commands
         }
 
         /// <summary>
-        /// Format số thép: Làm tròn LÊN 1 chữ số, bỏ số 0 thừa (2.0→2, 13.62→13.7)
+        /// Format thông minh: F3 cho số nhỏ (shear cm2/cm như 0.067), F1 ceiling cho số lớn (area cm2)
         /// </summary>
         private string FormatValue(double val)
         {
-            if (Math.Abs(val) < 0.005) return "0";
-            // Làm tròn LÊN 1 chữ số thập phân, bỏ số 0 thừa (2.0 -> 2)
-            double ceiling = Math.Ceiling(val * 10) / 10.0;
-            return (ceiling % 1 == 0) 
-                ? ceiling.ToString("F0", System.Globalization.CultureInfo.InvariantCulture) 
-                : ceiling.ToString("F1", System.Globalization.CultureInfo.InvariantCulture);
+            if (Math.Abs(val) < 0.0001) return "0";
+            
+            if (Math.Abs(val) < 1.0)
+            {
+                // Hiển thị dạng 0.067 (cho Shear Area/cm, TTArea)
+                return val.ToString("F3", System.Globalization.CultureInfo.InvariantCulture); 
+            }
+            else
+            {
+                // Hiển thị dạng 2.1, 15 (cho Longitudinal Area)
+                double ceiling = Math.Ceiling(val * 10) / 10.0;
+                return (ceiling % 1 == 0) 
+                    ? ceiling.ToString("F0", System.Globalization.CultureInfo.InvariantCulture) 
+                    : ceiling.ToString("F1", System.Globalization.CultureInfo.InvariantCulture);
+            }
         }
 
         [CommandMethod("DTS_REBAR_CALCULATE")]
