@@ -1,86 +1,376 @@
 <!DOCTYPE html>
 <html lang="vi">
+
 <head>
     <meta charset="UTF-8">
     <style>
-        * { box-sizing: border-box; }
-        body { font-family: 'Segoe UI', sans-serif; background: #f5f5f5; margin: 0; padding: 0; color: #333; font-size: 13px; user-select: none; }
-        
-        .header { background: linear-gradient(135deg, #0d6efd, #0a58ca); color: #fff; padding: 12px 20px; display: flex; justify-content: space-between; align-items: center; }
-        .header h2 { margin: 0; font-size: 15px; }
-        .badge { background: rgba(255,255,255,.2); padding: 3px 10px; border-radius: 12px; font-size: 11px; }
-        
-        .tabs { display: flex; background: #fff; border-bottom: 1px solid #dee2e6; }
-        .tab { flex: 1; padding: 10px; text-align: center; cursor: pointer; border-bottom: 2px solid transparent; font-weight: 500; color: #6c757d; }
-        .tab:hover { background: #f8f9fa; }
-        .tab.active { color: #0d6efd; border-bottom-color: #0d6efd; }
-        
-        .content { padding: 15px; height: 420px; overflow-y: auto; }
-        .tab-panel { display: none; }
-        .tab-panel.active { display: block; }
-        
-        .section { background: #fff; border-radius: 6px; margin-bottom: 12px; box-shadow: 0 1px 3px rgba(0,0,0,.08); }
-        .section-header { padding: 8px 12px; font-weight: 600; color: #495057; font-size: 12px; border-bottom: 1px solid #f0f0f0; }
-        .section-body { padding: 12px; }
-        
-        .row { display: flex; gap: 10px; margin-bottom: 10px; }
-        .row:last-child { margin-bottom: 0; }
-        .col { flex: 1; }
-        
-        label { display: block; font-size: 11px; color: #6c757d; margin-bottom: 4px; }
-        input[type='text'], input[type='number'] { width: 100%; padding: 7px 10px; border: 1px solid #ced4da; border-radius: 4px; font-size: 12px; }
-        input:focus { border-color: #86b7fe; outline: none; box-shadow: 0 0 0 2px rgba(13,110,253,.15); }
-        
-        .check-row { display: flex; align-items: center; gap: 8px; padding: 4px 0; }
-        .check-row input[type='checkbox'] { width: 16px; height: 16px; accent-color: #0d6efd; }
-        .check-row label { margin: 0; font-size: 12px; color: #333; }
-        
-        .hint { font-size: 10px; color: #adb5bd; margin-top: 3px; }
-        
-        .corner-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 6px; width: 120px; }
-        .corner-btn { padding: 10px 8px; text-align: center; border: 1px solid #ced4da; border-radius: 4px; cursor: pointer; font-size: 11px; font-weight: 500; background: #f8f9fa; transition: 0.2s; }
-        .corner-btn:hover { background: #e9ecef; }
-        .corner-btn.active { background: #0d6efd; color: #fff; border-color: #0d6efd; }
-        
-        .radio-group { display: flex; flex-direction: column; gap: 8px; }
-        .radio-label { display: flex; align-items: center; gap: 6px; font-size: 12px; cursor: pointer; }
-        .radio-label input { accent-color: #0d6efd; }
-        
-        .footer { position: fixed; bottom: 0; left: 0; right: 0; background: #fff; padding: 12px 20px; border-top: 1px solid #e9ecef; display: flex; justify-content: flex-end; gap: 10px; }
-        button { padding: 8px 20px; border: none; border-radius: 5px; font-weight: 600; font-size: 12px; cursor: pointer; }
-        .btn-primary { background: #0d6efd; color: #fff; }
-        .btn-primary:hover { background: #0b5ed7; }
-        .btn-secondary { background: #f8f9fa; border: 1px solid #dee2e6; }
-        .btn-secondary:hover { background: #e9ecef; }
+        * {
+            box-sizing: border-box;
+        }
+
+        body {
+            font-family: 'Segoe UI', sans-serif;
+            background: #f5f5f5;
+            margin: 0;
+            padding: 0;
+            color: #333;
+            font-size: 13px;
+            user-select: none;
+        }
+
+        .header {
+            background: linear-gradient(135deg, #0d6efd, #0a58ca);
+            color: #fff;
+            padding: 12px 20px;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+        }
+
+        .header h2 {
+            margin: 0;
+            font-size: 15px;
+        }
+
+        .badge {
+            background: rgba(255, 255, 255, .2);
+            padding: 3px 10px;
+            border-radius: 12px;
+            font-size: 11px;
+        }
+
+        .tabs {
+            display: flex;
+            background: #fff;
+            border-bottom: 1px solid #dee2e6;
+        }
+
+        .tab {
+            flex: 1;
+            padding: 10px;
+            text-align: center;
+            cursor: pointer;
+            border-bottom: 2px solid transparent;
+            font-weight: 500;
+            color: #6c757d;
+            font-size: 12px;
+        }
+
+        .tab:hover {
+            background: #f8f9fa;
+        }
+
+        .tab.active {
+            color: #0d6efd;
+            border-bottom-color: #0d6efd;
+        }
+
+        .content {
+            padding: 15px;
+            height: 440px;
+            overflow-y: auto;
+        }
+
+        .tab-panel {
+            display: none;
+        }
+
+        .tab-panel.active {
+            display: block;
+        }
+
+        .section {
+            background: #fff;
+            border-radius: 6px;
+            margin-bottom: 12px;
+            box-shadow: 0 1px 3px rgba(0, 0, 0, .08);
+        }
+
+        .section-header {
+            padding: 8px 12px;
+            font-weight: 600;
+            color: #495057;
+            font-size: 12px;
+            border-bottom: 1px solid #f0f0f0;
+        }
+
+        .section-body {
+            padding: 12px;
+        }
+
+        .row {
+            display: flex;
+            gap: 10px;
+            margin-bottom: 10px;
+        }
+
+        .row:last-child {
+            margin-bottom: 0;
+        }
+
+        .col {
+            flex: 1;
+        }
+
+        .col-2 {
+            flex: 2;
+        }
+
+        label {
+            display: block;
+            font-size: 11px;
+            color: #6c757d;
+            margin-bottom: 4px;
+        }
+
+        input[type='text'],
+        input[type='number'] {
+            width: 100%;
+            padding: 7px 10px;
+            border: 1px solid #ced4da;
+            border-radius: 4px;
+            font-size: 12px;
+        }
+
+        input:focus {
+            border-color: #86b7fe;
+            outline: none;
+            box-shadow: 0 0 0 2px rgba(13, 110, 253, .15);
+        }
+
+        .check-row {
+            display: flex;
+            align-items: center;
+            gap: 8px;
+            padding: 4px 0;
+        }
+
+        .check-row input[type='checkbox'] {
+            width: 16px;
+            height: 16px;
+            accent-color: #0d6efd;
+        }
+
+        .check-row label {
+            margin: 0;
+            font-size: 12px;
+            color: #333;
+        }
+
+        .hint {
+            font-size: 10px;
+            color: #adb5bd;
+            margin-top: 3px;
+        }
+
+        .diameter-grid {
+            display: flex;
+            flex-wrap: wrap;
+            gap: 6px;
+        }
+
+        .diameter-chip {
+            padding: 6px 12px;
+            border: 1px solid #ced4da;
+            border-radius: 4px;
+            cursor: pointer;
+            font-size: 11px;
+            background: #f8f9fa;
+            transition: 0.2s;
+        }
+
+        .diameter-chip:hover {
+            background: #e9ecef;
+        }
+
+        .diameter-chip.active {
+            background: #0d6efd;
+            color: #fff;
+            border-color: #0d6efd;
+        }
+
+        .corner-grid {
+            display: grid;
+            grid-template-columns: 1fr 1fr;
+            gap: 6px;
+            width: 120px;
+        }
+
+        .corner-btn {
+            padding: 10px 8px;
+            text-align: center;
+            border: 1px solid #ced4da;
+            border-radius: 4px;
+            cursor: pointer;
+            font-size: 11px;
+            font-weight: 500;
+            background: #f8f9fa;
+            transition: 0.2s;
+        }
+
+        .corner-btn:hover {
+            background: #e9ecef;
+        }
+
+        .corner-btn.active {
+            background: #0d6efd;
+            color: #fff;
+            border-color: #0d6efd;
+        }
+
+        .radio-group {
+            display: flex;
+            flex-direction: column;
+            gap: 8px;
+        }
+
+        .radio-label {
+            display: flex;
+            align-items: center;
+            gap: 6px;
+            font-size: 12px;
+            cursor: pointer;
+        }
+
+        .radio-label input {
+            accent-color: #0d6efd;
+        }
+
+        .footer {
+            position: fixed;
+            bottom: 0;
+            left: 0;
+            right: 0;
+            background: #fff;
+            padding: 12px 20px;
+            border-top: 1px solid #e9ecef;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+        }
+
+        .footer-left {
+            display: flex;
+            gap: 8px;
+        }
+
+        .footer-right {
+            display: flex;
+            gap: 10px;
+        }
+
+        button {
+            padding: 8px 16px;
+            border: none;
+            border-radius: 5px;
+            font-weight: 600;
+            font-size: 12px;
+            cursor: pointer;
+        }
+
+        .btn-primary {
+            background: #0d6efd;
+            color: #fff;
+        }
+
+        .btn-primary:hover {
+            background: #0b5ed7;
+        }
+
+        .btn-secondary {
+            background: #f8f9fa;
+            border: 1px solid #dee2e6;
+        }
+
+        .btn-secondary:hover {
+            background: #e9ecef;
+        }
+
+        .btn-sm {
+            padding: 6px 12px;
+            font-size: 11px;
+        }
     </style>
 </head>
+
 <body>
     <div class="header">
         <h2>DTS Rebar Configuration</h2>
-        <span class="badge">v1.2</span>
+        <span class="badge">v2.0</span>
     </div>
-    
+
     <div class="tabs">
-        <div class="tab active" onclick="showTab(0)">Thông số Rebar</div>
-        <div class="tab" onclick="showTab(1)">Đặt tên Dầm</div>
+        <div class="tab active" onclick="showTab(0)">General</div>
+        <div class="tab" onclick="showTab(1)">Beam</div>
+        <div class="tab" onclick="showTab(2)">Column</div>
+        <div class="tab" onclick="showTab(3)">Naming</div>
     </div>
-    
+
     <div class="content">
-        <!-- TAB 0: Thông số Rebar -->
+        <!-- TAB 0: GENERAL -->
         <div class="tab-panel active" id="tab0">
             <div class="section">
-                <div class="section-header">Phân vùng & Xoắn</div>
+                <div class="section-header">Kho thép chuẩn (Inventory)</div>
                 <div class="section-body">
-                    <div class="row">
-                        <div class="col"><label>Zone Start</label><input type="number" id="ZoneRatioStart" step="0.05"></div>
-                        <div class="col"><label>Zone End</label><input type="number" id="ZoneRatioEnd" step="0.05"></div>
-                        <div class="col"><label>Xoắn Top</label><input type="number" id="TorsionFactorTop" step="0.05"></div>
-                        <div class="col"><label>Xoắn Bot</label><input type="number" id="TorsionFactorBot" step="0.05"></div>
-                        <div class="col"><label>Xoắn Side</label><input type="number" id="TorsionFactorSide" step="0.05"></div>
+                    <div class="diameter-grid" id="inventoryGrid"></div>
+                    <div class="hint">Click để bật/tắt đường kính. Các đường kính được chọn sẽ khả dụng cho tính toán.
                     </div>
                 </div>
             </div>
-            
+
+            <div class="section">
+                <div class="section-header">Đoạn xét nội lực (Analysis Zones)</div>
+                <div class="section-body">
+                    <div class="row">
+                        <div class="col"><label>Zone L1 (đầu nhịp)</label><input type="number" id="ZoneL1_Ratio"
+                                step="0.05" min="0" max="0.5"></div>
+                        <div class="col"><label>Zone L2 (cuối nhịp)</label><input type="number" id="ZoneL2_Ratio"
+                                step="0.05" min="0" max="0.5"></div>
+                        <div class="col"><label>Đơn vị</label>
+                            <select id="Unit"
+                                style="width:100%;padding:7px;border:1px solid #ced4da;border-radius:4px;font-size:12px;">
+                                <option value="mm">mm</option>
+                                <option value="cm">cm</option>
+                                <option value="m">m</option>
+                            </select>
+                        </div>
+                    </div>
+                    <div class="hint">Zone = tỉ lệ nhịp để lấy Momen/Lực cắt lớn nhất. VD: 0.25 = 1/4 nhịp.</div>
+                </div>
+            </div>
+
+            <div class="section">
+                <div class="section-header">Import / Export Settings</div>
+                <div class="section-body">
+                    <div class="row">
+                        <div class="col">
+                            <button class="btn-secondary btn-sm" onclick="doImport()">Import</button>
+                            <button class="btn-secondary btn-sm" onclick="doExport()">Export</button>
+                        </div>
+                    </div>
+                    <div class="hint">Lưu/tải cấu hình để chia sẻ hoặc dùng cho dự án khác (.dtss)</div>
+                </div>
+            </div>
+        </div>
+
+        <!-- TAB 1: BEAM -->
+        <div class="tab-panel" id="tab1">
+            <div class="section">
+                <div class="section-header">Phạm vi thép (Rebar Selection)</div>
+                <div class="section-body">
+                    <div class="row">
+                        <div class="col"><label>Thép chủ (Main)</label><input type="text" id="MainBarRange"
+                                placeholder="16-25"></div>
+                        <div class="col"><label>Thép đai (Stirrup)</label><input type="text" id="StirrupBarRange"
+                                placeholder="8-10"></div>
+                        <div class="col"><label>Thép hông (Side)</label><input type="text" id="SideBarRange"
+                                placeholder="12-14"></div>
+                    </div>
+                    <div class="hint">Nhập khoảng: "16-25" hoặc liệt kê: "18, 20, 22". Sẽ lọc theo Kho thép ở tab
+                        General.</div>
+                </div>
+            </div>
+
             <div class="section">
                 <div class="section-header">Lớp bảo vệ (mm)</div>
                 <div class="section-body">
@@ -88,71 +378,139 @@
                         <div class="col"><label>Cover Top</label><input type="number" id="CoverTop"></div>
                         <div class="col"><label>Cover Bot</label><input type="number" id="CoverBot"></div>
                         <div class="col"><label>Cover Side</label><input type="number" id="CoverSide"></div>
-                        <div class="col"><label>Khoảng hở</label><input type="number" id="MinSpacing"></div>
                     </div>
                 </div>
             </div>
-            
+
             <div class="section">
-                <div class="section-header">Thép dọc</div>
+                <div class="section-header">Khoảng hở cốt thép (Clear Spacing)</div>
+                <div class="section-body">
+                    <div class="check-row">
+                        <input type="checkbox" id="UseBarDiameterForSpacing">
+                        <label for="UseBarDiameterForSpacing">Khoảng hở tối thiểu theo đường kính thép</label>
+                    </div>
+                    <div class="row">
+                        <div class="col"><label>Hệ số x đường kính</label><input type="number"
+                                id="BarDiameterSpacingMultiplier" step="0.1" min="1" max="3"></div>
+                        <div class="col"><label>Min Spacing cố định (mm)</label><input type="number"
+                                id="MinClearSpacing"></div>
+                        <div class="col"><label>Max Spacing (mm)</label><input type="number" id="MaxClearSpacing"></div>
+                    </div>
+                    <div class="hint">Nếu bật: spacing ≥ N × d_max. Nếu tắt: dùng Min Spacing cố định. Theo ACI/TCVN
+                        thường ≥ 1.0d.</div>
+                </div>
+            </div>
+
+            <div class="section">
+                <div class="section-header">Hệ số phân bổ thép xoắn (Torsion Distribution)</div>
                 <div class="section-body">
                     <div class="row">
-                        <div class="col"><label>Đường kính ưu tiên</label><input type="text" id="PreferredDiameters" placeholder="16, 18, 20"></div>
+                        <div class="col"><label>Top Bar</label><input type="number" id="TorsionDist_TopBar" step="0.01">
+                        </div>
+                        <div class="col"><label>Bot Bar</label><input type="number" id="TorsionDist_BotBar" step="0.01">
+                        </div>
+                        <div class="col"><label>Side Bar</label><input type="number" id="TorsionDist_SideBar"
+                                step="0.01"></div>
+                    </div>
+                    <div class="hint">Tổng = 1.0. VD: TopBar=0.16, BotBar=0.16, SideBar=0.68</div>
+                </div>
+            </div>
+
+            <div class="section">
+                <div class="section-header">Bố trí thép tự động (Auto Arrangement)</div>
+                <div class="section-body">
+                    <div class="row">
+                        <div class="col"><label>Số lớp tối đa</label><input type="number" id="MaxLayers" min="1"
+                                max="5"></div>
+                        <div class="col"><label>Min thanh/lớp</label><input type="number" id="MinBarsPerLayer" min="2"
+                                max="10"></div>
+                        <div class="col"><label>H min thép sườn (mm)</label><input type="number" id="WebBarMinHeight">
+                        </div>
+                    </div>
+                    <div class="check-row"><input type="checkbox" id="PreferSingleDiameter"><label
+                            for="PreferSingleDiameter">Ưu tiên cùng 1 đường kính (các lớp)</label></div>
+                    <div class="check-row"><input type="checkbox" id="PreferSymmetric"><label for="PreferSymmetric">Ưu
+                            tiên bố trí đối xứng</label></div>
+                    <div class="check-row"><input type="checkbox" id="PreferFewerBars"><label for="PreferFewerBars">Ưu
+                            tiên ít thanh hơn (đường kính lớn)</label></div>
+                    <div class="check-row"><input type="checkbox" id="PreferEvenDiameter"><label
+                            for="PreferEvenDiameter">Ưu tiên đường kính chẵn</label></div>
+                </div>
+            </div>
+
+            <div class="section">
+                <div class="section-header">Thép đai nâng cao</div>
+                <div class="section-body">
+                    <div class="row">
+                        <div class="col"><label>μ_min</label><input type="number" id="MinReinforcementRatio"
+                                step="0.001"></div>
+                        <div class="col-2"><label>Auto Legs Rules</label><input type="text" id="AutoLegsRules"
+                                placeholder="250-2 400-3 600-4"></div>
+                    </div>
+                    <div class="check-row"><input type="checkbox" id="AllowOddLegs"><label for="AllowOddLegs">Cho phép
+                            nhánh đai lẻ (3, 5...)</label></div>
+                    <div class="hint">Auto Legs: b≤250→2 nhánh, b≤400→3 nhánh...</div>
+                </div>
+            </div>
+        </div>
+
+        <!-- TAB 2: COLUMN -->
+        <div class="tab-panel" id="tab2">
+            <div class="section">
+                <div class="section-header">Phạm vi thép cột</div>
+                <div class="section-body">
+                    <div class="row">
+                        <div class="col"><label>Thép chủ (Main)</label><input type="text" id="ColMainBarRange"
+                                placeholder="16-28"></div>
+                        <div class="col"><label>Thép đai (Stirrup)</label><input type="text" id="ColStirrupBarRange"
+                                placeholder="8-10"></div>
                     </div>
                 </div>
             </div>
-            
+
             <div class="section">
-                <div class="section-header">Thép đai</div>
+                <div class="section-header">Lớp bảo vệ & Quy tắc</div>
                 <div class="section-body">
                     <div class="row">
-                        <div class="col"><label>Đường kính đai</label><input type="text" id="StirrupDiameters" placeholder="8, 10"></div>
+                        <div class="col"><label>Cover (mm)</label><input type="number" id="ColCover"></div>
+                        <div class="col"><label>Nối chồng (xd)</label><input type="number" id="LapSpliceMultiplier">
+                        </div>
                     </div>
-                    <div class="check-row"><input type="checkbox" id="AllowOddLegs"><label for="AllowOddLegs">Cho phép nhánh lẻ (3, 5...)</label></div>
-                    <div class="check-row"><input type="checkbox" id="AutoLegsFromWidth"><label for="AutoLegsFromWidth">Tự động số nhánh theo bề rộng</label></div>
                     <div class="row">
-                        <div class="col">
-                            <label>Quy tắc (bề rộng-nhánh)</label>
-                            <input type="text" id="AutoLegsRules" placeholder="250-2 400-3 600-4">
-                            <div class="hint">VD: 250-2 = b≤250mm → 2 nhánh</div>
+                        <div class="col"><label>Min thanh/cạnh</label><input type="number" id="MinBarsPerSide"></div>
+                        <div class="col"><label>Max Stirrup Spacing</label><input type="number" id="MaxStirrupSpacing">
                         </div>
                     </div>
                 </div>
             </div>
-            
-            <div class="section">
-                <div class="section-header">Thép sườn</div>
-                <div class="section-body">
-                    <div class="row">
-                        <div class="col"><label>Đường kính sườn</label><input type="text" id="WebBarDiameters" placeholder="12, 14"></div>
-                        <div class="col"><label>H tối thiểu (mm)</label><input type="number" id="WebBarMinHeight"></div>
-                    </div>
-                </div>
-            </div>
         </div>
-        
-        <!-- TAB 1: Đặt tên Dầm -->
-        <div class="tab-panel" id="tab1">
+
+        <!-- TAB 3: NAMING -->
+        <div class="tab-panel" id="tab3">
             <div class="section">
                 <div class="section-header">Tiền tố / Hậu tố</div>
                 <div class="section-body">
                     <div class="row">
                         <div class="col"><label>Beam Prefix</label><input type="text" id="BeamPrefix"></div>
                         <div class="col"><label>Girder Prefix</label><input type="text" id="GirderPrefix"></div>
+                        <div class="col"><label>Column Prefix</label><input type="text" id="ColumnPrefix"></div>
                         <div class="col"><label>Suffix</label><input type="text" id="BeamSuffix"></div>
                     </div>
                 </div>
             </div>
-            
+
             <div class="section">
                 <div class="section-header">Quy tắc nhóm</div>
                 <div class="section-body">
-                    <div class="check-row"><input type="checkbox" id="GroupByAxis"><label for="GroupByAxis">Nhóm theo trục</label></div>
-                    <div class="check-row"><input type="checkbox" id="MergeSameSection"><label for="MergeSameSection">Gộp dầm cùng section & rebar</label></div>
-                    <div class="check-row"><input type="checkbox" id="AutoRenameOnSectionChange"><label for="AutoRenameOnSectionChange">Tự rename khi section đổi</label></div>
+                    <div class="check-row"><input type="checkbox" id="GroupByAxis"><label for="GroupByAxis">Nhóm theo
+                            trục</label></div>
+                    <div class="check-row"><input type="checkbox" id="MergeSameSection"><label
+                            for="MergeSameSection">Gộp dầm cùng section & rebar</label></div>
+                    <div class="check-row"><input type="checkbox" id="AutoRenameOnSectionChange"><label
+                            for="AutoRenameOnSectionChange">Tự rename khi section đổi</label></div>
                 </div>
             </div>
-            
+
             <div class="section">
                 <div class="section-header">Thứ tự quét (Sorting)</div>
                 <div class="section-body">
@@ -170,149 +528,223 @@
                         <div class="col">
                             <label style="margin-bottom: 8px;">Hướng ưu tiên</label>
                             <div class="radio-group">
-                                <label class="radio-label"><input type="radio" name="sortDir" value="0" checked> Ngang (X)</label>
+                                <label class="radio-label"><input type="radio" name="sortDir" value="0" checked> Ngang
+                                    (X)</label>
                                 <label class="radio-label"><input type="radio" name="sortDir" value="1"> Dọc (Y)</label>
                             </div>
                             <input type="hidden" id="SortDirection" value="0">
                         </div>
                     </div>
-                    <div class="hint">TL = Top-Left. Quét ngang: quét hết hàng rồi xuống dòng.</div>
                 </div>
             </div>
         </div>
     </div>
-    
+
     <div class="footer">
-        <button class="btn-secondary" onclick="doCancel()">Hủy bỏ</button>
-        <button class="btn-primary" onclick="doSave()">Lưu cấu hình</button>
+        <div class="footer-left">
+            <!-- Import/Export moved to General tab -->
+        </div>
+        <div class="footer-right">
+            <button class="btn-secondary" onclick="doCancel()">Hủy bỏ</button>
+            <button class="btn-primary" onclick="doSave()">Lưu cấu hình</button>
+        </div>
     </div>
 
-<script>
-    const data = __SETTINGS_JSON__;
-    
-    function showTab(idx) {
-        document.querySelectorAll('.tab').forEach((t, i) => t.classList.toggle('active', i === idx));
-        document.querySelectorAll('.tab-panel').forEach((p, i) => p.classList.toggle('active', i === idx));
-    }
-    
-    function loadForm() {
-        const setId = (id, val) => { const el = document.getElementById(id); if (el) el.value = val ?? ''; };
-        const setChk = (id, val) => { const el = document.getElementById(id); if (el) el.checked = val || false; };
-        
-        // Tab 1 - Rebar Settings
-        setId('ZoneRatioStart', data.ZoneRatioStart);
-        setId('ZoneRatioEnd', data.ZoneRatioEnd);
-        setId('TorsionFactorTop', data.TorsionFactorTop);
-        setId('TorsionFactorBot', data.TorsionFactorBot);
-        setId('TorsionFactorSide', data.TorsionFactorSide);
-        setId('CoverTop', data.CoverTop);
-        setId('CoverBot', data.CoverBot);
-        setId('CoverSide', data.CoverSide);
-        setId('MinSpacing', data.MinSpacing);
-        setId('WebBarMinHeight', data.WebBarMinHeight);
-        setId('AutoLegsRules', data.AutoLegsRules);
-        
-        if (data.PreferredDiameters) setId('PreferredDiameters', data.PreferredDiameters.join(', '));
-        if (data.StirrupDiameters) setId('StirrupDiameters', data.StirrupDiameters.join(', '));
-        if (data.WebBarDiameters) setId('WebBarDiameters', data.WebBarDiameters.join(', '));
-        
-        setChk('AllowOddLegs', data.AllowOddLegs);
-        setChk('AutoLegsFromWidth', data.AutoLegsFromWidth);
-        
-        // Tab 2 - Beam Naming
-        setId('BeamPrefix', data.BeamPrefix);
-        setId('GirderPrefix', data.GirderPrefix);
-        setId('BeamSuffix', data.BeamSuffix);
-        setChk('GroupByAxis', data.GroupByAxis);
-        setChk('MergeSameSection', data.MergeSameSection);
-        setChk('AutoRenameOnSectionChange', data.AutoRenameOnSectionChange);
-        
-        // Sort Corner
-        setId('SortCorner', data.SortCorner || 0);
-        document.querySelectorAll('.corner-btn').forEach(btn => {
-            btn.classList.toggle('active', parseInt(btn.dataset.corner) === (data.SortCorner || 0));
-            btn.onclick = () => {
-                document.querySelectorAll('.corner-btn').forEach(b => b.classList.remove('active'));
-                btn.classList.add('active');
-                document.getElementById('SortCorner').value = btn.dataset.corner;
-            };
-        });
-        
-        // Sort Direction
-        setId('SortDirection', data.SortDirection || 0);
-        document.querySelectorAll("input[name='sortDir']").forEach(radio => {
-            radio.checked = parseInt(radio.value) === (data.SortDirection || 0);
-            radio.onchange = () => {
-                document.getElementById('SortDirection').value = radio.value;
-            };
-        });
-    }
-    
-    function doSave() {
-        const getVal = (id) => { 
-            const el = document.getElementById(id); 
-            if (!el) return '';
-            const val = el.value;
-            if (el.type === 'number') {
-                const num = parseFloat(val);
-                return isNaN(num) ? 0 : num;
-            }
-            return val || '';
-        };
-        const getChk = (id) => { const el = document.getElementById(id); return el ? el.checked : false; };
-        const parseList = (str, fb) => {
-            if (!str || !str.trim()) return fb || [];
-            const list = str.split(/[,\s]+/).map(s => parseInt(s.trim())).filter(n => !isNaN(n) && n > 0);
-            return list.length > 0 ? list : (fb || []);
-        };
+    <script>
+        const data = __SETTINGS_JSON__;
+        const ALL_DIAMETERS = [6, 8, 10, 12, 13, 14, 16, 18, 19, 20, 22, 25, 28, 29, 32, 36, 40];
 
-        const result = {
-            ZoneRatioStart: getVal('ZoneRatioStart'),
-            ZoneRatioEnd: getVal('ZoneRatioEnd'),
-            TorsionFactorTop: getVal('TorsionFactorTop'),
-            TorsionFactorBot: getVal('TorsionFactorBot'),
-            TorsionFactorSide: getVal('TorsionFactorSide'),
-            CoverTop: getVal('CoverTop'),
-            CoverBot: getVal('CoverBot'),
-            CoverSide: getVal('CoverSide'),
-            MinSpacing: getVal('MinSpacing'),
-            WebBarMinHeight: getVal('WebBarMinHeight'),
-            AutoLegsRules: getVal('AutoLegsRules') || data.AutoLegsRules,
-            
-            PreferredDiameters: parseList(getVal('PreferredDiameters'), data.PreferredDiameters),
-            StirrupDiameters: parseList(getVal('StirrupDiameters'), data.StirrupDiameters),
-            WebBarDiameters: parseList(getVal('WebBarDiameters'), data.WebBarDiameters),
-            
-            AllowOddLegs: getChk('AllowOddLegs'),
-            AutoLegsFromWidth: getChk('AutoLegsFromWidth'),
-            
-            BeamPrefix: getVal('BeamPrefix') || data.BeamPrefix,
-            GirderPrefix: getVal('GirderPrefix') || data.GirderPrefix,
-            BeamSuffix: getVal('BeamSuffix'),
-            GroupByAxis: getChk('GroupByAxis'),
-            MergeSameSection: getChk('MergeSameSection'),
-            AutoRenameOnSectionChange: getChk('AutoRenameOnSectionChange'),
-            
-            SortCorner: parseInt(getVal('SortCorner')) || 0,
-            SortDirection: parseInt(getVal('SortDirection')) || 0,
-            
-            // Preserve hidden values from original data
-            StirrupSpacings: data.StirrupSpacings,
-            StirrupLegs: data.StirrupLegs,
-            StirrupDiameter: data.StirrupDiameter,
-            WebBarDiameter: data.WebBarDiameter,
-            MaxBotRebar: data.MaxBotRebar
-        };
-        
-        window.chrome.webview.postMessage(JSON.stringify(result));
-    }
-    
-    function doCancel() { 
-        window.chrome.webview.postMessage('CANCEL'); 
-    }
-    
-    // Initialize form on load
-    loadForm();
-</script>
+        function showTab(idx) {
+            document.querySelectorAll('.tab').forEach((t, i) => t.classList.toggle('active', i === idx));
+            document.querySelectorAll('.tab-panel').forEach((p, i) => p.classList.toggle('active', i === idx));
+        }
+
+        function buildInventoryGrid() {
+            const grid = document.getElementById('inventoryGrid');
+            const available = data.General?.AvailableDiameters || [];
+            grid.innerHTML = '';
+            ALL_DIAMETERS.forEach(d => {
+                const chip = document.createElement('div');
+                chip.className = 'diameter-chip' + (available.includes(d) ? ' active' : '');
+                chip.textContent = 'Ø' + d;
+                chip.dataset.diameter = d;
+                chip.onclick = () => chip.classList.toggle('active');
+                grid.appendChild(chip);
+            });
+        }
+
+        function getSelectedDiameters() {
+            const chips = document.querySelectorAll('#inventoryGrid .diameter-chip.active');
+            return Array.from(chips).map(c => parseInt(c.dataset.diameter)).sort((a, b) => a - b);
+        }
+
+        function loadForm() {
+            const setId = (id, val) => { const el = document.getElementById(id); if (el) el.value = val ?? ''; };
+            const setChk = (id, val) => { const el = document.getElementById(id); if (el) el.checked = val || false; };
+
+            // Build inventory grid
+            buildInventoryGrid();
+
+            // Tab 0: General
+            setId('ZoneL1_Ratio', data.General?.ZoneL1_Ratio);
+            setId('ZoneL2_Ratio', data.General?.ZoneL2_Ratio);
+            if (data.General?.Unit) document.getElementById('Unit').value = data.General.Unit;
+
+            // Tab 1: Beam
+            setId('MainBarRange', data.Beam?.MainBarRange);
+            setId('StirrupBarRange', data.Beam?.StirrupBarRange);
+            setId('SideBarRange', data.Beam?.SideBarRange);
+            setId('CoverTop', data.Beam?.CoverTop);
+            setId('CoverBot', data.Beam?.CoverBot);
+            setId('CoverSide', data.Beam?.CoverSide);
+            // Clear Spacing
+            setChk('UseBarDiameterForSpacing', data.Beam?.UseBarDiameterForSpacing ?? true);
+            setId('BarDiameterSpacingMultiplier', data.Beam?.BarDiameterSpacingMultiplier ?? 1.0);
+            setId('MinClearSpacing', data.Beam?.MinClearSpacing);
+            setId('MaxClearSpacing', data.Beam?.MaxClearSpacing);
+            // Torsion (new names)
+            setId('TorsionDist_TopBar', data.Beam?.TorsionDist_TopBar ?? data.Beam?.TorsionDist_Top);
+            setId('TorsionDist_BotBar', data.Beam?.TorsionDist_BotBar ?? data.Beam?.TorsionDist_Bot);
+            setId('TorsionDist_SideBar', data.Beam?.TorsionDist_SideBar ?? data.Beam?.TorsionDist_Side);
+            // Auto Arrangement
+            setId('MaxLayers', data.Beam?.MaxLayers ?? 2);
+            setId('MinBarsPerLayer', data.Beam?.MinBarsPerLayer ?? 2);
+            setId('WebBarMinHeight', data.Beam?.WebBarMinHeight);
+            setChk('PreferSingleDiameter', data.Beam?.PreferSingleDiameter ?? true);
+            setChk('PreferSymmetric', data.Beam?.PreferSymmetric);
+            setChk('PreferFewerBars', data.Beam?.PreferFewerBars ?? true);
+            setChk('PreferEvenDiameter', data.Beam?.PreferEvenDiameter);
+            // Stirrup Advanced
+            setId('MinReinforcementRatio', data.Beam?.MinReinforcementRatio);
+            setId('AutoLegsRules', data.Beam?.AutoLegsRules);
+            setChk('AllowOddLegs', data.Beam?.AllowOddLegs);
+
+            // Tab 2: Column
+            setId('ColMainBarRange', data.Column?.MainBarRange);
+            setId('ColStirrupBarRange', data.Column?.StirrupBarRange);
+            setId('ColCover', data.Column?.Cover);
+            setId('LapSpliceMultiplier', data.Column?.LapSpliceMultiplier);
+            setId('MinBarsPerSide', data.Column?.MinBarsPerSide);
+            setId('MaxStirrupSpacing', data.Column?.MaxStirrupSpacing);
+
+            // Tab 3: Naming
+            setId('BeamPrefix', data.Naming?.BeamPrefix);
+            setId('GirderPrefix', data.Naming?.GirderPrefix);
+            setId('ColumnPrefix', data.Naming?.ColumnPrefix);
+            setId('BeamSuffix', data.Naming?.BeamSuffix);
+            setChk('GroupByAxis', data.Naming?.GroupByAxis);
+            setChk('MergeSameSection', data.Naming?.MergeSameSection);
+            setChk('AutoRenameOnSectionChange', data.Naming?.AutoRenameOnSectionChange);
+
+            // Sort Corner
+            const corner = data.Naming?.SortCorner || 0;
+            setId('SortCorner', corner);
+            document.querySelectorAll('.corner-btn').forEach(btn => {
+                btn.classList.toggle('active', parseInt(btn.dataset.corner) === corner);
+                btn.onclick = () => {
+                    document.querySelectorAll('.corner-btn').forEach(b => b.classList.remove('active'));
+                    btn.classList.add('active');
+                    document.getElementById('SortCorner').value = btn.dataset.corner;
+                };
+            });
+
+            // Sort Direction
+            const dir = data.Naming?.SortDirection || 0;
+            setId('SortDirection', dir);
+            document.querySelectorAll("input[name='sortDir']").forEach(radio => {
+                radio.checked = parseInt(radio.value) === dir;
+                radio.onchange = () => document.getElementById('SortDirection').value = radio.value;
+            });
+        }
+
+        function doSave() {
+            const getVal = (id) => {
+                const el = document.getElementById(id);
+                if (!el) return '';
+                if (el.type === 'number') {
+                    const num = parseFloat(el.value);
+                    return isNaN(num) ? 0 : num;
+                }
+                return el.value || '';
+            };
+            const getChk = (id) => { const el = document.getElementById(id); return el ? el.checked : false; };
+
+            const result = {
+                General: {
+                    AvailableDiameters: getSelectedDiameters(),
+                    ZoneL1_Ratio: getVal('ZoneL1_Ratio'),
+                    ZoneL2_Ratio: getVal('ZoneL2_Ratio'),
+                    Unit: document.getElementById('Unit').value,
+                    DecimalPlaces: data.General?.DecimalPlaces || 2
+                },
+                Beam: {
+                    MainBarRange: getVal('MainBarRange') || '16-25',
+                    StirrupBarRange: getVal('StirrupBarRange') || '8-10',
+                    SideBarRange: getVal('SideBarRange') || '12-14',
+                    CoverTop: getVal('CoverTop'),
+                    CoverBot: getVal('CoverBot'),
+                    CoverSide: getVal('CoverSide'),
+                    // Clear Spacing
+                    UseBarDiameterForSpacing: getChk('UseBarDiameterForSpacing'),
+                    BarDiameterSpacingMultiplier: getVal('BarDiameterSpacingMultiplier') || 1.0,
+                    MinClearSpacing: getVal('MinClearSpacing'),
+                    MaxClearSpacing: getVal('MaxClearSpacing'),
+                    // Torsion
+                    TorsionDist_TopBar: getVal('TorsionDist_TopBar'),
+                    TorsionDist_BotBar: getVal('TorsionDist_BotBar'),
+                    TorsionDist_SideBar: getVal('TorsionDist_SideBar'),
+                    // Auto Arrangement
+                    MaxLayers: getVal('MaxLayers') || 2,
+                    MinBarsPerLayer: getVal('MinBarsPerLayer') || 2,
+                    WebBarMinHeight: getVal('WebBarMinHeight'),
+                    PreferSingleDiameter: getChk('PreferSingleDiameter'),
+                    PreferSymmetric: getChk('PreferSymmetric'),
+                    PreferFewerBars: getChk('PreferFewerBars'),
+                    PreferEvenDiameter: getChk('PreferEvenDiameter'),
+                    // Stirrup
+                    MinReinforcementRatio: getVal('MinReinforcementRatio'),
+                    AutoLegsRules: getVal('AutoLegsRules') || '250-2 400-3 600-4',
+                    AllowOddLegs: getChk('AllowOddLegs')
+                },
+                Column: {
+                    MainBarRange: getVal('ColMainBarRange') || '16-28',
+                    StirrupBarRange: getVal('ColStirrupBarRange') || '8-10',
+                    Cover: getVal('ColCover'),
+                    LapSpliceMultiplier: getVal('LapSpliceMultiplier'),
+                    MinBarsPerSide: getVal('MinBarsPerSide'),
+                    MaxStirrupSpacing: getVal('MaxStirrupSpacing')
+                },
+                Naming: {
+                    BeamPrefix: getVal('BeamPrefix') || 'B',
+                    GirderPrefix: getVal('GirderPrefix') || 'G',
+                    ColumnPrefix: getVal('ColumnPrefix') || 'C',
+                    BeamSuffix: getVal('BeamSuffix'),
+                    GroupByAxis: getChk('GroupByAxis'),
+                    MergeSameSection: getChk('MergeSameSection'),
+                    AutoRenameOnSectionChange: getChk('AutoRenameOnSectionChange'),
+                    SortCorner: parseInt(getVal('SortCorner')) || 0,
+                    SortDirection: parseInt(getVal('SortDirection')) || 0
+                }
+            };
+
+            window.chrome.webview.postMessage(JSON.stringify(result));
+        }
+
+        function doCancel() {
+            window.chrome.webview.postMessage('CANCEL');
+        }
+
+        function doImport() {
+            window.chrome.webview.postMessage('IMPORT');
+        }
+
+        function doExport() {
+            window.chrome.webview.postMessage('EXPORT');
+        }
+
+        // Initialize form on load
+        loadForm();
+    </script>
 </body>
+
 </html>

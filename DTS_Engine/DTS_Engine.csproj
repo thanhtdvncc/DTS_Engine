@@ -156,6 +156,7 @@
     <Compile Include="Core\Data\BeamData.cs" />
     <Compile Include="Core\Data\BeamDesignData.cs" />
     <Compile Include="Core\Data\ColumnData.cs" />
+    <Compile Include="Core\Data\DtsSettings.cs" />
     <Compile Include="Core\Data\ElementData.cs" />
     <Compile Include="Core\Data\ElementType.cs" />
     <Compile Include="Core\Data\FoundationData.cs" />
@@ -194,6 +195,7 @@
     <Compile Include="Core\Primitives\Vector3D.cs" />
     <Compile Include="Core\Testing\MockLoadReader.cs" />
     <Compile Include="Core\Utils\AcadUtils.cs" />
+    <Compile Include="Core\Utils\DiameterParser.cs" />
     <Compile Include="Core\Utils\ExcelReportGenerator.cs" />
     <Compile Include="Core\Utils\LabelPlotter.cs" />
     <Compile Include="Core\Utils\LabelUtils.cs" />

@@ -2,6 +2,7 @@
 using System.Drawing;
 using System.IO;
 using System.Reflection;
+using System.Text;
 using System.Windows.Forms;
 using Microsoft.Web.WebView2.Core;
 using Microsoft.Web.WebView2.WinForms;
@@ -11,18 +12,23 @@ using DTS_Engine.Core.Data;
 namespace DTS_Engine.UI.Forms
 {
     /// <summary>
-    /// Cửa sổ cấu hình thông số cốt thép (Modern UI - 2 Tabs)
-    /// HTML được load từ Embedded Resource để tách biệt View khỏi Logic (MVC)
+    /// Cửa sổ cấu hình thông số cốt thép (Modern UI - 4 Tabs)
+    /// Sử dụng DtsSettings phân cấp: General, Beam, Column, Naming
+    /// HTML được load từ Embedded Resource
     /// </summary>
     public class RebarConfigDialog : Form
     {
         private WebView2 _webView;
-        private RebarSettings _settings;
+        private DtsSettings _settings;
         private bool _isInitialized = false;
+
+        // Obfuscation key for .dtss files
+        private const string OBFUSCATION_KEY = "dtsst";
+        private const string FILE_SIGNATURE = "DTSS_REBAR_V1";
 
         public RebarConfigDialog()
         {
-            _settings = RebarSettings.Instance;
+            _settings = DtsSettings.Instance;
             InitializeComponent();
             this.Shown += RebarConfigDialog_Shown;
         }
@@ -30,7 +36,7 @@ namespace DTS_Engine.UI.Forms
         private void InitializeComponent()
         {
             this.Text = "DTS Engine | Cấu hình Cốt thép";
-            this.Size = new Size(620, 620);
+            this.Size = new Size(680, 680);
             this.StartPosition = FormStartPosition.CenterScreen;
             this.FormBorderStyle = FormBorderStyle.FixedDialog;
             this.MaximizeBox = false;
@@ -83,7 +89,6 @@ namespace DTS_Engine.UI.Forms
         /// </summary>
         private string LoadHtmlFromResource()
         {
-            // Resource name format: [Namespace].[Folder].[FileName]
             string resourceName = "DTS_Engine.UI.Resources.RebarConfig.html";
 
             Assembly assembly = Assembly.GetExecutingAssembly();
@@ -91,7 +96,6 @@ namespace DTS_Engine.UI.Forms
             {
                 if (stream == null)
                 {
-                    // Fallback: list tất cả resource names để debug
                     var names = assembly.GetManifestResourceNames();
                     throw new Exception($"Không tìm thấy resource '{resourceName}'. Available: {string.Join(", ", names)}");
                 }
@@ -100,7 +104,7 @@ namespace DTS_Engine.UI.Forms
                 {
                     string html = reader.ReadToEnd();
 
-                    // Thay thế placeholder bằng JSON settings thực
+                    // Serialize settings ra JSON
                     string settingsJson = JsonConvert.SerializeObject(_settings);
                     html = html.Replace("__SETTINGS_JSON__", settingsJson);
 
@@ -113,28 +117,197 @@ namespace DTS_Engine.UI.Forms
         {
             try
             {
-                string json = e.TryGetWebMessageAsString();
+                string message = e.TryGetWebMessageAsString();
 
-                if (json == "CANCEL")
+                // Handle special commands - invoke on UI thread to prevent crash
+                if (message == "CANCEL")
                 {
-                    this.DialogResult = DialogResult.Cancel;
-                    this.Close();
+                    this.BeginInvoke(new Action(() =>
+                    {
+                        this.DialogResult = DialogResult.Cancel;
+                        this.Close();
+                    }));
                     return;
                 }
 
-                // Deserialize với ObjectCreationHandling.Replace để thay thế Lists hoàn toàn
-                var serSettings = new JsonSerializerSettings
+                if (message == "IMPORT")
                 {
-                    ObjectCreationHandling = ObjectCreationHandling.Replace
-                };
-                JsonConvert.PopulateObject(json, _settings, serSettings);
+                    this.BeginInvoke(new Action(HandleImport));
+                    return;
+                }
 
-                this.DialogResult = DialogResult.OK;
-                this.Close();
+                if (message == "EXPORT")
+                {
+                    this.BeginInvoke(new Action(HandleExport));
+                    return;
+                }
+
+                // Normal save: JSON payload - invoke on UI thread
+                this.BeginInvoke(new Action(() =>
+                {
+                    try
+                    {
+                        var serSettings = new JsonSerializerSettings
+                        {
+                            ObjectCreationHandling = ObjectCreationHandling.Replace
+                        };
+                        JsonConvert.PopulateObject(message, _settings, serSettings);
+
+                        // Save to default file
+                        _settings.Save();
+
+                        this.DialogResult = DialogResult.OK;
+                        this.Close();
+                    }
+                    catch (Exception ex)
+                    {
+                        MessageBox.Show("Lỗi lưu cấu hình: " + ex.Message, "Error", MessageBoxButtons.OK, MessageBoxIcon.Warning);
+                    }
+                }));
             }
             catch (Exception ex)
             {
-                MessageBox.Show("Lỗi lưu cấu hình: " + ex.Message, "Error", MessageBoxButtons.OK, MessageBoxIcon.Warning);
+                this.BeginInvoke(new Action(() =>
+                {
+                    MessageBox.Show("Lỗi xử lý: " + ex.Message, "Error", MessageBoxButtons.OK, MessageBoxIcon.Warning);
+                }));
+            }
+        }
+
+        /// <summary>
+        /// Xử lý Import settings từ file .dtss
+        /// </summary>
+        private void HandleImport()
+        {
+            try
+            {
+                using (var ofd = new OpenFileDialog())
+                {
+                    ofd.Title = "Import DTS Settings";
+                    ofd.Filter = "DTS Settings (*.dtss)|*.dtss|All files (*.*)|*.*";
+                    ofd.InitialDirectory = Environment.GetFolderPath(Environment.SpecialFolder.Desktop);
+
+                    if (ofd.ShowDialog(this) == DialogResult.OK)
+                    {
+                        // Đọc và giải mã
+                        string encryptedContent = File.ReadAllText(ofd.FileName, Encoding.UTF8);
+                        string json = DecryptContent(encryptedContent);
+
+                        if (json == null)
+                        {
+                            MessageBox.Show("File không hợp lệ hoặc không phải định dạng .dtss", "Error",
+                                MessageBoxButtons.OK, MessageBoxIcon.Warning);
+                            return;
+                        }
+
+                        // Import và refresh UI
+                        var imported = JsonConvert.DeserializeObject<DtsSettings>(json);
+                        if (imported != null)
+                        {
+                            // Copy values sang instance hiện tại
+                            JsonConvert.PopulateObject(json, _settings, new JsonSerializerSettings
+                            {
+                                ObjectCreationHandling = ObjectCreationHandling.Replace
+                            });
+
+                            // Reload HTML với settings mới
+                            string html = LoadHtmlFromResource();
+                            _webView.NavigateToString(html);
+
+                            MessageBox.Show($"Đã import settings từ:\n{ofd.FileName}", "Import thành công",
+                                MessageBoxButtons.OK, MessageBoxIcon.Information);
+                        }
+                    }
+                }
+            }
+            catch (Exception ex)
+            {
+                MessageBox.Show("Lỗi import: " + ex.Message, "Error", MessageBoxButtons.OK, MessageBoxIcon.Warning);
+            }
+        }
+
+        /// <summary>
+        /// Xử lý Export settings ra file .dtss (có mã hóa nhẹ)
+        /// </summary>
+        private void HandleExport()
+        {
+            try
+            {
+                using (var sfd = new SaveFileDialog())
+                {
+                    sfd.Title = "Export DTS Settings";
+                    sfd.Filter = "DTS Settings (*.dtss)|*.dtss";
+                    sfd.FileName = "RebarConfig.dtss";
+                    sfd.InitialDirectory = Environment.GetFolderPath(Environment.SpecialFolder.Desktop);
+
+                    if (sfd.ShowDialog(this) == DialogResult.OK)
+                    {
+                        // Serialize và mã hóa
+                        string json = JsonConvert.SerializeObject(_settings, Formatting.None);
+                        string encrypted = EncryptContent(json);
+
+                        File.WriteAllText(sfd.FileName, encrypted, Encoding.UTF8);
+
+                        MessageBox.Show($"Đã export settings ra:\n{sfd.FileName}", "Export thành công",
+                            MessageBoxButtons.OK, MessageBoxIcon.Information);
+                    }
+                }
+            }
+            catch (Exception ex)
+            {
+                MessageBox.Show("Lỗi export: " + ex.Message, "Error", MessageBoxButtons.OK, MessageBoxIcon.Warning);
+            }
+        }
+
+        /// <summary>
+        /// Mã hóa nhẹ nội dung JSON (XOR với key + Base64)
+        /// </summary>
+        private string EncryptContent(string plainText)
+        {
+            byte[] data = Encoding.UTF8.GetBytes(plainText);
+            byte[] key = Encoding.UTF8.GetBytes(OBFUSCATION_KEY);
+
+            // XOR với key
+            for (int i = 0; i < data.Length; i++)
+            {
+                data[i] = (byte)(data[i] ^ key[i % key.Length]);
+            }
+
+            // Base64 encode
+            string base64 = Convert.ToBase64String(data);
+
+            // Thêm signature để nhận diện
+            return FILE_SIGNATURE + "|" + base64;
+        }
+
+        /// <summary>
+        /// Giải mã nội dung từ file .dtss
+        /// </summary>
+        private string DecryptContent(string encryptedText)
+        {
+            try
+            {
+                // Kiểm tra signature
+                if (!encryptedText.StartsWith(FILE_SIGNATURE + "|"))
+                    return null;
+
+                string base64 = encryptedText.Substring(FILE_SIGNATURE.Length + 1);
+
+                // Base64 decode
+                byte[] data = Convert.FromBase64String(base64);
+                byte[] key = Encoding.UTF8.GetBytes(OBFUSCATION_KEY);
+
+                // XOR với key (reverse)
+                for (int i = 0; i < data.Length; i++)
+                {
+                    data[i] = (byte)(data[i] ^ key[i % key.Length]);
+                }
+
+                return Encoding.UTF8.GetString(data);
+            }
+            catch
+            {
+                return null;
             }
         }
     }

@@ -1,4 +1,5 @@
 ﻿using DTS_Engine.Core.Data;
+using DTS_Engine.Core.Utils;
 using System;
 using System.Collections.Generic;
 using System.Linq;
@@ -103,15 +104,89 @@ namespace DTS_Engine.Core.Algorithms
             return bestSol;
         }
 
+        /// <summary>
+        /// Tính toán chọn thép sử dụng DtsSettings mới (với range parsing).
+        /// Ưu tiên sử dụng method này cho code mới.
+        /// </summary>
+        public static string Calculate(double areaReq, double b, double h, DtsSettings settings)
+        {
+            if (areaReq <= 0.01) return "-";
+
+            // Parse range từ settings, lọc theo inventory
+            var inventory = settings.General?.AvailableDiameters ?? new List<int> { 16, 18, 20, 22, 25 };
+            var diameters = DiameterParser.ParseRange(settings.Beam?.MainBarRange ?? "16-25", inventory);
+
+            if (diameters.Count == 0) diameters = inventory;
+
+            // Lọc đường kính chẵn nếu user yêu cầu
+            if (settings.Beam?.PreferEvenDiameter == true)
+                diameters = DiameterParser.FilterEvenDiameters(diameters);
+
+            if (diameters.Count == 0) diameters = new List<int> { 16, 18, 20, 22, 25 };
+
+            int maxLayers = settings.Beam?.MaxLayers ?? 2;
+            int minBarsPerLayer = settings.Beam?.MinBarsPerLayer ?? 2;
+
+            string bestSol = "";
+            double minAreaExcess = double.MaxValue;
+
+            foreach (int d in diameters)
+            {
+                double as1 = Math.PI * d * d / 400.0;
+                int nTotal = (int)Math.Ceiling(areaReq / as1);
+                // Sử dụng overload mới với bar diameter-based spacing
+                int nMaxOneLayer = GetMaxBarsPerLayer(b, d, settings);
+
+                string currentSol = "";
+
+                if (nTotal <= nMaxOneLayer)
+                {
+                    if (nTotal < 2) nTotal = 2;
+                    // Ưu tiên số chẵn nếu PreferSymmetric
+                    if (settings.Beam?.PreferSymmetric == true && nTotal % 2 != 0)
+                        nTotal++;
+                    currentSol = $"{nTotal}d{d}";
+                }
+                else
+                {
+                    int nL1 = nMaxOneLayer;
+                    int nL2 = nTotal - nL1;
+                    if (nL2 < 2) nL2 = 2;
+                    nTotal = nL1 + nL2;
+                    currentSol = $"{nL1}d{d} + {nL2}d{d}";
+                }
+
+                double areaProv = nTotal * as1;
+                double excess = areaProv - areaReq;
+
+                if (excess >= 0 && excess < minAreaExcess)
+                {
+                    minAreaExcess = excess;
+                    bestSol = currentSol;
+                }
+            }
+
+            if (string.IsNullOrEmpty(bestSol))
+            {
+                int dMax = diameters.Max();
+                double as1 = Math.PI * dMax * dMax / 400.0;
+                int n = (int)Math.Ceiling(areaReq / as1);
+                if (n < 2) n = 2;
+                bestSol = $"{n}d{dMax}*";
+            }
+
+            return bestSol;
+        }
+
+        /// <summary>
+        /// Tính số thanh tối đa trong 1 lớp (phiên bản cơ bản với spacing cố định)
+        /// </summary>
         private static int GetMaxBarsPerLayer(double b, double cover, int d, double minSpacing)
         {
-            // b: width (mm)
-            // cover: (mm)
-            // d: (mm)
-            // space: (mm)
-
-            // Valid width = b - 2*cover - 2*stirrup (assume 10mm stirrup)
-            double workingWidth = b - 2 * cover - 2 * 10;
+            // b: width (mm), cover: (mm), d: bar diameter (mm), minSpacing: (mm)
+            // Valid width = b - 2*cover - 2*stirrup (assume 10mm stirrup) - 2*d (biên 2 thanh)
+            double stirrupDia = 10;
+            double workingWidth = b - 2 * cover - 2 * stirrupDia;
 
             // n * d + (n-1)*s <= workingWidth
             // n(d+s) - s <= workingWidth
@@ -121,6 +196,43 @@ namespace DTS_Engine.Core.Algorithms
             double val = (workingWidth + minSpacing) / (d + minSpacing);
             int n = (int)Math.Floor(val);
             return n < 2 ? 2 : n; // Min 2 bars usually
+        }
+
+        /// <summary>
+        /// Tính số thanh tối đa trong 1 lớp với DtsSettings (hỗ trợ bar diameter-based spacing)
+        /// </summary>
+        private static int GetMaxBarsPerLayer(double b, int d, DtsSettings settings)
+        {
+            double cover = settings.Beam?.CoverSide ?? 25;
+            double stirrupDia = 10;
+
+            // Working width = b - 2*cover - 2*stirrup
+            double workingWidth = b - 2 * cover - 2 * stirrupDia;
+
+            // Tính min spacing
+            double minSpacing;
+            if (settings.Beam?.UseBarDiameterForSpacing == true)
+            {
+                // Spacing >= N x bar diameter (theo tiêu chuẩn)
+                double multiplier = settings.Beam?.BarDiameterSpacingMultiplier ?? 1.0;
+                minSpacing = multiplier * d;
+
+                // Nhưng không được nhỏ hơn MinClearSpacing cố định
+                int fixedMin = settings.Beam?.MinClearSpacing ?? 30;
+                if (minSpacing < fixedMin) minSpacing = fixedMin;
+            }
+            else
+            {
+                // Dùng spacing cố định
+                minSpacing = settings.Beam?.MinClearSpacing ?? 30;
+            }
+
+            // n * d + (n-1)*s <= workingWidth
+            double val = (workingWidth + minSpacing) / (d + minSpacing);
+            int n = (int)Math.Floor(val);
+
+            int minBars = settings.Beam?.MinBarsPerLayer ?? 2;
+            return n < minBars ? minBars : n;
         }
 
         /// <summary>
@@ -182,8 +294,8 @@ namespace DTS_Engine.Core.Algorithms
         public static string CalculateStirrup(double shearArea, double ttArea, double beamWidthMm, RebarSettings settings)
         {
             // ACI/TCVN: Tổng diện tích đai trên đơn vị dài = Av/s + 2 * At/s
-            double totalAreaPerLen = shearArea + 2 * ttArea; 
-            
+            double totalAreaPerLen = shearArea + 2 * ttArea;
+
             if (totalAreaPerLen <= 0.001) return "-";
 
             // Lấy danh sách đường kính đai (ưu tiên nhỏ trước để tiết kiệm)
@@ -205,11 +317,11 @@ namespace DTS_Engine.Core.Algorithms
             if (baseLegs - 1 >= 2) legOptions.Insert(0, baseLegs - 1);
             legOptions.Add(baseLegs + 1);
             legOptions.Add(baseLegs + 2);
-            
+
             // Lọc bỏ nhánh lẻ nếu không cho phép
             if (!settings.AllowOddLegs)
                 legOptions = legOptions.Where(l => l % 2 == 0).ToList();
-            
+
             if (legOptions.Count == 0)
                 legOptions = new List<int> { 2, 4 };
 
@@ -238,7 +350,7 @@ namespace DTS_Engine.Core.Algorithms
         private static string TryFindSpacing(double totalAreaPerLen, int d, int legs, List<int> spacings, int minSpacingAcceptable)
         {
             double as1Layer = (Math.PI * d * d / 400.0) * legs;
-            
+
             // Tính bước đai max cho phép (mm) = (As_1_layer / Areq_per_cm) * 10
             double maxSpacingReq = (as1Layer / totalAreaPerLen) * 10.0;
 
@@ -273,12 +385,12 @@ namespace DTS_Engine.Core.Algorithms
 
             // b. Theo cấu tạo (Dầm cao >= minHeight)
             bool needConstructive = heightMm >= minHeight;
-            
+
             // Thử từng đường kính để tìm phương án tối ưu
             foreach (int d in diameters.OrderBy(x => x))
             {
                 double as1 = Math.PI * d * d / 400.0;
-                
+
                 int nTorsion = 0;
                 if (reqArea > 0.01)
                     nTorsion = (int)Math.Ceiling(reqArea / as1);
@@ -298,7 +410,7 @@ namespace DTS_Engine.Core.Algorithms
             double asMax = Math.PI * dMax * dMax / 400.0;
             int nMax = reqArea > 0.01 ? (int)Math.Ceiling(reqArea / asMax) : (needConstructive ? 2 : 0);
             if (nMax % 2 != 0) nMax++;
-            
+
             if (nMax == 0) return "-";
             return $"{nMax}d{dMax}";
         }
@@ -341,7 +453,7 @@ namespace DTS_Engine.Core.Algorithms
             // Regex bắt cả số nhánh (Group 1 - Optional)
             // Format: "4-d8a100" hoặc "d8a150"
             var match = System.Text.RegularExpressions.Regex.Match(stirrupStr, @"(?:(\d+)-)?[dD](\d+)[aA](\d+)");
-            
+
             if (match.Success)
             {
                 // 1. Xác định số nhánh
@@ -354,13 +466,13 @@ namespace DTS_Engine.Core.Algorithms
                 // 2. Lấy đường kính và bước
                 int d = int.Parse(match.Groups[2].Value);
                 int spacing = int.Parse(match.Groups[3].Value); // mm
-                
+
                 if (spacing <= 0) return 0;
 
                 double as1 = Math.PI * d * d / 400.0; // cm2 per bar
-                
+
                 // 3. Tính cm2/cm: (nLegs * As1) / (Spacing_cm)
-                double areaPerLen = (nLegs * as1) / (spacing / 10.0); 
+                double areaPerLen = (nLegs * as1) / (spacing / 10.0);
                 return areaPerLen;
             }
             return 0;
