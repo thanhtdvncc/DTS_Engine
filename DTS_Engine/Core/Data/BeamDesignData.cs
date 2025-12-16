@@ -328,6 +328,7 @@ namespace DTS_Engine.Core.Data
         // ===== 3. COVER =====
         public double CoverTop { get; set; } = 35.0; // mm
         public double CoverBot { get; set; } = 35.0; // mm
+        public double CoverSide { get; set; } = 25.0; // mm (2 bên hông)
 
         // ===== 4. LONGITUDINAL REBAR =====
         public List<int> PreferredDiameters { get; set; } = new List<int> { 16, 18, 20, 22, 25 };
@@ -335,12 +336,39 @@ namespace DTS_Engine.Core.Data
         public bool MaxBotRebar { get; set; } = true;
 
         // ===== 5. STIRRUP (Thép đai) =====
-        public int StirrupDiameter { get; set; } = 8;  // mm
-        public int StirrupLegs { get; set; } = 2;       // Số nhánh
+        public List<int> StirrupDiameters { get; set; } = new List<int> { 8, 10 }; // Danh sách đường kính đai
+        public int StirrupDiameter { get; set; } = 8;  // mm (Backward compat)
+        public int StirrupLegs { get; set; } = 2;       // Số nhánh mặc định
         public List<int> StirrupSpacings { get; set; } = new List<int> { 100, 150, 200, 250 };
+        
+        /// <summary>
+        /// Cho phép bố trí nhánh lẻ (3, 5...) cho thép đai.
+        /// </summary>
+        public bool AllowOddLegs { get; set; } = false;
+        
+        /// <summary>
+        /// Tự động tính số nhánh theo bề rộng dầm.
+        /// Nếu false, dùng StirrupLegs cố định.
+        /// </summary>
+        public bool AutoLegsFromWidth { get; set; } = true;
+        
+        /// <summary>
+        /// Chuỗi quy tắc auto legs: "250-2 400-3 600-4 800-5"
+        /// Nghĩa: b<=250→2 nhánh, b<=400→3 nhánh...
+        /// </summary>
+        public string AutoLegsRules { get; set; } = "250-2 400-3 600-4 800-5";
 
         // ===== 6. WEB BARS (Thép sườn/giá) =====
-        public int WebBarDiameter { get; set; } = 12;   // mm
+        public List<int> WebBarDiameters { get; set; } = new List<int> { 12, 14 }; // Danh sách đường kính sườn
+        public int WebBarDiameter { get; set; } = 12;   // mm (Backward compat)
         public double WebBarMinHeight { get; set; } = 700; // mm
+
+        // ===== 7. BEAM NAMING (Đặt tên dầm) =====
+        public string BeamPrefix { get; set; } = "B";
+        public string GirderPrefix { get; set; } = "G";
+        public string BeamSuffix { get; set; } = "";
+        public bool GroupByAxis { get; set; } = true;              // Nhóm theo trục
+        public bool MergeSameSection { get; set; } = true;         // Gộp dầm cùng section & rebar
+        public bool AutoRenameOnSectionChange { get; set; } = false; // Tự động rename khi section đổi
     }
 }

@@ -416,7 +416,8 @@ namespace DTS_Engine.Commands
                         data.BotAreaProv[i] = RebarStringParser.Parse(sBot);
 
                         // === Stirrup (Thép đai) - ACI 318-19: Av/s + 2*At/s ===
-                        string sStirrup = RebarCalculator.CalculateStirrup(data.ShearArea[i], data.TTArea[i], settings);
+                        // beamWidth (mm) = data.Width (cm) * 10
+                        string sStirrup = RebarCalculator.CalculateStirrup(data.ShearArea[i], data.TTArea[i], data.Width * 10, settings);
                         data.StirrupString[i] = sStirrup;
 
                         // === Web Bars (Thép sườn) ===

@@ -124,72 +124,183 @@ namespace DTS_Engine.Core.Algorithms
         }
 
         /// <summary>
+        /// Parse chuỗi quy tắc auto legs (VD: "250-2 400-3 600-4 800-5")
+        /// Trả về list các tuple (maxWidth, legs) đã sắp xếp tăng dần.
+        /// </summary>
+        public static List<(int, int)> ParseAutoLegsRules(string rules)
+        {
+            var result = new List<(int, int)>();
+            if (string.IsNullOrWhiteSpace(rules)) return result;
+
+            var parts = rules.Split(new[] { ' ', ',' }, StringSplitOptions.RemoveEmptyEntries);
+            foreach (var part in parts)
+            {
+                var kv = part.Split('-');
+                if (kv.Length == 2 && int.TryParse(kv[0], out int w) && int.TryParse(kv[1], out int l))
+                {
+                    result.Add((w, l)); // Item1 = maxWidth, Item2 = legs
+                }
+            }
+            return result.OrderBy(x => x.Item1).ToList();
+        }
+
+        /// <summary>
+        /// Tính số nhánh đai tự động dựa trên bề rộng dầm và quy tắc user định nghĩa.
+        /// </summary>
+        public static int GetAutoLegs(double beamWidthMm, RebarSettings settings)
+        {
+            if (!settings.AutoLegsFromWidth)
+                return settings.StirrupLegs > 0 ? settings.StirrupLegs : 2;
+
+            var rules = ParseAutoLegsRules(settings.AutoLegsRules);
+            if (rules.Count == 0)
+            {
+                // Quy tắc mặc định nếu không có
+                if (beamWidthMm <= 250) return 2;
+                if (beamWidthMm <= 400) return 3;
+                if (beamWidthMm <= 600) return 4;
+                return 5;
+            }
+
+            // Tìm quy tắc phù hợp (Item1 = maxWidth, Item2 = legs)
+            foreach (var rule in rules)
+            {
+                if (beamWidthMm <= rule.Item1)
+                    return rule.Item2;
+            }
+            // Nếu bề rộng lớn hơn tất cả, dùng số nhánh lớn nhất
+            return rules.Last().Item2;
+        }
+
+        /// <summary>
         /// Tính toán bước đai từ diện tích cắt và xoắn yêu cầu.
         /// Công thức ACI/TCVN: Atotal/s = Av/s + 2×At/s
+        /// Thuật toán vét cạn: thử từng đường kính × từng số nhánh để tìm phương án tối ưu.
         /// Output: String dạng "2-d8a150" (số nhánh - phi - bước)
         /// </summary>
-        public static string CalculateStirrup(double shearArea, double ttArea, RebarSettings settings)
+        /// <param name="beamWidthMm">Bề rộng dầm (mm) để tính auto legs. Nếu 0 sẽ dùng StirrupLegs.</param>
+        public static string CalculateStirrup(double shearArea, double ttArea, double beamWidthMm, RebarSettings settings)
         {
             // ACI/TCVN: Tổng diện tích đai trên đơn vị dài = Av/s + 2 * At/s
             double totalAreaPerLen = shearArea + 2 * ttArea; 
             
             if (totalAreaPerLen <= 0.001) return "-";
 
-            int d = settings.StirrupDiameter;
-            var spacings = settings.StirrupSpacings;
-            int minSpacing = 100;
+            // Lấy danh sách đường kính đai (ưu tiên nhỏ trước để tiết kiệm)
+            var diameters = settings.StirrupDiameters;
+            if (diameters == null || diameters.Count == 0)
+                diameters = new List<int> { settings.StirrupDiameter > 0 ? settings.StirrupDiameter : 8 };
 
+            var spacings = settings.StirrupSpacings;
             if (spacings == null || spacings.Count == 0)
                 spacings = new List<int> { 100, 150, 200, 250 };
 
-            int nLegs = settings.StirrupLegs; 
-            double as1Layer = (Math.PI * d * d / 400.0) * nLegs;
+            int minSpacingAcceptable = 100;
 
-            // Tính bước đai max (mm)
-            double maxSpacingReq = (as1Layer / totalAreaPerLen) * 10.0;
+            // Tính số nhánh cơ sở từ bề rộng dầm (hoặc dùng fixed nếu AutoLegsFromWidth = false)
+            int baseLegs = GetAutoLegs(beamWidthMm, settings);
 
-            int selectedSpacing = -1;
-            foreach (var s in spacings.OrderByDescending(x => x))
+            // Tạo danh sách phương án: baseLegs ± 1, 2 để tìm tối ưu
+            var legOptions = new List<int> { baseLegs };
+            if (baseLegs - 1 >= 2) legOptions.Insert(0, baseLegs - 1);
+            legOptions.Add(baseLegs + 1);
+            legOptions.Add(baseLegs + 2);
+            
+            // Lọc bỏ nhánh lẻ nếu không cho phép
+            if (!settings.AllowOddLegs)
+                legOptions = legOptions.Where(l => l % 2 == 0).ToList();
+            
+            if (legOptions.Count == 0)
+                legOptions = new List<int> { 2, 4 };
+
+            // Duyệt qua từng đường kính đai (ưu tiên đai nhỏ trước để tiết kiệm)
+            foreach (int d in diameters.OrderBy(x => x))
             {
-                if (s <= maxSpacingReq)
+                // Với mỗi đường kính, thử tăng dần số nhánh
+                foreach (int legs in legOptions)
                 {
-                    selectedSpacing = s;
-                    break;
+                    string res = TryFindSpacing(totalAreaPerLen, d, legs, spacings, minSpacingAcceptable);
+                    if (res != null) return res; // Tìm thấy phương án thỏa mãn đầu tiên
                 }
             }
 
-            // Nếu bước đai tính ra nhỏ hơn minSpacing (100), trả về bước nhỏ nhất + dấu *
-            if (selectedSpacing < minSpacing)
-                return $"{nLegs}-d{d}a{spacings.Min()}*";
+            // Nếu vẫn không được, trả về phương án Max (lấy số nhánh lớn nhất trong list thử)
+            int maxLegs = legOptions.Last();
+            int dMax = diameters.Max();
+            int sMin = spacings.Min();
+            return $"{maxLegs}-d{dMax}a{sMin}*";
+        }
 
-            return $"{nLegs}-d{d}a{selectedSpacing}";
+        /// <summary>
+        /// Helper: Thử tìm bước đai phù hợp cho đường kính và số nhánh cho trước.
+        /// Trả về null nếu không tìm được bước đai >= minSpacingAcceptable.
+        /// </summary>
+        private static string TryFindSpacing(double totalAreaPerLen, int d, int legs, List<int> spacings, int minSpacingAcceptable)
+        {
+            double as1Layer = (Math.PI * d * d / 400.0) * legs;
+            
+            // Tính bước đai max cho phép (mm) = (As_1_layer / Areq_per_cm) * 10
+            double maxSpacingReq = (as1Layer / totalAreaPerLen) * 10.0;
+
+            // Tìm bước đai lớn nhất trong list mà vẫn <= maxSpacingReq
+            foreach (var s in spacings.OrderByDescending(x => x))
+            {
+                if (s <= maxSpacingReq && s >= minSpacingAcceptable)
+                {
+                    return $"{legs}-d{d}a{s}";
+                }
+            }
+
+            return null; // Không tìm được bước phù hợp
         }
 
         /// <summary>
         /// Tính toán cốt giá/sườn (Web bars).
         /// Logic: Envelope(Torsion, Constructive) và làm chẵn.
+        /// Sử dụng danh sách đường kính để tìm phương án tối ưu.
         /// </summary>
         public static string CalculateWebBars(double torsionTotal, double torsionRatioSide, double heightMm, RebarSettings settings)
         {
-            int d = settings.WebBarDiameter;
-            double as1 = Math.PI * d * d / 400.0;
+            // Lấy danh sách đường kính sườn (ưu tiên nhỏ trước)
+            var diameters = settings.WebBarDiameters;
+            if (diameters == null || diameters.Count == 0)
+                diameters = new List<int> { settings.WebBarDiameter > 0 ? settings.WebBarDiameter : 12 };
+
+            double minHeight = settings.WebBarMinHeight > 0 ? settings.WebBarMinHeight : 700;
 
             // a. Theo chịu lực xoắn
             double reqArea = torsionTotal * torsionRatioSide;
-            int nTorsion = 0;
-            if (reqArea > 0.01)
-                nTorsion = (int)Math.Ceiling(reqArea / as1);
 
-            // b. Theo cấu tạo (Dầm cao >= 700mm)
-            int nConstructive = 0;
-            if (heightMm >= 700) nConstructive = 2;
+            // b. Theo cấu tạo (Dầm cao >= minHeight)
+            bool needConstructive = heightMm >= minHeight;
+            
+            // Thử từng đường kính để tìm phương án tối ưu
+            foreach (int d in diameters.OrderBy(x => x))
+            {
+                double as1 = Math.PI * d * d / 400.0;
+                
+                int nTorsion = 0;
+                if (reqArea > 0.01)
+                    nTorsion = (int)Math.Ceiling(reqArea / as1);
 
-            // c. Lấy Max và làm chẵn
-            int nFinal = Math.Max(nTorsion, nConstructive);
-            if (nFinal % 2 != 0) nFinal++;
+                int nConstructive = needConstructive ? 2 : 0;
 
-            if (nFinal == 0) return "-";
-            return $"{nFinal}d{d}";
+                // Lấy Max và làm chẵn
+                int nFinal = Math.Max(nTorsion, nConstructive);
+                if (nFinal > 0 && nFinal % 2 != 0) nFinal++;
+
+                if (nFinal > 0 && nFinal <= 6) // Giới hạn hợp lý
+                    return $"{nFinal}d{d}";
+            }
+
+            // Fallback: dùng đường kính lớn nhất
+            int dMax = diameters.Max();
+            double asMax = Math.PI * dMax * dMax / 400.0;
+            int nMax = reqArea > 0.01 ? (int)Math.Ceiling(reqArea / asMax) : (needConstructive ? 2 : 0);
+            if (nMax % 2 != 0) nMax++;
+            
+            if (nMax == 0) return "-";
+            return $"{nMax}d{dMax}";
         }
 
         /// <summary>
