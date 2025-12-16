@@ -223,6 +223,9 @@
     <None Include="packages.config" />
   </ItemGroup>
   <ItemGroup>
+    <EmbeddedResource Include="UI\Resources\RebarConfig.html" />
+  </ItemGroup>
+  <ItemGroup>
     <Folder Include="Docs\" />
   </ItemGroup>
   <Import Project="$(MSBuildToolsPath)\Microsoft.CSharp.targets" />

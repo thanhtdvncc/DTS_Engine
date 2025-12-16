@@ -52,7 +52,7 @@ namespace DTS_Engine.Core.Data
 
         // ===== Raw Data từ SAP (cm2) =====
         // Array[3]: 0=Start, 1=Mid, 2=End
-        
+
         public double[] TopArea { get; set; } = new double[3];
         public double[] BotArea { get; set; } = new double[3];
 
@@ -60,13 +60,13 @@ namespace DTS_Engine.Core.Data
         /// TLArea: Total Longitudinal Rebar Area for Torsion [L2] (cm2)
         /// Tổng diện tích cốt dọc chịu xoắn (Al). Cần phân bổ vào Top/Bot/Side.
         /// </summary>
-        public double[] TorsionArea { get; set; } = new double[3]; 
+        public double[] TorsionArea { get; set; } = new double[3];
 
         /// <summary>
         /// VmajorArea: Transverse Shear Reinforcing per Unit Length [L2/L] (cm2/cm)
         /// Diện tích đai cắt trên 1 đơn vị dài (Av/s).
         /// </summary>
-        public double[] ShearArea { get; set; } = new double[3]; 
+        public double[] ShearArea { get; set; } = new double[3];
 
         /// <summary>
         /// TTArea: Transverse Torsional Shear Reinforcing per Unit Length [L2/L] (cm2/cm)
@@ -340,18 +340,18 @@ namespace DTS_Engine.Core.Data
         public int StirrupDiameter { get; set; } = 8;  // mm (Backward compat)
         public int StirrupLegs { get; set; } = 2;       // Số nhánh mặc định
         public List<int> StirrupSpacings { get; set; } = new List<int> { 100, 150, 200, 250 };
-        
+
         /// <summary>
         /// Cho phép bố trí nhánh lẻ (3, 5...) cho thép đai.
         /// </summary>
         public bool AllowOddLegs { get; set; } = false;
-        
+
         /// <summary>
         /// Tự động tính số nhánh theo bề rộng dầm.
         /// Nếu false, dùng StirrupLegs cố định.
         /// </summary>
         public bool AutoLegsFromWidth { get; set; } = true;
-        
+
         /// <summary>
         /// Chuỗi quy tắc auto legs: "250-2 400-3 600-4 800-5"
         /// Nghĩa: b<=250→2 nhánh, b<=400→3 nhánh...
@@ -370,5 +370,15 @@ namespace DTS_Engine.Core.Data
         public bool GroupByAxis { get; set; } = true;              // Nhóm theo trục
         public bool MergeSameSection { get; set; } = true;         // Gộp dầm cùng section & rebar
         public bool AutoRenameOnSectionChange { get; set; } = false; // Tự động rename khi section đổi
+
+        /// <summary>
+        /// Góc bắt đầu quét dầm: 0=Top-Left, 1=Top-Right, 2=Bot-Left, 3=Bot-Right
+        /// </summary>
+        public int SortCorner { get; set; } = 0;
+
+        /// <summary>
+        /// Hướng ưu tiên quét: 0=Horizontal (quét X trước), 1=Vertical (quét Y trước)
+        /// </summary>
+        public int SortDirection { get; set; } = 0;
     }
 }

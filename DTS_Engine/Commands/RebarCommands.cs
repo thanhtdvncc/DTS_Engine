@@ -160,18 +160,18 @@ namespace DTS_Engine.Commands
                         try
                         {
                             designData.TorsionFactorUsed = settings.TorsionFactorTop;
-                            
+
                             // Store mapping info for future use
                             designData.SapElementName = sapName;
                             designData.MappingSource = mappingSources.TryGetValue(cadId, out var src) ? src : "XData";
-                            
+
                             // Validate ObjectId before accessing
                             if (!cadId.IsValid || cadId.IsErased)
                             {
                                 WriteMessage($" -> ObjectId không hợp lệ: {sapName}");
                                 continue;
                             }
-                            
+
                             // Step 1: Get object
                             DBObject obj = null;
                             try
@@ -201,79 +201,79 @@ namespace DTS_Engine.Commands
                             string[] displayTopStr = new string[3];
                             string[] displayBotStr = new string[3];
 
-                        try
-                        {
-                            // Validate arrays before access
-                            if (designData.TopArea == null || designData.BotArea == null || 
-                                designData.TorsionArea == null || designData.ShearArea == null ||
-                                designData.TTArea == null)
+                            try
                             {
-                                WriteMessage($" -> Lỗi {sapName}: Dữ liệu thiết kế không đầy đủ (null arrays)");
-                                continue;
-                            }
-
-                            for (int i = 0; i < 3; i++)
-                            {
-                                switch (displayMode)
+                                // Validate arrays before access
+                                if (designData.TopArea == null || designData.BotArea == null ||
+                                    designData.TorsionArea == null || designData.ShearArea == null ||
+                                    designData.TTArea == null)
                                 {
-                                    case 0: // Combined (Flex + Torsion phân bổ)
-                                        displayTop[i] = designData.TopArea[i] + designData.TorsionArea[i] * settings.TorsionRatioTop;
-                                        displayBot[i] = designData.BotArea[i] + designData.TorsionArea[i] * settings.TorsionRatioBot;
-                                        displayTopStr[i] = FormatValue(displayTop[i]);
-                                        displayBotStr[i] = FormatValue(displayBot[i]);
-                                        break;
-                                    case 1: // Flex only (Thép dọc chịu uốn thuần)
-                                        displayTopStr[i] = FormatValue(designData.TopArea[i]);
-                                        displayBotStr[i] = FormatValue(designData.BotArea[i]);
-                                        break;
-                                    case 2: // Torsion (Top=At/s, Bot=Al)
-                                        // Top: TTArea = At/s (Đai xoắn trên đơn vị dài)
-                                        // Bot: TorsionArea = Al (Tổng thép dọc xoắn)
-                                        displayTopStr[i] = FormatValue(designData.TTArea[i]);
-                                        displayBotStr[i] = FormatValue(designData.TorsionArea[i]);
-                                        break;
-                                    case 3: // Shear & Web (Top=Av/s, Bot=Al×SideRatio)
-                                        // Top: ShearArea = Av/s (Đai cắt trên đơn vị dài)
-                                        // Bot: TorsionArea × SideRatio = Thép dọc xoắn phân bổ cho sườn
-                                        displayTopStr[i] = FormatValue(designData.ShearArea[i]);
-                                        displayBotStr[i] = FormatValue(designData.TorsionArea[i] * settings.TorsionRatioSide);
-                                        break;
+                                    WriteMessage($" -> Lỗi {sapName}: Dữ liệu thiết kế không đầy đủ (null arrays)");
+                                    continue;
+                                }
+
+                                for (int i = 0; i < 3; i++)
+                                {
+                                    switch (displayMode)
+                                    {
+                                        case 0: // Combined (Flex + Torsion phân bổ)
+                                            displayTop[i] = designData.TopArea[i] + designData.TorsionArea[i] * settings.TorsionRatioTop;
+                                            displayBot[i] = designData.BotArea[i] + designData.TorsionArea[i] * settings.TorsionRatioBot;
+                                            displayTopStr[i] = FormatValue(displayTop[i]);
+                                            displayBotStr[i] = FormatValue(displayBot[i]);
+                                            break;
+                                        case 1: // Flex only (Thép dọc chịu uốn thuần)
+                                            displayTopStr[i] = FormatValue(designData.TopArea[i]);
+                                            displayBotStr[i] = FormatValue(designData.BotArea[i]);
+                                            break;
+                                        case 2: // Torsion (Top=At/s, Bot=Al)
+                                                // Top: TTArea = At/s (Đai xoắn trên đơn vị dài)
+                                                // Bot: TorsionArea = Al (Tổng thép dọc xoắn)
+                                            displayTopStr[i] = FormatValue(designData.TTArea[i]);
+                                            displayBotStr[i] = FormatValue(designData.TorsionArea[i]);
+                                            break;
+                                        case 3: // Shear & Web (Top=Av/s, Bot=Al×SideRatio)
+                                                // Top: ShearArea = Av/s (Đai cắt trên đơn vị dài)
+                                                // Bot: TorsionArea × SideRatio = Thép dọc xoắn phân bổ cho sườn
+                                            displayTopStr[i] = FormatValue(designData.ShearArea[i]);
+                                            displayBotStr[i] = FormatValue(designData.TorsionArea[i] * settings.TorsionRatioSide);
+                                            break;
+                                    }
                                 }
                             }
-                        }
-                        catch (System.Exception exCalc)
-                        {
-                            WriteMessage($" -> Lỗi tính toán {sapName}: {exCalc.Message}");
-                            continue;
-                        }
-
-                        // Plot Labels - 6 positions (Start/Mid/End x Top/Bot)
-                        try
-                        {
-                            var curve = obj as Curve;
-                            if (curve == null)
+                            catch (System.Exception exCalc)
                             {
-                                WriteMessage($" -> Lỗi {sapName}: Object không phải Curve");
+                                WriteMessage($" -> Lỗi tính toán {sapName}: {exCalc.Message}");
                                 continue;
                             }
-                            Point3d pStart = curve.StartPoint;
-                            Point3d pEnd = curve.EndPoint;
 
-                            for (int i = 0; i < 3; i++)
+                            // Plot Labels - 6 positions (Start/Mid/End x Top/Bot)
+                            try
                             {
-                                // Plot with owner handle
-                                string ownerH = obj.Handle.ToString();
-                                LabelPlotter.PlotRebarLabel(btr, tr, pStart, pEnd, displayTopStr[i], i, true, ownerH);
-                                LabelPlotter.PlotRebarLabel(btr, tr, pStart, pEnd, displayBotStr[i], i, false, ownerH);
-                            }
-                        }
-                        catch (System.Exception exPlot)
-                        {
-                            WriteMessage($" -> Lỗi vẽ label {sapName}: {exPlot.Message}");
-                            continue;
-                        }
+                                var curve = obj as Curve;
+                                if (curve == null)
+                                {
+                                    WriteMessage($" -> Lỗi {sapName}: Object không phải Curve");
+                                    continue;
+                                }
+                                Point3d pStart = curve.StartPoint;
+                                Point3d pEnd = curve.EndPoint;
 
-                        successCount++;
+                                for (int i = 0; i < 3; i++)
+                                {
+                                    // Plot with owner handle
+                                    string ownerH = obj.Handle.ToString();
+                                    LabelPlotter.PlotRebarLabel(btr, tr, pStart, pEnd, displayTopStr[i], i, true, ownerH);
+                                    LabelPlotter.PlotRebarLabel(btr, tr, pStart, pEnd, displayBotStr[i], i, false, ownerH);
+                                }
+                            }
+                            catch (System.Exception exPlot)
+                            {
+                                WriteMessage($" -> Lỗi vẽ label {sapName}: {exPlot.Message}");
+                                continue;
+                            }
+
+                            successCount++;
                         }
                         catch (System.Exception ex)
                         {
@@ -334,18 +334,18 @@ namespace DTS_Engine.Commands
         private string FormatValue(double val)
         {
             if (Math.Abs(val) < 0.0001) return "0";
-            
+
             if (Math.Abs(val) < 1.0)
             {
                 // Hiển thị dạng 0.067 (cho Shear Area/cm, TTArea)
-                return val.ToString("F3", System.Globalization.CultureInfo.InvariantCulture); 
+                return val.ToString("F3", System.Globalization.CultureInfo.InvariantCulture);
             }
             else
             {
                 // Hiển thị dạng 2.1, 15 (cho Longitudinal Area)
                 double ceiling = Math.Ceiling(val * 10) / 10.0;
-                return (ceiling % 1 == 0) 
-                    ? ceiling.ToString("F0", System.Globalization.CultureInfo.InvariantCulture) 
+                return (ceiling % 1 == 0)
+                    ? ceiling.ToString("F0", System.Globalization.CultureInfo.InvariantCulture)
                     : ceiling.ToString("F1", System.Globalization.CultureInfo.InvariantCulture);
             }
         }
@@ -357,7 +357,7 @@ namespace DTS_Engine.Commands
             {
                 // Sử dụng RebarConfigDialog với WebView2 Modern UI
                 var dialog = new DTS_Engine.UI.Forms.RebarConfigDialog();
-                
+
                 // ShowModalDialog giúp khóa CAD lại cho đến khi tắt form
                 Autodesk.AutoCAD.ApplicationServices.Application.ShowModalDialog(dialog);
             }
@@ -473,15 +473,14 @@ namespace DTS_Engine.Commands
         [CommandMethod("DTS_REBAR_BEAM_NAME")]
         public void DTS_REBAR_BEAM_NAME()
         {
-            WriteMessage("=== REBAR: ĐẶT TÊN DẦM TỰ ĐỘNG ===");
-
-            WriteMessage("=== REBAR: ĐẶT TÊN DẦM TỰ ĐỘNG ===");
+            WriteMessage("=== SMART BEAM NAMING ===");
             WriteMessage("\nChọn các đường Dầm cần đặt tên: ");
             var selectedIds = AcadUtils.SelectObjectsOnScreen("LINE,LWPOLYLINE,POLYLINE");
             if (selectedIds.Count == 0) return;
 
-            // Lấy thông tin lưới trục từ bản vẽ
-            // Đơn giản hóa: Lấy tất cả các đường trên layer "dts_grid" hoặc "GRID"
+            var settings = RebarSettings.Instance;
+
+            // Lấy thông tin lưới trục 
             List<Point3d> gridIntersections = new List<Point3d>();
             List<Curve> gridLines = new List<Curve>();
 
@@ -495,19 +494,15 @@ namespace DTS_Engine.Commands
                     {
                         string layer = (obj as Entity)?.Layer ?? "";
                         if (layer.ToUpper().Contains("GRID") || layer.ToUpper().Contains("AXIS"))
-                        {
                             gridLines.Add(crv);
-                        }
                     }
                 }
 
-                // Tìm các giao điểm lưới
                 for (int i = 0; i < gridLines.Count; i++)
                 {
                     for (int j = i + 1; j < gridLines.Count; j++)
                     {
                         var pts = new Point3dCollection();
-                        // Dùng ExtendBoth để phòng đường Grid vẽ chưa chạm nhau
                         gridLines[i].IntersectWith(gridLines[j], Intersect.ExtendBoth, pts, IntPtr.Zero, IntPtr.Zero);
                         foreach (Point3d p in pts)
                         {
@@ -520,64 +515,141 @@ namespace DTS_Engine.Commands
 
             WriteMessage($"Tìm thấy {gridIntersections.Count} giao điểm lưới trục.");
 
-            // Phân loại Girder (trên lưới) / Beam (ngoài lưới)
-            // Sort theo Y rồi X
-            int girderCount = 1;
-            int beamCount = 1;
-            int currentStory = 1; // Có thể lấy từ Layer hoặc User Input
+            // Thu thập dữ liệu dầm
+            var beamsData = new List<(ObjectId Id, Point3d Mid, bool IsGirder, bool IsXDir, string GroupKey,
+                                      double Width, double Height, string TopRebar, string BotRebar, string Stirrup)>();
 
             UsingTransaction(tr =>
             {
-                // Sort beams by Y then X (based on midpoint)
-                var beamsData = new List<(ObjectId Id, Point3d Mid, bool IsGirder)>();
-
                 foreach (ObjectId id in selectedIds)
                 {
                     var curve = tr.GetObject(id, OpenMode.ForRead) as Curve;
                     if (curve == null) continue;
 
                     Point3d mid = curve.StartPoint + (curve.EndPoint - curve.StartPoint) * 0.5;
+                    Vector3d dir = curve.EndPoint - curve.StartPoint;
+                    bool isXDir = Math.Abs(dir.X) > Math.Abs(dir.Y);
 
-                    // Check if Start or End is on Grid Intersection
                     bool onGridStart = gridIntersections.Any(g => g.DistanceTo(curve.StartPoint) < 200);
                     bool onGridEnd = gridIntersections.Any(g => g.DistanceTo(curve.EndPoint) < 200);
+                    bool isGirder = onGridStart && onGridEnd;
 
-                    bool isGirder = onGridStart && onGridEnd; // Both ends on grid -> Girder
+                    // Đọc XData để lấy rebar strings
+                    var xdata = XDataUtils.ReadElementData(curve) as BeamResultData;
+                    string topRebar = "-", botRebar = "-", stirrup = "-";
+                    double width = 0, height = 0;
 
-                    beamsData.Add((id, mid, isGirder));
-                }
+                    if (xdata != null)
+                    {
+                        topRebar = (xdata.TopRebarString != null && xdata.TopRebarString.Length > 1) ? xdata.TopRebarString[1] ?? "-" : "-";
+                        botRebar = (xdata.BotRebarString != null && xdata.BotRebarString.Length > 1) ? xdata.BotRebarString[1] ?? "-" : "-";
+                        stirrup = (xdata.StirrupString != null && xdata.StirrupString.Length > 1) ? xdata.StirrupString[1] ?? "-" : "-";
+                        width = xdata.Width;
+                        height = xdata.SectionHeight;
+                    }
 
-                // Sort: Girders first, then by Y (descending = từ trên xuống), then X
-                var sortedBeams = beamsData
-                    .OrderByDescending(b => b.IsGirder)
-                    .ThenByDescending(b => Math.Round(b.Mid.Y / 500) * 500) // Round to 500mm grid for grouping
-                    .ThenBy(b => b.Mid.X)
-                    .ToList();
+                    // GroupKey = [IsGirder]_[Dir]_[WxH]_[Top]_[Bot]_[Stirrup]
+                    string groupKey = $"{(isGirder ? "G" : "B")}_{(isXDir ? "X" : "Y")}_{width:F0}x{height:F0}_{topRebar}_{botRebar}_{stirrup}";
 
-                var btr = tr.GetObject(AcadUtils.Db.CurrentSpaceId, OpenMode.ForWrite) as BlockTableRecord;
-
-                foreach (var beam in sortedBeams)
-                {
-                    var curve = tr.GetObject(beam.Id, OpenMode.ForWrite) as Curve;
-                    if (curve == null) continue;
-
-                    string prefix = beam.IsGirder ? "G" : "B";
-                    int number = beam.IsGirder ? girderCount++ : beamCount++;
-
-                    string beamName = $"{currentStory}{prefix}{number}";
-
-                    // Plot Name Label at Mid
-                    Point3d pStart = curve.StartPoint;
-                    Point3d pEnd = curve.EndPoint;
-                    LabelPlotter.PlotLabel(btr, tr, pStart, pEnd, beamName, LabelPosition.MiddleBottom);
-
-                    // Store Name in XData? 
-                    // Update existing BeamResultData or write new?
-                    // For now, just plot label. Phase 4 will use label text or XData.
+                    beamsData.Add((id, mid, isGirder, isXDir, groupKey, width, height, topRebar, botRebar, stirrup));
                 }
             });
 
-            WriteSuccess($"Đã đặt tên cho {selectedIds.Count} dầm ({girderCount - 1} Girder, {beamCount - 1} Beam).");
+            // Gom nhóm theo GroupKey
+            var groups = beamsData.GroupBy(b => b.GroupKey).ToList();
+            WriteMessage($"Gom được {groups.Count} nhóm dầm.");
+
+            // Xác định "dầm đại diện" cho mỗi nhóm (theo góc bắt đầu)
+            // SortCorner: 0=TL, 1=TR, 2=BL, 3=BR
+            // SortDirection: 0=Horizontal (X first), 1=Vertical (Y first)
+            bool sortYDesc = settings.SortCorner <= 1; // Top = Y lớn trước
+            bool sortXDesc = settings.SortCorner == 1 || settings.SortCorner == 3; // Right = X lớn trước
+            bool priorityX = settings.SortDirection == 0;
+
+            Func<Point3d, Point3d, int> comparePoints = (a, b) =>
+            {
+                double tolerance = 500; // tolerance để nhóm thành hàng/cột
+
+                if (priorityX)
+                {
+                    // Horizontal: so sánh Y trước (để phân hàng), nếu cùng hàng thì so sánh X
+                    double yA = Math.Round(a.Y / tolerance);
+                    double yB = Math.Round(b.Y / tolerance);
+                    if (Math.Abs(yA - yB) > 0.1)
+                        return sortYDesc ? -yA.CompareTo(yB) : yA.CompareTo(yB);
+                    return sortXDesc ? -a.X.CompareTo(b.X) : a.X.CompareTo(b.X);
+                }
+                else
+                {
+                    // Vertical: so sánh X trước (để phân cột), nếu cùng cột thì so sánh Y
+                    double xA = Math.Round(a.X / tolerance);
+                    double xB = Math.Round(b.X / tolerance);
+                    if (Math.Abs(xA - xB) > 0.1)
+                        return sortXDesc ? -xA.CompareTo(xB) : xA.CompareTo(xB);
+                    return sortYDesc ? -a.Y.CompareTo(b.Y) : a.Y.CompareTo(b.Y);
+                }
+            };
+
+            // Sắp xếp nhóm theo dầm đại diện (dầm có tọa độ ưu tiên nhất trong nhóm)
+            var sortedGroups = groups
+                .Select(g => new
+                {
+                    Group = g,
+                    Representative = g.OrderBy(b => 0, Comparer<int>.Create((_, __) => 0))
+                                      .First() // Tìm dầm đứng "đầu tiên" theo thứ tự sort
+                })
+                .OrderBy(x => x.Group.First().IsGirder ? 0 : 1) // Girder trước Beam
+                .ThenBy(x => 0, Comparer<int>.Create((_, __) => 0))
+                .ToList();
+
+            // Re-sort groups properly using the representative
+            sortedGroups = groups
+                .Select(g =>
+                {
+                    var sorted = g.ToList();
+                    sorted.Sort((a, b) => comparePoints(a.Mid, b.Mid));
+                    return new { Group = g, Rep = sorted.First().Mid, IsGirder = g.First().IsGirder };
+                })
+                .OrderBy(x => x.IsGirder ? 0 : 1)
+                .ThenBy(x => x.Rep, Comparer<Point3d>.Create((a, b) => comparePoints(a, b)))
+                .Select(x => new { Group = x.Group, Representative = x.Group.First() })
+                .ToList();
+
+            // Đặt tên
+            int girderCount = 1, beamCount = 1;
+            string girderPrefix = settings.GirderPrefix ?? "G";
+            string beamPrefix = settings.BeamPrefix ?? "B";
+            string suffix = settings.BeamSuffix ?? "";
+
+            UsingTransaction(tr =>
+            {
+                var btr = tr.GetObject(AcadUtils.Db.CurrentSpaceId, OpenMode.ForWrite) as BlockTableRecord;
+
+                foreach (var group in sortedGroups)
+                {
+                    bool isGirder = group.Group.First().IsGirder;
+                    string prefix = isGirder ? girderPrefix : beamPrefix;
+                    int number = isGirder ? girderCount++ : beamCount++;
+                    string beamName = $"{prefix}{number}{suffix}";
+
+                    // Sort beams within group theo thứ tự
+                    var sortedMembers = group.Group.ToList();
+                    sortedMembers.Sort((a, b) => comparePoints(a.Mid, b.Mid));
+
+                    foreach (var beam in sortedMembers)
+                    {
+                        var curve = tr.GetObject(beam.Id, OpenMode.ForWrite) as Curve;
+                        if (curve == null) continue;
+
+                        Point3d pStart = curve.StartPoint;
+                        Point3d pEnd = curve.EndPoint;
+                        LabelPlotter.PlotLabel(btr, tr, pStart, pEnd, beamName, LabelPosition.MiddleBottom);
+                    }
+                }
+            });
+
+            WriteSuccess($"Đã đặt tên: {girderCount - 1} Girder ({girderPrefix}), {beamCount - 1} Beam ({beamPrefix}).");
+            WriteMessage($"Quy tắc: Corner={settings.SortCorner}, Direction={(settings.SortDirection == 0 ? "Horizontal" : "Vertical")}");
         }
 
         [CommandMethod("DTS_REBAR_UPDATE")]
