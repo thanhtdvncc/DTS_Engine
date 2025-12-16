@@ -1309,7 +1309,7 @@ namespace DTS_Engine.Commands
 
         /// <summary>
         /// Query hỗ trợ (Column, Wall) từ database dựa trên khu vực dầm.
-        /// Tìm các entity có XData type = COLUMN hoặc WALL gần dải dầm.
+        /// OPTIMIZED: Dùng SelectCrossingWindow + XData filter thay vì duyệt toàn bộ ModelSpace.
         /// </summary>
         private List<SupportEntity> QuerySupportsFromDrawing(List<Core.Algorithms.BeamData> beams)
         {
@@ -1318,8 +1318,9 @@ namespace DTS_Engine.Commands
             if (doc == null || beams == null || beams.Count == 0) return supports;
 
             var db = doc.Database;
+            var ed = doc.Editor;
 
-            // Tính bounding box của chain để giới hạn tìm kiếm
+            // Tính bounding box của chain + buffer
             double minX = beams.Min(b => Math.Min(b.StartX, b.EndX)) - 1000;
             double maxX = beams.Max(b => Math.Max(b.StartX, b.EndX)) + 1000;
             double minY = beams.Min(b => Math.Min(b.StartY, b.EndY)) - 1000;
@@ -1327,12 +1328,24 @@ namespace DTS_Engine.Commands
 
             try
             {
+                // SelectionFilter: chỉ lấy entity có XData của DTS_APP
+                var filter = new SelectionFilter(new TypedValue[]
+                {
+                    new TypedValue((int)DxfCode.Start, "*"), // Mọi entity type
+                    new TypedValue((int)DxfCode.ExtendedDataRegAppName, "DTS_APP") // Có XData DTS_APP
+                });
+
+                // SelectCrossingWindow trong bounding box - NHANH hơn duyệt toàn bộ
+                var pt1 = new Point3d(minX, minY, 0);
+                var pt2 = new Point3d(maxX, maxY, 0);
+                var result = ed.SelectCrossingWindow(pt1, pt2, filter);
+
+                if (result.Status != PromptStatus.OK || result.Value == null)
+                    return supports;
+
                 using (var tr = db.TransactionManager.StartOpenCloseTransaction())
                 {
-                    var bt = tr.GetObject(db.BlockTableId, OpenMode.ForRead) as BlockTable;
-                    var btr = tr.GetObject(bt[BlockTableRecord.ModelSpace], OpenMode.ForRead) as BlockTableRecord;
-
-                    foreach (ObjectId id in btr)
+                    foreach (ObjectId id in result.Value.GetObjectIds())
                     {
                         try
                         {
@@ -1386,12 +1399,7 @@ namespace DTS_Engine.Commands
                             else if (elemData is WallData wallData)
                             {
                                 w = wallData.Thickness ?? w;
-                                // Wall depth is along its length, use bounds if available
                             }
-
-                            // Kiểm tra có nằm trong vùng không
-                            if (cx < minX || cx > maxX || cy < minY || cy > maxY)
-                                continue;
 
                             supports.Add(new SupportEntity
                             {
