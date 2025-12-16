@@ -1140,11 +1140,15 @@ namespace DTS_Engine.Commands
                 return;
             }
 
+            // CONFLICT HANDLING: Remove beams from old groups (Steal Ownership)
+            var groups = GetOrCreateBeamGroups();
+            var newHandles = beamDataList.Select(b => b.Handle).ToList();
+            StealOwnership(groups, newHandles);
+
             // Tạo nhóm thủ công và chạy detection
             var group = CreateManualBeamGroup(groupName, beamDataList);
 
             // Add to cache
-            var groups = GetOrCreateBeamGroups();
             groups.Add(group);
 
             // Save to cache
@@ -1358,6 +1362,7 @@ namespace DTS_Engine.Commands
         /// <summary>
         /// Lấy danh sách BeamGroup từ NOD của bản vẽ hiện tại.
         /// Data đi theo file DWG, không dùng file cache bên ngoài.
+        /// DEFENSIVE: Auto-validate và cleanup zombie data (dầm đã bị xóa).
         /// </summary>
         private List<BeamGroup> GetOrCreateBeamGroups()
         {
@@ -1374,7 +1379,11 @@ namespace DTS_Engine.Commands
                     if (!string.IsNullOrEmpty(json))
                     {
                         var groups = Newtonsoft.Json.JsonConvert.DeserializeObject<List<BeamGroup>>(json);
-                        if (groups != null) return groups;
+                        if (groups != null)
+                        {
+                            // DEFENSIVE LOGIC: Validate and cleanup zombie data
+                            return ValidateAndCleanupGroups(groups);
+                        }
                     }
                 }
             }
@@ -1404,6 +1413,147 @@ namespace DTS_Engine.Commands
             }
             catch { }
         }
+
+        #region Defensive Logic - Beam Group Protection
+
+        /// <summary>
+        /// DEFENSIVE LOGIC 1: Validate và cleanup groups - Remove erased beams
+        /// Gọi khi Load dữ liệu từ NOD để tránh crash khi dầm đã bị xóa trên CAD.
+        /// </summary>
+        private List<BeamGroup> ValidateAndCleanupGroups(List<BeamGroup> groups)
+        {
+            if (groups == null || groups.Count == 0) return groups;
+
+            var validGroups = new List<BeamGroup>();
+            bool needsUpdate = false;
+
+            UsingTransaction(tr =>
+            {
+                foreach (var group in groups)
+                {
+                    if (group.EntityHandles == null || group.EntityHandles.Count == 0) continue;
+
+                    var validHandles = new List<string>();
+                    foreach (var handle in group.EntityHandles)
+                    {
+                        try
+                        {
+                            var h = new Handle(long.Parse(handle, System.Globalization.NumberStyles.HexNumber));
+                            var objId = AcadUtils.Db.GetObjectId(false, h, 0);
+                            if (objId != ObjectId.Null && !objId.IsErased)
+                            {
+                                var obj = tr.GetObject(objId, OpenMode.ForRead, true);
+                                if (obj != null && !obj.IsErased)
+                                {
+                                    validHandles.Add(handle);
+                                }
+                            }
+                        }
+                        catch
+                        {
+                            // Handle invalid or erased - skip it
+                            needsUpdate = true;
+                        }
+                    }
+
+                    if (validHandles.Count != group.EntityHandles.Count)
+                    {
+                        needsUpdate = true;
+                        group.EntityHandles = validHandles;
+                    }
+
+                    // Keep group if it still has members
+                    if (validHandles.Count > 0)
+                    {
+                        validGroups.Add(group);
+                    }
+                }
+            });
+
+            // Auto-save if we cleaned up any zombie data
+            if (needsUpdate)
+            {
+                WriteMessage("   Đã tự động xóa các dầm không còn tồn tại khỏi dữ liệu nhóm.");
+                SaveBeamGroupsToNOD(validGroups);
+            }
+
+            return validGroups;
+        }
+
+        /// <summary>
+        /// DEFENSIVE LOGIC 2: Get all beam handles that are already in groups
+        /// Dùng để check conflict khi tạo nhóm mới.
+        /// </summary>
+        private HashSet<string> GetBeamsAlreadyInGroups(List<BeamGroup> groups)
+        {
+            var handles = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+            if (groups == null) return handles;
+
+            foreach (var group in groups)
+            {
+                if (group.EntityHandles != null)
+                {
+                    foreach (var h in group.EntityHandles)
+                        handles.Add(h);
+                }
+            }
+            return handles;
+        }
+
+        /// <summary>
+        /// DEFENSIVE LOGIC 3: Remove beam from all groups (Steal Ownership)
+        /// Gọi trước khi add beam vào group mới để tránh 1 dầm nằm trong 2 nhóm.
+        /// Returns true if any group was modified.
+        /// </summary>
+        private bool RemoveBeamFromAllGroups(List<BeamGroup> groups, string beamHandle)
+        {
+            if (groups == null || string.IsNullOrEmpty(beamHandle)) return false;
+
+            bool modified = false;
+            var groupsToRemove = new List<BeamGroup>();
+
+            foreach (var group in groups)
+            {
+                if (group.EntityHandles != null && group.EntityHandles.Contains(beamHandle))
+                {
+                    group.EntityHandles.Remove(beamHandle);
+                    modified = true;
+
+                    // If group becomes empty, mark for removal
+                    if (group.EntityHandles.Count == 0)
+                    {
+                        groupsToRemove.Add(group);
+                    }
+                }
+            }
+
+            // Remove empty groups
+            foreach (var g in groupsToRemove)
+            {
+                groups.Remove(g);
+            }
+
+            return modified;
+        }
+
+        /// <summary>
+        /// DEFENSIVE LOGIC 4: Steal ownership for multiple beams
+        /// Dùng khi tạo nhóm mới - đảm bảo mỗi dầm chỉ thuộc 1 nhóm.
+        /// </summary>
+        private void StealOwnership(List<BeamGroup> existingGroups, List<string> newBeamHandles)
+        {
+            if (existingGroups == null || newBeamHandles == null) return;
+
+            foreach (var handle in newBeamHandles)
+            {
+                if (RemoveBeamFromAllGroups(existingGroups, handle))
+                {
+                    WriteMessage($"   Dầm {handle} đã được chuyển từ nhóm cũ sang nhóm mới.");
+                }
+            }
+        }
+
+        #endregion
 
         /// <summary>
         /// Apply kết quả từ BeamGroupViewer vào bản vẽ
@@ -1685,9 +1835,14 @@ namespace DTS_Engine.Commands
 
             WriteMessage($"Tìm thấy {gridIntersections.Count} giao điểm lưới trục.");
 
-            // 2. Thu thập TẤT CẢ dầm trong bản vẽ (dựa vào XData DTS có SapElementName)
-            var allBeamIds = new List<ObjectId>();
-            var beamsDataMap = new Dictionary<ObjectId, (Point3d Mid, bool IsGirder, bool IsXDir, string AxisKey)>();
+            // DEFENSIVE LOGIC: Load existing groups and get beams already assigned
+            var existingGroups = GetOrCreateBeamGroups();
+            var beamsAlreadyInGroups = GetBeamsAlreadyInGroups(existingGroups);
+            int skippedCount = 0;
+
+            // 2. Thu thập dầm CHƯA thuộc nhóm nào (INCREMENTAL mode - không đè data user)
+            var freeBeamIds = new List<ObjectId>();
+            var beamsDataMap = new Dictionary<ObjectId, (Point3d Mid, bool IsGirder, bool IsXDir, string AxisKey, string Handle)>();
 
             UsingTransaction(tr =>
             {
@@ -1698,11 +1853,20 @@ namespace DTS_Engine.Commands
                     var obj = tr.GetObject(id, OpenMode.ForRead);
                     if (obj is Curve curve)
                     {
+                        string handle = curve.Handle.ToString();
+
+                        // SAFE AUTO-GROUP: Skip beams already in a group
+                        if (beamsAlreadyInGroups.Contains(handle))
+                        {
+                            skippedCount++;
+                            continue;
+                        }
+
                         // Check if this is a beam (has SAP data)
                         var xdata = XDataUtils.ReadElementData(curve) as BeamResultData;
                         if (xdata != null && !string.IsNullOrEmpty(xdata.SapElementName))
                         {
-                            allBeamIds.Add(id);
+                            freeBeamIds.Add(id);
 
                             Point3d mid = curve.StartPoint + (curve.EndPoint - curve.StartPoint) * 0.5;
                             Vector3d dir = curve.EndPoint - curve.StartPoint;
@@ -1713,24 +1877,30 @@ namespace DTS_Engine.Commands
                             bool isGirder = onGridStart && onGridEnd;
 
                             // AxisKey để nhóm dầm cùng trục
-                            // Với dầm hướng X: Y position làm key
-                            // Với dầm hướng Y: X position làm key
                             double axisCoord = isXDir ? Math.Round(mid.Y / 100) * 100 : Math.Round(mid.X / 100) * 100;
                             string axisKey = $"{(isGirder ? "G" : "B")}_{(isXDir ? "X" : "Y")}_{axisCoord:F0}";
 
-                            beamsDataMap[id] = (mid, isGirder, isXDir, axisKey);
+                            beamsDataMap[id] = (mid, isGirder, isXDir, axisKey, handle);
                         }
                     }
                 }
             });
 
-            if (allBeamIds.Count == 0)
+            if (skippedCount > 0)
             {
-                WriteError("Không tìm thấy dầm nào có dữ liệu SAP. Hãy chạy DTS_REBAR_SAP_RESULT trước.");
+                WriteMessage($"   Bỏ qua {skippedCount} dầm đã thuộc nhóm (bảo toàn dữ liệu user).");
+            }
+
+            if (freeBeamIds.Count == 0)
+            {
+                if (skippedCount > 0)
+                    WriteSuccess("Tất cả dầm đã được gom nhóm. Không có dầm mới cần xử lý.");
+                else
+                    WriteError("Không tìm thấy dầm nào có dữ liệu SAP. Hãy chạy DTS_REBAR_SAP_RESULT trước.");
                 return;
             }
 
-            WriteMessage($"Tìm thấy {allBeamIds.Count} dầm có dữ liệu SAP.");
+            WriteMessage($"Tìm thấy {freeBeamIds.Count} dầm chưa thuộc nhóm.");
 
             // 3. Nhóm dầm theo AxisKey
             var groups = beamsDataMap.GroupBy(b => b.Value.AxisKey)
@@ -1793,16 +1963,101 @@ namespace DTS_Engine.Commands
                 groupIndex++;
             }
 
-            // 5. Lưu vào NOD
+            // 5. Merge với existing groups và lưu vào NOD (INCREMENTAL - không xóa data cũ)
             if (beamGroups.Count > 0)
             {
-                SaveBeamGroupsToNOD(beamGroups);
-                WriteSuccess($"Đã tạo và lưu {beamGroups.Count} nhóm dầm vào NOD.");
+                // Merge: existing groups + new groups
+                existingGroups.AddRange(beamGroups);
+                SaveBeamGroupsToNOD(existingGroups);
+                WriteSuccess($"Đã tạo {beamGroups.Count} nhóm dầm mới. Tổng: {existingGroups.Count} nhóm.");
                 WriteMessage("Giờ bạn có thể mở DTS_BEAM_VIEWER để xem tất cả các nhóm!");
             }
             else
             {
                 WriteError("Không tạo được nhóm dầm nào.");
+            }
+        }
+
+        /// <summary>
+        /// Tách dầm ra khỏi nhóm hiện tại.
+        /// User có thể tạo nhóm riêng hoặc để dầm đứng độc lập.
+        /// </summary>
+        [CommandMethod("DTS_UNGROUP")]
+        public void DTS_UNGROUP()
+        {
+            WriteMessage("=== UNGROUP: TÁCH DẦM RA KHỎI NHÓM ===");
+            WriteMessage("\nChọn các dầm cần tách ra khỏi nhóm: ");
+
+            var selectedIds = AcadUtils.SelectObjectsOnScreen("LINE,LWPOLYLINE,POLYLINE");
+            if (selectedIds.Count == 0)
+            {
+                WriteMessage("Không có dầm nào được chọn.");
+                return;
+            }
+
+            // Load existing groups
+            var existingGroups = GetOrCreateBeamGroups();
+            if (existingGroups.Count == 0)
+            {
+                WriteMessage("Không có nhóm dầm nào trong bản vẽ.");
+                return;
+            }
+
+            // Collect handles of selected beams
+            var selectedHandles = new List<string>();
+            UsingTransaction(tr =>
+            {
+                foreach (var id in selectedIds)
+                {
+                    var obj = tr.GetObject(id, OpenMode.ForRead) as Entity;
+                    if (obj != null)
+                    {
+                        selectedHandles.Add(obj.Handle.ToString());
+                    }
+                }
+            });
+
+            // Remove beams from all groups
+            int removedCount = 0;
+            var groupsToRemove = new List<BeamGroup>();
+
+            foreach (var handle in selectedHandles)
+            {
+                foreach (var group in existingGroups)
+                {
+                    if (group.EntityHandles != null && group.EntityHandles.Contains(handle))
+                    {
+                        group.EntityHandles.Remove(handle);
+                        removedCount++;
+                        WriteMessage($"   Đã tách dầm {handle} khỏi nhóm {group.GroupName}");
+
+                        // Mark empty groups for removal
+                        if (group.EntityHandles.Count == 0)
+                        {
+                            groupsToRemove.Add(group);
+                        }
+                    }
+                }
+            }
+
+            // Remove empty groups
+            int deletedGroups = 0;
+            foreach (var g in groupsToRemove)
+            {
+                existingGroups.Remove(g);
+                deletedGroups++;
+                WriteMessage($"   Đã xóa nhóm rỗng: {g.GroupName}");
+            }
+
+            if (removedCount > 0)
+            {
+                SaveBeamGroupsToNOD(existingGroups);
+                WriteSuccess($"Đã tách {removedCount} dầm ra khỏi nhóm. Đã xóa {deletedGroups} nhóm rỗng.");
+                WriteMessage("Bạn có thể chạy DTS_SET_BEAM để tạo nhóm mới cho dầm này.");
+            }
+            else
+            {
+                WriteMessage("Không có dầm nào đang thuộc nhóm.");
             }
         }
     }
