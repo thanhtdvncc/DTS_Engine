@@ -133,6 +133,7 @@
     <Reference Include="WindowsBase" />
   </ItemGroup>
   <ItemGroup>
+    <Compile Include="DtsInitializer.cs" />
     <Compile Include="Commands\AuditCommands.cs" />
     <Compile Include="Commands\CommandBase.cs" />
     <Compile Include="Commands\LinkCommands.cs" />
@@ -225,6 +226,8 @@
     <Compile Include="UI\Forms\BeamGroupViewerDialog.cs">
       <SubType>Form</SubType>
     </Compile>
+    <Compile Include="UI\Forms\DashboardPalette.cs" />
+    <Compile Include="UI\Forms\DashboardControl.cs" />
     <Compile Include="UI\SettingsManager.cs" />
   </ItemGroup>
   <ItemGroup>
@@ -234,6 +237,7 @@
   <ItemGroup>
     <EmbeddedResource Include="UI\Resources\RebarConfig.html" />
     <EmbeddedResource Include="UI\Resources\BeamGroupViewer.html" />
+    <EmbeddedResource Include="UI\Resources\Dashboard.html" />
   </ItemGroup>
   <ItemGroup>
     <Folder Include="Docs\" />

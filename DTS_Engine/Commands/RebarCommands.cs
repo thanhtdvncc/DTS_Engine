@@ -2383,5 +2383,14 @@ namespace DTS_Engine.Commands
                 WriteMessage("Không có dầm nào đang thuộc nhóm.");
             }
         }
+
+        /// <summary>
+        /// Hiển thị Dashboard Mini-Toolbar
+        /// </summary>
+        [CommandMethod("DTS_DASHBOARD")]
+        public void DTS_DASHBOARD()
+        {
+            DTS_Engine.UI.Forms.DashboardPalette.ShowPalette();
+        }
     }
 }
