@@ -416,128 +416,279 @@ namespace DTS_Engine.Core.Data
     #region Anchorage & Detailing Config
 
     /// <summary>
+    /// Chế độ tính toán chiều dài Neo/Nối
+    /// </summary>
+    public enum CalculationMode
+    {
+        /// <summary>Tính theo hệ số (ví dụ: 40d)</summary>
+        ByFactor,
+        /// <summary>Giá trị tuyệt đối (ví dụ: 600mm)</summary>
+        ByLength
+    }
+
+    /// <summary>
     /// Cấu hình Neo & Nối thép (Anchorage & Splicing)
-    /// Sử dụng bảng tra theo cặp vật liệu (Bê tông + Thép)
+    /// Hỗ trợ đa tiêu chuẩn (TCVN, ACI, Eurocode, Standard RC)
     /// </summary>
     public class AnchorageConfig
     {
-        // ===== DANH SÁCH VẬT LIỆU (Master Data) =====
-        /// <summary>Danh sách mác bê tông khả dụng</summary>
-        public List<string> ConcreteGrades { get; set; } = new List<string> { "B20", "B25", "B30", "B35", "B40" };
+        // ===== TIÊU CHUẨN VÀ CHẾ ĐỘ =====
+        public string StandardName { get; set; } = "TCVN";
+        public CalculationMode Mode { get; set; } = CalculationMode.ByFactor;
 
-        /// <summary>Danh sách mác thép khả dụng</summary>
-        public List<string> SteelGrades { get; set; } = new List<string> { "CB300", "CB400", "CB500" };
+        // ===== THƯ VIỆN VẬT LIỆU (Available - bên trái rổ) =====
+        public List<string> AvailableConcreteGrades { get; set; } = new List<string>
+            { "B15", "B20", "B25", "B30", "B35", "B40", "B45", "B50" };
+        public List<string> AvailableSteelGrades { get; set; } = new List<string>
+            { "CB240", "CB300", "CB400", "CB500" };
 
-        // ===== BẢNG TRA HỆ SỐ (Lookup Tables) =====
+        // ===== VẬT LIỆU DỰ ÁN (Selected - bên phải rổ) =====
+        public List<string> ConcreteGrades { get; set; } = new List<string> { "B20", "B25", "B30", "B35" };
+        public List<string> SteelGrades { get; set; } = new List<string> { "CB300", "CB400" };
+
+        // ===== BẢNG TRA CHIỀU DÀI NEO (Development Length) =====
         /// <summary>
-        /// Bảng tra hệ số chiều dài Neo (Anchorage Length Factors)
-        /// Key: "ConcreteGrade_SteelGrade" (ví dụ: "B25_CB400")
-        /// Value: Hệ số nhân với đường kính (ví dụ: 35)
+        /// Key: "ConcreteGrade_SteelGrade", SubKey: Diameter, Value: Factor or Length
         /// </summary>
-        public Dictionary<string, double> AnchorageFactors { get; set; } = new Dictionary<string, double>
-        {
-            // B20
-            { "B20_CB300", 45 }, { "B20_CB400", 50 }, { "B20_CB500", 55 },
-            // B25
-            { "B25_CB300", 38 }, { "B25_CB400", 42 }, { "B25_CB500", 48 },
-            // B30
-            { "B30_CB300", 32 }, { "B30_CB400", 36 }, { "B30_CB500", 42 },
-            // B35
-            { "B35_CB300", 28 }, { "B35_CB400", 32 }, { "B35_CB500", 38 },
-            // B40
-            { "B40_CB300", 25 }, { "B40_CB400", 28 }, { "B40_CB500", 34 }
-        };
+        public Dictionary<string, Dictionary<int, double>> AnchorageValues { get; set; }
+            = new Dictionary<string, Dictionary<int, double>>();
 
+        // ===== BẢNG TRA CHIỀU DÀI NỐI (Lap Splice Length) =====
+        public Dictionary<string, Dictionary<int, double>> SpliceValues { get; set; }
+            = new Dictionary<string, Dictionary<int, double>>();
+
+        // ===== BẢNG TRA CHIỀU DÀI MÓC (Hook Length) =====
         /// <summary>
-        /// Bảng tra hệ số chiều dài Nối (Splice Length Factors)
-        /// Thường = Anchorage Factor * 1.3 (theo TCVN)
+        /// Key: "ConcreteGrade_HookAngle", SubKey: Diameter, Value: Length (mm)
         /// </summary>
-        public Dictionary<string, double> SpliceFactors { get; set; } = new Dictionary<string, double>
-        {
-            // B20
-            { "B20_CB300", 58 }, { "B20_CB400", 65 }, { "B20_CB500", 72 },
-            // B25
-            { "B25_CB300", 49 }, { "B25_CB400", 55 }, { "B25_CB500", 62 },
-            // B30
-            { "B30_CB300", 42 }, { "B30_CB400", 47 }, { "B30_CB500", 55 },
-            // B35
-            { "B35_CB300", 36 }, { "B35_CB400", 42 }, { "B35_CB500", 49 },
-            // B40
-            { "B40_CB300", 32 }, { "B40_CB400", 36 }, { "B40_CB500", 44 }
-        };
+        public Dictionary<string, Dictionary<int, double>> HookValues { get; set; }
+            = new Dictionary<string, Dictionary<int, double>>();
 
-        // ===== CẤU HÌNH MÓC CHUẨN (Standard Hooks) =====
-        /// <summary>Hệ số móc 90° (12d)</summary>
+        // ===== CẤU HÌNH MÓC CHUẨN (Fallback) =====
         public double Hook90Factor { get; set; } = 12;
-
-        /// <summary>Chiều dài móc 90° tối thiểu (mm)</summary>
         public double MinHook90Length { get; set; } = 150;
-
-        /// <summary>Hệ số móc 135° cho đai (6d)</summary>
         public double Hook135Factor { get; set; } = 6;
-
-        /// <summary>Hệ số móc 180° (4d)</summary>
         public double Hook180Factor { get; set; } = 4;
-
-        /// <summary>Chiều dài móc tối thiểu chung (mm)</summary>
         public double MinHookLength { get; set; } = 75;
 
         // ===== GIÁ TRỊ MẶC ĐỊNH (Fallback) =====
-        /// <summary>Hệ số mặc định nếu không tìm thấy trong bảng</summary>
         public double DefaultAnchorageFactor { get; set; } = 40;
+        public double DefaultSpliceFactor { get; set; } = 52;
 
-        /// <summary>Hệ số nối mặc định nếu không tìm thấy trong bảng</summary>
-        public double DefaultSpliceFactor { get; set; } = 52; // 40 * 1.3
-
-        // ===== PHƯƠNG THỨC TRA CỨU =====
-        /// <summary>
-        /// Lấy hệ số neo theo cặp vật liệu
-        /// </summary>
-        public double GetAnchorageFactor(string concreteGrade, string steelGrade)
+        // ===== HELPER METHODS - THÊM DỮ LIỆU =====
+        public void AddAnchorageLength(string concrete, string steel, int diameter, double value)
         {
-            string key = $"{concreteGrade}_{steelGrade}";
-            if (AnchorageFactors.ContainsKey(key))
-                return AnchorageFactors[key];
-            return DefaultAnchorageFactor;
+            string key = $"{concrete}_{steel}";
+            if (!AnchorageValues.ContainsKey(key))
+                AnchorageValues[key] = new Dictionary<int, double>();
+            AnchorageValues[key][diameter] = value;
         }
 
-        /// <summary>
-        /// Lấy hệ số nối theo cặp vật liệu
-        /// </summary>
-        public double GetSpliceFactor(string concreteGrade, string steelGrade)
+        public void AddSpliceLength(string concrete, string steel, int diameter, double value)
         {
-            string key = $"{concreteGrade}_{steelGrade}";
-            if (SpliceFactors.ContainsKey(key))
-                return SpliceFactors[key];
-            return DefaultSpliceFactor;
+            string key = $"{concrete}_{steel}";
+            if (!SpliceValues.ContainsKey(key))
+                SpliceValues[key] = new Dictionary<int, double>();
+            SpliceValues[key][diameter] = value;
         }
 
-        /// <summary>
-        /// Tính chiều dài neo thép (mm)
-        /// </summary>
-        public double GetAnchorageLength(int diameter, string concreteGrade, string steelGrade)
+        public void AddHookLength(string concrete, int hookAngle, int diameter, double value)
         {
-            double factor = GetAnchorageFactor(concreteGrade, steelGrade);
-            return diameter * factor;
+            string key = $"{concrete}_{hookAngle}";
+            if (!HookValues.ContainsKey(key))
+                HookValues[key] = new Dictionary<int, double>();
+            HookValues[key][diameter] = value;
         }
 
-        /// <summary>
-        /// Tính chiều dài nối thép (mm)
-        /// </summary>
-        public double GetSpliceLength(int diameter, string concreteGrade, string steelGrade)
+        // ===== HELPER METHODS - TRA CỨU =====
+        public double GetAnchorageLength(int diameter, string concrete, string steel)
         {
-            double factor = GetSpliceFactor(concreteGrade, steelGrade);
-            return diameter * factor;
+            string key = $"{concrete}_{steel}";
+
+            // Try diameter-specific lookup first
+            if (AnchorageValues.ContainsKey(key) && AnchorageValues[key].ContainsKey(diameter))
+            {
+                double value = AnchorageValues[key][diameter];
+                return Mode == CalculationMode.ByLength ? value : value * diameter;
+            }
+
+            // Fallback to default factor
+            return diameter * DefaultAnchorageFactor;
         }
 
-        /// <summary>
-        /// Tính chiều dài móc (mm)
-        /// </summary>
-        public double GetHookLength(int diameter, int hookAngle)
+        public double GetSpliceLength(int diameter, string concrete, string steel)
         {
+            string key = $"{concrete}_{steel}";
+
+            if (SpliceValues.ContainsKey(key) && SpliceValues[key].ContainsKey(diameter))
+            {
+                double value = SpliceValues[key][diameter];
+                return Mode == CalculationMode.ByLength ? value : value * diameter;
+            }
+
+            return diameter * DefaultSpliceFactor;
+        }
+
+        public double GetHookLength(int diameter, string concrete, int hookAngle)
+        {
+            string key = $"{concrete}_{hookAngle}";
+
+            if (HookValues.ContainsKey(key) && HookValues[key].ContainsKey(diameter))
+            {
+                return HookValues[key][diameter];
+            }
+
+            // Fallback to factor-based calculation
             double factor = hookAngle == 90 ? Hook90Factor : (hookAngle == 135 ? Hook135Factor : Hook180Factor);
             double minLen = hookAngle == 90 ? MinHook90Length : MinHookLength;
             return Math.Max(diameter * factor, minLen);
+        }
+
+        // ===== PRESET LOADERS =====
+        public static AnchorageConfig GetTCVN()
+        {
+            var config = new AnchorageConfig
+            {
+                StandardName = "TCVN 5574:2018",
+                Mode = CalculationMode.ByFactor,
+                AvailableConcreteGrades = new List<string> { "B15", "B20", "B25", "B30", "B35", "B40" },
+                AvailableSteelGrades = new List<string> { "CB240", "CB300", "CB400", "CB500" },
+                ConcreteGrades = new List<string> { "B20", "B25", "B30", "B35" },
+                SteelGrades = new List<string> { "CB300", "CB400" }
+            };
+
+            // Default factors for TCVN
+            foreach (var c in config.ConcreteGrades)
+            {
+                foreach (var s in config.SteelGrades)
+                {
+                    // Simplified: factor based on grade
+                    double baseFactor = c == "B20" ? 45 : c == "B25" ? 40 : c == "B30" ? 35 : 30;
+                    if (s == "CB400") baseFactor += 5;
+                    if (s == "CB500") baseFactor += 10;
+
+                    foreach (var d in new[] { 10, 12, 14, 16, 18, 20, 22, 25, 28, 32 })
+                    {
+                        config.AddAnchorageLength(c, s, d, baseFactor);
+                        config.AddSpliceLength(c, s, d, baseFactor * 1.3);
+                    }
+                }
+            }
+            return config;
+        }
+
+        public static AnchorageConfig GetStandardRC()
+        {
+            var config = new AnchorageConfig
+            {
+                StandardName = "Standard RC (SD420)",
+                Mode = CalculationMode.ByLength,
+                AvailableConcreteGrades = new List<string> { "210", "280", "350" },
+                AvailableSteelGrades = new List<string> { "SD420" },
+                ConcreteGrades = new List<string> { "210", "280", "350" },
+                SteelGrades = new List<string> { "SD420" }
+            };
+
+            // ========== NEO (Development Length) - Ld ==========
+            // Concrete 210
+            config.AddAnchorageLength("210", "SD420", 10, 420);
+            config.AddAnchorageLength("210", "SD420", 13, 560);
+            config.AddAnchorageLength("210", "SD420", 16, 700);
+            config.AddAnchorageLength("210", "SD420", 19, 840);
+            config.AddAnchorageLength("210", "SD420", 22, 1100);
+            config.AddAnchorageLength("210", "SD420", 25, 1420);
+            config.AddAnchorageLength("210", "SD420", 29, 1870);
+            config.AddAnchorageLength("210", "SD420", 32, 2370);
+            config.AddAnchorageLength("210", "SD420", 36, 2890);
+
+            // Concrete 280
+            config.AddAnchorageLength("280", "SD420", 10, 360);
+            config.AddAnchorageLength("280", "SD420", 13, 490);
+            config.AddAnchorageLength("280", "SD420", 16, 600);
+            config.AddAnchorageLength("280", "SD420", 19, 730);
+            config.AddAnchorageLength("280", "SD420", 22, 950);
+            config.AddAnchorageLength("280", "SD420", 25, 1230);
+            config.AddAnchorageLength("280", "SD420", 29, 1620);
+            config.AddAnchorageLength("280", "SD420", 32, 2050);
+            config.AddAnchorageLength("280", "SD420", 36, 2500);
+
+            // Concrete 350
+            config.AddAnchorageLength("350", "SD420", 10, 340);
+            config.AddAnchorageLength("350", "SD420", 13, 450);
+            config.AddAnchorageLength("350", "SD420", 16, 550);
+            config.AddAnchorageLength("350", "SD420", 19, 670);
+            config.AddAnchorageLength("350", "SD420", 22, 870);
+            config.AddAnchorageLength("350", "SD420", 25, 1130);
+            config.AddAnchorageLength("350", "SD420", 29, 1490);
+            config.AddAnchorageLength("350", "SD420", 32, 1890);
+            config.AddAnchorageLength("350", "SD420", 36, 2310);
+
+            // ========== NỐI (Lap Splice) - Class B ==========
+            // Concrete 210
+            config.AddSpliceLength("210", "SD420", 10, 550);
+            config.AddSpliceLength("210", "SD420", 13, 730);
+            config.AddSpliceLength("210", "SD420", 16, 910);
+            config.AddSpliceLength("210", "SD420", 19, 1100);
+            config.AddSpliceLength("210", "SD420", 22, 1430);
+            config.AddSpliceLength("210", "SD420", 25, 1850);
+            config.AddSpliceLength("210", "SD420", 29, 2440);
+            config.AddSpliceLength("210", "SD420", 32, 3090);
+            config.AddSpliceLength("210", "SD420", 36, 3760);
+
+            // Concrete 280
+            config.AddSpliceLength("280", "SD420", 10, 470);
+            config.AddSpliceLength("280", "SD420", 13, 640);
+            config.AddSpliceLength("280", "SD420", 16, 790);
+            config.AddSpliceLength("280", "SD420", 19, 950);
+            config.AddSpliceLength("280", "SD420", 22, 1240);
+            config.AddSpliceLength("280", "SD420", 25, 1600);
+            config.AddSpliceLength("280", "SD420", 29, 2110);
+            config.AddSpliceLength("280", "SD420", 32, 2670);
+            config.AddSpliceLength("280", "SD420", 36, 3250);
+
+            // Concrete 350
+            config.AddSpliceLength("350", "SD420", 10, 440);
+            config.AddSpliceLength("350", "SD420", 13, 590);
+            config.AddSpliceLength("350", "SD420", 16, 720);
+            config.AddSpliceLength("350", "SD420", 19, 870);
+            config.AddSpliceLength("350", "SD420", 22, 1140);
+            config.AddSpliceLength("350", "SD420", 25, 1470);
+            config.AddSpliceLength("350", "SD420", 29, 1940);
+            config.AddSpliceLength("350", "SD420", 32, 2460);
+            config.AddSpliceLength("350", "SD420", 36, 3010);
+
+            // ========== MÓC (Hook) - 90 degree ==========
+            config.AddHookLength("210", 90, 10, 210);
+            config.AddHookLength("210", 90, 13, 280);
+            config.AddHookLength("210", 90, 16, 350);
+            config.AddHookLength("210", 90, 19, 420);
+            config.AddHookLength("210", 90, 22, 550);
+            config.AddHookLength("210", 90, 25, 710);
+            config.AddHookLength("210", 90, 29, 940);
+            config.AddHookLength("210", 90, 32, 1190);
+
+            config.AddHookLength("280", 90, 10, 180);
+            config.AddHookLength("280", 90, 13, 240);
+            config.AddHookLength("280", 90, 16, 300);
+            config.AddHookLength("280", 90, 19, 360);
+            config.AddHookLength("280", 90, 22, 470);
+            config.AddHookLength("280", 90, 25, 610);
+            config.AddHookLength("280", 90, 29, 810);
+            config.AddHookLength("280", 90, 32, 1030);
+
+            config.AddHookLength("350", 90, 10, 170);
+            config.AddHookLength("350", 90, 13, 220);
+            config.AddHookLength("350", 90, 16, 270);
+            config.AddHookLength("350", 90, 19, 320);
+            config.AddHookLength("350", 90, 22, 420);
+            config.AddHookLength("350", 90, 25, 540);
+            config.AddHookLength("350", 90, 29, 720);
+            config.AddHookLength("350", 90, 32, 910);
+
+            config.Hook135Factor = 6;
+            config.MinHookLength = 75;
+
+            return config;
         }
     }
 

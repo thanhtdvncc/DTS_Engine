@@ -15,7 +15,7 @@ namespace DTS_Engine.Core.Algorithms
     public static class BeamGroupDetector
     {
         private const double AXIS_TOLERANCE = 400; // mm - Buffer zone quanh trục
-        private const double COLLINEAR_TOLERANCE = 100; // mm - Tolerance cho dầm thẳng hàng
+        private const double COLLINEAR_TOLERANCE = 50; // mm - Tolerance cho dầm nối tiếp (Node distance)
         private const double STEP_CHANGE_THRESHOLD = 50; // mm - Ngưỡng giật cấp
 
         /// <summary>
@@ -242,91 +242,120 @@ namespace DTS_Engine.Core.Algorithms
         }
 
         /// <summary>
-        /// Nhận diện gối đỡ (Column, Wall, Beam) cho nhóm.
-        /// Public để có thể gọi từ RebarCommands cho manual groups.
+        /// Nhận diện gối đỡ (Column, Wall, Girder) cho nhóm dầm.
+        /// SIMPLIFIED NODE-BASED LOGIC:
+        /// - Duyệt qua các Nút (đầu/cuối mỗi đoạn dầm)
+        /// - Tại mỗi nút: Check va chạm Column/Wall → Girder → FreeEnd
         /// </summary>
         public static void DetectSupports(BeamGroup group, List<BeamData> chain, List<SupportEntity> allSupports)
         {
-            // Sử dụng SpatialHash để query nhanh
-            var spatialHash = new SpatialHash<SupportEntity>(500);
-            foreach (var s in allSupports)
-            {
-                var bounds = new BoundingBox(
-                    s.CenterX - s.Width / 2,
-                    s.CenterY - s.Depth / 2,
-                    s.CenterX + s.Width / 2,
-                    s.CenterY + s.Depth / 2);
-                spatialHash.InsertWithBounds(s, bounds);
-            }
+            const double NODE_HIT_TOLERANCE = 50; // mm - Vùng hit test tại node
 
-            // Tìm supports giao với chain
             var foundSupports = new List<SupportData>();
-            var addedPositions = new HashSet<double>();
+            var processedPositions = new HashSet<double>();
 
-            // Điểm đầu của chain
-            double startX = chain.First().StartX;
-            double startY = chain.First().StartY;
+            // Điểm gốc của chain (để tính Position)
+            double originX = chain.First().StartX;
+            double originY = chain.First().StartY;
+
+            // ===== COLLECT ALL NODES =====
+            var nodes = new List<(double X, double Y, double Position, bool IsStart)>();
+            double cumLen = 0;
 
             foreach (var beam in chain)
             {
-                // Query tại điểm đầu và cuối của mỗi dầm
-                var startBounds = new BoundingBox(
-                    beam.StartX - 200, beam.StartY - 200,
-                    beam.StartX + 200, beam.StartY + 200);
-                var endBounds = new BoundingBox(
-                    beam.EndX - 200, beam.EndY - 200,
-                    beam.EndX + 200, beam.EndY + 200);
+                // Add start node
+                nodes.Add((beam.StartX, beam.StartY, cumLen, true));
+                cumLen += beam.Length / 1000.0; // mm to m
+                // Add end node
+                nodes.Add((beam.EndX, beam.EndY, cumLen, false));
+            }
 
-                foreach (var support in spatialHash.QueryBounds(startBounds).Concat(spatialHash.QueryBounds(endBounds)))
+            // Remove duplicate nodes (internal joints)
+            var uniqueNodes = new List<(double X, double Y, double Position)>();
+            foreach (var node in nodes)
+            {
+                bool isDuplicate = uniqueNodes.Any(n =>
+                    Distance(n.X, n.Y, node.X, node.Y) < NODE_HIT_TOLERANCE);
+                if (!isDuplicate)
                 {
-                    double pos = Distance(startX, startY, support.CenterX, support.CenterY) / 1000.0;
-                    double roundedPos = Math.Round(pos * 100) / 100;
-
-                    if (!addedPositions.Contains(roundedPos))
-                    {
-                        foundSupports.Add(new SupportData
-                        {
-                            SupportId = support.Name ?? $"S{foundSupports.Count + 1}",
-                            Type = ConvertSupportType(support.Type),
-                            Width = support.Width,
-                            Position = pos,
-                            GridName = support.GridName ?? "",
-                            EntityHandle = support.Handle
-                        });
-                        addedPositions.Add(roundedPos);
-                    }
+                    uniqueNodes.Add((node.X, node.Y, node.Position));
                 }
             }
 
-            // Sắp xếp theo vị trí
+            // ===== CHECK EACH UNIQUE NODE =====
+            foreach (var node in uniqueNodes)
+            {
+                double roundedPos = Math.Round(node.Position * 100) / 100;
+                if (processedPositions.Contains(roundedPos)) continue;
+
+                // STEP 1: Check Column/Wall hit
+                var hitSupport = allSupports.FirstOrDefault(s =>
+                    Distance(s.CenterX, s.CenterY, node.X, node.Y) < NODE_HIT_TOLERANCE + s.Width / 2 &&
+                    (s.Type?.ToUpper() == "COLUMN" || s.Type?.ToUpper() == "WALL"));
+
+                if (hitSupport != null)
+                {
+                    // Found Column/Wall at this node
+                    foundSupports.Add(new SupportData
+                    {
+                        SupportId = hitSupport.Name ?? $"S{foundSupports.Count + 1}",
+                        Type = hitSupport.Type?.ToUpper() == "WALL" ? SupportType.Wall : SupportType.Column,
+                        Width = hitSupport.Width,
+                        Position = node.Position,
+                        GridName = hitSupport.GridName ?? "",
+                        EntityHandle = hitSupport.Handle
+                    });
+                    processedPositions.Add(roundedPos);
+                    continue;
+                }
+
+                // STEP 2: Check Girder hit (different beam crossing this node)
+                var hitGirder = allSupports.FirstOrDefault(s =>
+                    Distance(s.CenterX, s.CenterY, node.X, node.Y) < NODE_HIT_TOLERANCE + 200 &&
+                    s.Type?.ToUpper() == "BEAM");
+
+                if (hitGirder != null)
+                {
+                    // Found Girder support at this node
+                    foundSupports.Add(new SupportData
+                    {
+                        SupportId = $"G{foundSupports.Count + 1}",
+                        Type = SupportType.Beam,
+                        Width = hitGirder.Width,
+                        Position = node.Position,
+                        GridName = "",
+                        EntityHandle = hitGirder.Handle
+                    });
+                    processedPositions.Add(roundedPos);
+                    continue;
+                }
+
+                // STEP 3: Nothing found = FreeEnd
+                // Only mark FreeEnd at chain endpoints (first and last nodes)
+                bool isChainEndpoint =
+                    Math.Abs(node.Position) < 0.01 ||
+                    Math.Abs(node.Position - group.TotalLength) < 0.01;
+
+                if (isChainEndpoint)
+                {
+                    foundSupports.Add(new SupportData
+                    {
+                        SupportId = node.Position < 0.01 ? "FE_Start" : "FE_End",
+                        Type = SupportType.FreeEnd,
+                        Width = 0,
+                        Position = node.Position
+                    });
+                    processedPositions.Add(roundedPos);
+                    group.HasConsole = true;
+                }
+                // Internal joints without support = just structural joints, not supports
+            }
+
+            // Sort by position
             foundSupports = foundSupports.OrderBy(s => s.Position).ToList();
 
-            // Check đầu thừa (FreeEnd)
-            if (foundSupports.Count == 0 || foundSupports.First().Position > 0.1)
-            {
-                foundSupports.Insert(0, new SupportData
-                {
-                    SupportId = "FE_Start",
-                    Type = SupportType.FreeEnd,
-                    Position = 0,
-                    Width = 0
-                });
-                group.HasConsole = true;
-            }
-
-            if (foundSupports.Count == 0 || Math.Abs(foundSupports.Last().Position - group.TotalLength) > 0.1)
-            {
-                foundSupports.Add(new SupportData
-                {
-                    SupportId = "FE_End",
-                    Type = SupportType.FreeEnd,
-                    Position = group.TotalLength,
-                    Width = 0
-                });
-                group.HasConsole = true;
-            }
-
-            // Đánh index
+            // Index supports
             for (int i = 0; i < foundSupports.Count; i++)
                 foundSupports[i].SupportIndex = i;
 

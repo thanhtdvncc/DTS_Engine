@@ -281,26 +281,15 @@
         function toggleHighlightMode(enabled) {
             highlightModeEnabled = enabled;
             if (enabled) {
-                showToast('✓ Highlight mode ON - form sẽ trong suốt khi rời chuột');
+                // Immediately set 80% transparent when toggle ON
+                window.chrome.webview.postMessage('SET_OPACITY|0.2');
+                showToast('✓ Highlight mode ON - form 80% trong suốt');
             } else {
-                // Reset opacity when turned off
+                // Reset to full opacity when toggle OFF
                 window.chrome.webview.postMessage('SET_OPACITY|1.0');
+                showToast('Highlight mode OFF');
             }
         }
-
-        // MOUSE ENTER/LEAVE for transparency
-        document.addEventListener('DOMContentLoaded', () => {
-            document.body.addEventListener('mouseenter', () => {
-                if (highlightModeEnabled) {
-                    window.chrome.webview.postMessage('SET_OPACITY|1.0');
-                }
-            });
-            document.body.addEventListener('mouseleave', () => {
-                if (highlightModeEnabled) {
-                    window.chrome.webview.postMessage('SET_OPACITY|0.1'); // 90% transparent
-                }
-            });
-        });
 
         function init() {
             populateGroupSelect();

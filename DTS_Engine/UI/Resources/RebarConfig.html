@@ -602,58 +602,138 @@
             </div>
         </div>
 
-        <!-- TAB 4: ANCHORAGE (Neo & Nối) - MATRIX INPUT -->
+        <!-- TAB 4: ANCHORAGE (Neo & Nối) - COMPREHENSIVE -->
         <div class="tab-panel" id="tab4">
-            <div class="section">
-                <div class="section-header">1. Khai báo Vật liệu (Master Data)</div>
+            <!-- QUICK PRESETS TOOLBAR -->
+            <div class="section" style="background:#e8f4fd;border:1px solid #3b82f6;">
+                <div class="section-header" style="background:#3b82f6;color:white;">⚡ Quick Presets</div>
                 <div class="section-body">
-                    <div class="row">
-                        <div class="col">
-                            <label>Danh sách Mác Bê tông</label>
-                            <div style="display:flex;gap:4px;margin-bottom:6px;">
-                                <input type="text" id="newConcreteGrade" placeholder="B30" style="width:60px;">
-                                <button class="btn-secondary btn-sm" onclick="addConcreteGrade()">Thêm</button>
+                    <div style="display:flex;gap:16px;">
+                        <!-- LEFT: Preset Buttons -->
+                        <div style="flex:1;">
+                            <div style="display:flex;gap:6px;flex-wrap:wrap;margin-bottom:8px;">
+                                <button id="presetTCVN" class="btn-primary" onclick="loadPreset('TCVN')"
+                                    title="TCVN 5574:2018">
+                                    <img src="https://flagcdn.com/w20/vn.png"
+                                        style="width:16px;height:12px;margin-right:2px;"> TCVN</button>
+                                <button id="presetACI" class="btn-secondary" onclick="loadPreset('ACI')"
+                                    title="ACI 318-19">
+                                    <img src="https://flagcdn.com/w20/us.png"
+                                        style="width:16px;height:12px;margin-right:2px;"> ACI</button>
+                                <button id="presetEUROCODE" class="btn-secondary" onclick="loadPreset('EUROCODE')"
+                                    title="Eurocode 2">
+                                    <img src="https://flagcdn.com/w20/eu.png"
+                                        style="width:16px;height:12px;margin-right:2px;"> EC2</button>
+                                <button id="presetRC" class="btn-secondary" onclick="loadPreset('RC')"
+                                    title="Standard RC SD420">📋 RC</button>
                             </div>
-                            <div id="concreteGradeList" class="diameter-grid" style="gap:4px;"></div>
+                            <!-- Saved Presets -->
+                            <div id="savedPresetsContainer" style="display:flex;gap:4px;flex-wrap:wrap;"></div>
+                            <div class="hint" style="margin-top:6px;">
+                                Tiêu chuẩn: <b id="currentStandard">TCVN</b> | Chế độ: <b id="currentModeLabel">Hệ số
+                                    ×d</b>
+                            </div>
                         </div>
-                        <div class="col">
-                            <label>Danh sách Mác Thép</label>
-                            <div style="display:flex;gap:4px;margin-bottom:6px;">
-                                <input type="text" id="newSteelGrade" placeholder="CB400" style="width:80px;">
-                                <button class="btn-secondary btn-sm" onclick="addSteelGrade()">Thêm</button>
-                            </div>
-                            <div id="steelGradeList" class="diameter-grid" style="gap:4px;"></div>
+                        <!-- RIGHT: Action Buttons -->
+                        <div style="display:flex;flex-direction:column;gap:4px;min-width:80px;">
+                            <button class="btn-secondary btn-sm" onclick="saveCurrentPreset()" title="Lưu">💾
+                                Lưu</button>
+                            <button class="btn-secondary btn-sm" onclick="createNewPreset()" title="Tạo mới">➕
+                                Tạo</button>
+                            <button class="btn-secondary btn-sm" onclick="deleteSavedPreset()" title="Xóa">🗑️
+                                Xóa</button>
                         </div>
                     </div>
                 </div>
             </div>
 
+            <!-- MODE TOGGLE -->
             <div class="section">
-                <div class="section-header">2. Bảng tra Hệ số Neo (Anchorage Factors)</div>
-                <div class="section-body" style="overflow-x:auto;">
-                    <table id="anchorageMatrix" class="matrix-table"
-                        style="width:100%;font-size:11px;border-collapse:collapse;">
-                        <thead></thead>
-                        <tbody></tbody>
-                    </table>
-                    <div class="hint">Nhập hệ số nhân đường kính (d). VD: 40 = 40×d = 40×20mm = 800mm</div>
+                <div class="section-header">1. Chế độ tính toán</div>
+                <div class="section-body">
+                    <div style="display:flex;align-items:center;gap:16px;">
+                        <label style="display:flex;align-items:center;gap:6px;cursor:pointer;">
+                            <input type="radio" name="calcMode" value="ByFactor" checked
+                                onchange="switchMode('ByFactor')">
+                            <b>🔢 Hệ số ×d</b>
+                        </label>
+                        <label style="display:flex;align-items:center;gap:6px;cursor:pointer;">
+                            <input type="radio" name="calcMode" value="ByLength" onchange="switchMode('ByLength')">
+                            <b>📏 Chiều dài mm</b>
+                        </label>
+                        <span style="color:#666;font-size:11px;">(Chuyển đổi sẽ tự động quy đổi giá trị)</span>
+                    </div>
                 </div>
             </div>
 
+            <!-- SHUTTLE SELECTOR -->
             <div class="section">
-                <div class="section-header">3. Bảng tra Hệ số Nối (Splice Factors)</div>
-                <div class="section-body" style="overflow-x:auto;">
-                    <table id="spliceMatrix" class="matrix-table"
-                        style="width:100%;font-size:11px;border-collapse:collapse;">
-                        <thead></thead>
-                        <tbody></tbody>
-                    </table>
-                    <div class="hint">Thường = Anchorage × 1.3 theo TCVN. Nhập trực tiếp nếu khác tiêu chuẩn.</div>
+                <div class="section-header">2. Chọn Vật liệu Dự án</div>
+                <div class="section-body">
+                    <div style="display:flex;gap:16px;">
+                        <!-- CONCRETE SELECTOR -->
+                        <div style="flex:1;">
+                            <label style="font-weight:600;margin-bottom:4px;display:block;">
+                                Mác Bê tông
+                                <button class="btn-sm" onclick="editMaterialList('concrete')" title="Thêm/Xóa mác"
+                                    style="font-size:10px;padding:1px 4px;">✏️</button>
+                            </label>
+                            <div style="display:flex;gap:4px;">
+                                <select id="availableConcrete" multiple size="5" style="flex:1;min-width:70px;"
+                                    ondblclick="editMaterialList('concrete')"></select>
+                                <div style="display:flex;flex-direction:column;gap:2px;justify-content:center;">
+                                    <button class="btn-sm" onclick="shuttleConcrete('add')" title="Thêm">▶</button>
+                                    <button class="btn-sm" onclick="shuttleConcrete('remove')" title="Bỏ">◀</button>
+                                </div>
+                                <select id="selectedConcrete" multiple size="5"
+                                    style="flex:1;min-width:70px;font-weight:600;background:#e8f5e9;"></select>
+                            </div>
+                        </div>
+
+                        <!-- STEEL SELECTOR -->
+                        <div style="flex:1;">
+                            <label style="font-weight:600;margin-bottom:4px;display:block;">
+                                Mác Thép
+                                <button class="btn-sm" onclick="editMaterialList('steel')" title="Thêm/Xóa mác"
+                                    style="font-size:10px;padding:1px 4px;">✏️</button>
+                            </label>
+                            <div style="display:flex;gap:4px;">
+                                <select id="availableSteel" multiple size="5" style="flex:1;min-width:70px;"
+                                    ondblclick="editMaterialList('steel')"></select>
+                                <div style="display:flex;flex-direction:column;gap:2px;justify-content:center;">
+                                    <button class="btn-sm" onclick="shuttleSteel('add')" title="Thêm">▶</button>
+                                    <button class="btn-sm" onclick="shuttleSteel('remove')" title="Bỏ">◀</button>
+                                </div>
+                                <select id="selectedSteel" multiple size="5"
+                                    style="flex:1;min-width:70px;font-weight:600;background:#e8f5e9;"></select>
+                            </div>
+                        </div>
+                    </div>
+                    <div class="hint">Click đúp vào danh sách để thêm/xóa mác vật liệu. Ctrl+Click để chọn nhiều.</div>
                 </div>
             </div>
 
+            <!-- ANCHORAGE MATRIX -->
             <div class="section">
-                <div class="section-header">4. Quy cách Móc (Standard Hooks)</div>
+                <div class="section-header">3. Bảng tra Neo (Development Length)</div>
+                <div class="section-body" style="overflow-x:auto;">
+                    <div id="anchorageMatrixWrapper"></div>
+                    <div class="hint" id="anchorageHint">Hàng = Đường kính, Cột = Cặp vật liệu. Nhập hệ số ×d.</div>
+                </div>
+            </div>
+
+            <!-- SPLICE MATRIX -->
+            <div class="section">
+                <div class="section-header">4. Bảng tra Nối (Lap Splice Length)</div>
+                <div class="section-body" style="overflow-x:auto;">
+                    <div id="spliceMatrixWrapper"></div>
+                    <div class="hint">Thường = Neo × 1.3. Nhập trực tiếp nếu khác tiêu chuẩn.</div>
+                </div>
+            </div>
+
+            <!-- HOOK CONFIG -->
+            <div class="section">
+                <div class="section-header">5. Quy cách Móc (Standard Hooks)</div>
                 <div class="section-body">
                     <div class="row">
                         <div class="col"><label>Móc 90° (×d)</label><input type="number" id="Hook90Factor" value="12">
@@ -666,11 +746,11 @@
                         </div>
                     </div>
                     <div class="row">
-                        <div class="col"><label>Chiều dài móc tối thiểu (mm)</label><input type="number"
-                                id="MinHookLength" value="75"></div>
-                        <div class="col"><label>Hệ số mặc định Neo</label><input type="number"
+                        <div class="col"><label>Chiều dài móc min (mm)</label><input type="number" id="MinHookLength"
+                                value="75"></div>
+                        <div class="col"><label>Neo mặc định (×d)</label><input type="number"
                                 id="DefaultAnchorageFactor" value="40"></div>
-                        <div class="col"><label>Hệ số mặc định Nối</label><input type="number" id="DefaultSpliceFactor"
+                        <div class="col"><label>Nối mặc định (×d)</label><input type="number" id="DefaultSpliceFactor"
                                 value="52"></div>
                     </div>
                 </div>
@@ -788,7 +868,13 @@
                 chip.className = 'diameter-chip' + (available.includes(d) ? ' active' : '');
                 chip.textContent = 'Ø' + d;
                 chip.dataset.diameter = d;
-                chip.onclick = () => chip.classList.toggle('active');
+                chip.onclick = () => {
+                    chip.classList.toggle('active');
+                    // Sync with Tab 4 anchorage matrix (re-render to update row visibility)
+                    if (typeof renderDiameterMatrices === 'function') {
+                        renderDiameterMatrices();
+                    }
+                };
                 grid.appendChild(chip);
             });
         }
@@ -798,123 +884,634 @@
             return Array.from(chips).map(c => parseInt(c.dataset.diameter)).sort((a, b) => a - b);
         }
 
-        // ============ ANCHORAGE MATRIX FUNCTIONS ============
-        let concreteGrades = [];
-        let steelGrades = [];
-        let anchorageFactors = {};
-        let spliceFactors = {};
+        // ============ ANCHORAGE COMPREHENSIVE FUNCTIONS ============
+        const DIAMETERS = [10, 12, 13, 14, 16, 18, 19, 20, 22, 25, 28, 29, 32, 36];
 
-        function loadAnchorageTab() {
-            // Load lists from data
-            concreteGrades = data.Anchorage?.ConcreteGrades || ['B20', 'B25', 'B30', 'B35', 'B40'];
-            steelGrades = data.Anchorage?.SteelGrades || ['CB300', 'CB400', 'CB500'];
-            anchorageFactors = data.Anchorage?.AnchorageFactors || {};
-            spliceFactors = data.Anchorage?.SpliceFactors || {};
+        let anchorageState = {
+            mode: 'ByFactor', // or 'ByLength'
+            standardName: 'TCVN',
+            availableConcrete: ['B15', 'B20', 'B25', 'B30', 'B35', 'B40'],
+            availableSteel: ['CB240', 'CB300', 'CB400', 'CB500'],
+            selectedConcrete: ['B20', 'B25', 'B30'],
+            selectedSteel: ['CB300', 'CB400'],
+            anchorageValues: {}, // key: "B25_CB400", subkey: diameter, value: factor/length
+            spliceValues: {}
+        };
 
-            renderMaterialLists();
-            renderMatrices();
+        // ===== PRESETS =====
+        const PRESETS = {
+            TCVN: {
+                name: 'TCVN 5574:2018',
+                mode: 'ByFactor',
+                availableConcrete: ['B15', 'B20', 'B25', 'B30', 'B35', 'B40'],
+                availableSteel: ['CB240', 'CB300', 'CB400', 'CB500'],
+                selectedConcrete: ['B20', 'B25', 'B30'],
+                selectedSteel: ['CB300', 'CB400'],
+                generateData: () => {
+                    const anc = {}, spl = {};
+                    ['B20', 'B25', 'B30'].forEach(c => {
+                        ['CB300', 'CB400'].forEach(s => {
+                            const key = `${c}_${s}`;
+                            let base = c === 'B20' ? 45 : c === 'B25' ? 40 : 35;
+                            if (s === 'CB400') base += 5;
+                            anc[key] = {}; spl[key] = {};
+                            DIAMETERS.forEach(d => { anc[key][d] = base; spl[key][d] = Math.round(base * 1.3); });
+                        });
+                    });
+                    return { anchorageValues: anc, spliceValues: spl };
+                }
+            },
+            RC: {
+                name: 'Standard RC (SD420)',
+                mode: 'ByLength',
+                availableConcrete: ['210', '280', '350'],
+                availableSteel: ['SD420'],
+                selectedConcrete: ['210', '280', '350'],
+                selectedSteel: ['SD420'],
+                generateData: () => {
+                    const anc = {}, spl = {};
+                    // 210
+                    anc['210_SD420'] = { 10: 420, 13: 560, 16: 700, 19: 840, 22: 1100, 25: 1420, 29: 1870, 32: 2370, 36: 2890 };
+                    spl['210_SD420'] = { 10: 550, 13: 730, 16: 910, 19: 1100, 22: 1430, 25: 1850, 29: 2440, 32: 3090, 36: 3760 };
+                    // 280
+                    anc['280_SD420'] = { 10: 360, 13: 490, 16: 600, 19: 730, 22: 950, 25: 1230, 29: 1620, 32: 2050, 36: 2500 };
+                    spl['280_SD420'] = { 10: 470, 13: 640, 16: 790, 19: 950, 22: 1240, 25: 1600, 29: 2110, 32: 2670, 36: 3250 };
+                    // 350
+                    anc['350_SD420'] = { 10: 340, 13: 450, 16: 550, 19: 670, 22: 870, 25: 1130, 29: 1490, 32: 1890, 36: 2310 };
+                    spl['350_SD420'] = { 10: 440, 13: 590, 16: 720, 19: 870, 22: 1140, 25: 1470, 29: 1940, 32: 2460, 36: 3010 };
+                    return { anchorageValues: anc, spliceValues: spl };
+                }
+            },
+            ACI: {
+                name: 'ACI 318-19',
+                mode: 'ByFactor',
+                availableConcrete: ['3000', '4000', '5000', '6000'],
+                availableSteel: ['Grade40', 'Grade60'],
+                selectedConcrete: ['4000', '5000'],
+                selectedSteel: ['Grade60'],
+                generateData: () => {
+                    const anc = {}, spl = {};
+                    ['4000', '5000'].forEach(c => {
+                        ['Grade60'].forEach(s => {
+                            const key = `${c}_${s}`;
+                            let base = c === '4000' ? 48 : 42;
+                            anc[key] = {}; spl[key] = {};
+                            DIAMETERS.forEach(d => { anc[key][d] = base; spl[key][d] = Math.round(base * 1.3); });
+                        });
+                    });
+                    return { anchorageValues: anc, spliceValues: spl };
+                }
+            },
+            EUROCODE: {
+                name: 'Eurocode 2',
+                mode: 'ByFactor',
+                availableConcrete: ['C20/25', 'C25/30', 'C30/37', 'C35/45'],
+                availableSteel: ['B500A', 'B500B', 'B500C'],
+                selectedConcrete: ['C25/30', 'C30/37'],
+                selectedSteel: ['B500B'],
+                generateData: () => {
+                    const anc = {}, spl = {};
+                    ['C25/30', 'C30/37'].forEach(c => {
+                        ['B500B'].forEach(s => {
+                            const key = `${c}_${s}`;
+                            let base = c === 'C25/30' ? 44 : 38;
+                            anc[key] = {}; spl[key] = {};
+                            DIAMETERS.forEach(d => { anc[key][d] = base; spl[key][d] = Math.round(base * 1.5); });
+                        });
+                    });
+                    return { anchorageValues: anc, spliceValues: spl };
+                }
+            }
+        };
+
+        function loadPreset(presetName) {
+            const preset = PRESETS[presetName];
+            if (!preset) return;
+
+            anchorageState.standardName = preset.name;
+            anchorageState.mode = preset.mode;
+            anchorageState.availableConcrete = [...preset.availableConcrete];
+            anchorageState.availableSteel = [...preset.availableSteel];
+            anchorageState.selectedConcrete = [...preset.selectedConcrete];
+            anchorageState.selectedSteel = [...preset.selectedSteel];
+
+            const data = preset.generateData();
+            anchorageState.anchorageValues = data.anchorageValues;
+            anchorageState.spliceValues = data.spliceValues;
+
+            // Update UI
+            document.getElementById('currentStandard').textContent = preset.name;
+            document.querySelector(`input[name="calcMode"][value="${preset.mode}"]`).checked = true;
+            highlightPresetButton(presetName);
+            updateModeLabel();
+            updateAnchorageHint();
+            renderShuttleSelectors();
+            renderDiameterMatrices();
         }
 
-        function renderMaterialLists() {
-            // Concrete grade list
-            const concreteList = document.getElementById('concreteGradeList');
-            concreteList.innerHTML = concreteGrades.map(g =>
-                `<div class="diameter-chip active" onclick="removeConcreteGrade('${g}')">${g} ×</div>`
-            ).join('');
-
-            // Steel grade list
-            const steelList = document.getElementById('steelGradeList');
-            steelList.innerHTML = steelGrades.map(g =>
-                `<div class="diameter-chip active" onclick="removeSteelGrade('${g}')">${g} ×</div>`
-            ).join('');
+        function highlightPresetButton(activePreset) {
+            ['TCVN', 'ACI', 'EUROCODE', 'RC'].forEach(p => {
+                const btn = document.getElementById('preset' + p);
+                if (btn) {
+                    if (p === activePreset) {
+                        btn.classList.remove('btn-secondary');
+                        btn.classList.add('btn-primary');
+                    } else {
+                        btn.classList.remove('btn-primary');
+                        btn.classList.add('btn-secondary');
+                    }
+                }
+            });
         }
 
-        function addConcreteGrade() {
-            const input = document.getElementById('newConcreteGrade');
-            const val = input.value.trim().toUpperCase();
-            if (val && !concreteGrades.includes(val)) {
-                concreteGrades.push(val);
-                renderMaterialLists();
-                renderMatrices();
-                input.value = '';
+        // ===== MODE SWITCH WITH AUTO-CONVERT =====
+        function switchMode(newMode) {
+            const oldMode = anchorageState.mode;
+            if (oldMode === newMode) return;
+
+            // Auto-convert values without confirm
+            [anchorageState.anchorageValues, anchorageState.spliceValues].forEach(valueMap => {
+                for (const key in valueMap) {
+                    for (const d in valueMap[key]) {
+                        const diameter = parseInt(d);
+                        let val = valueMap[key][d];
+                        if (newMode === 'ByLength' && oldMode === 'ByFactor') {
+                            valueMap[key][d] = Math.round(val * diameter);
+                        } else if (newMode === 'ByFactor' && oldMode === 'ByLength') {
+                            valueMap[key][d] = Math.round(val / diameter);
+                        }
+                    }
+                }
+            });
+
+            anchorageState.mode = newMode;
+            updateModeLabel();
+            updateAnchorageHint();
+            renderDiameterMatrices();
+        }
+
+        function updateModeLabel() {
+            const label = document.getElementById('currentModeLabel');
+            if (label) {
+                label.textContent = anchorageState.mode === 'ByLength' ? 'Chiều dài mm' : 'Hệ số ×d';
             }
         }
 
-        function addSteelGrade() {
-            const input = document.getElementById('newSteelGrade');
-            const val = input.value.trim().toUpperCase();
-            if (val && !steelGrades.includes(val)) {
-                steelGrades.push(val);
-                renderMaterialLists();
-                renderMatrices();
-                input.value = '';
-            }
-        }
-
-        function removeConcreteGrade(grade) {
-            concreteGrades = concreteGrades.filter(g => g !== grade);
-            renderMaterialLists();
-            renderMatrices();
-        }
-
-        function removeSteelGrade(grade) {
-            steelGrades = steelGrades.filter(g => g !== grade);
-            renderMaterialLists();
-            renderMatrices();
-        }
-
-        function renderMatrices() {
-            renderMatrix('anchorageMatrix', anchorageFactors, 'anc');
-            renderMatrix('spliceMatrix', spliceFactors, 'spl');
-        }
-
-        function renderMatrix(tableId, factorMap, prefix) {
-            const table = document.getElementById(tableId);
-            if (!table) return;
-
-            // Header row
-            let headerHtml = '<tr><th style="border:1px solid #ccc;background:#f5f5f5;padding:4px;">Bê tông \\ Thép</th>';
-            steelGrades.forEach(s => {
-                headerHtml += `<th style="border:1px solid #ccc;background:#f0f0f0;padding:4px;text-align:center;">${s}</th>`;
-            });
-            headerHtml += '</tr>';
-            table.querySelector('thead').innerHTML = headerHtml;
-
-            // Data rows
-            let bodyHtml = '';
-            concreteGrades.forEach(c => {
-                bodyHtml += `<tr><td style="border:1px solid #ccc;background:#f5f5f5;padding:4px;font-weight:500;">${c}</td>`;
-                steelGrades.forEach(s => {
-                    const key = `${c}_${s}`;
-                    const val = factorMap[key] ?? '';
-                    bodyHtml += `<td style="border:1px solid #ccc;padding:2px;"><input type="number" 
-                        id="${prefix}_${c}_${s}" value="${val}" 
-                        style="width:50px;text-align:center;border:none;background:transparent;"
-                        onchange="updateFactor('${prefix}', '${c}', '${s}', this.value)"></td>`;
-                });
-                bodyHtml += '</tr>';
-            });
-            table.querySelector('tbody').innerHTML = bodyHtml;
-        }
-
-        function updateFactor(prefix, concrete, steel, value) {
-            const key = `${concrete}_${steel}`;
-            const val = parseFloat(value) || 0;
-            if (prefix === 'anc') {
-                anchorageFactors[key] = val;
+        function updateAnchorageHint() {
+            const hint = document.getElementById('anchorageHint');
+            if (anchorageState.mode === 'ByLength') {
+                hint.textContent = 'Nhập chiều dài tuyệt đối (mm). VD: 800 = 800mm';
             } else {
-                spliceFactors[key] = val;
+                hint.textContent = 'Nhập hệ số ×d. VD: 40 = 40×d = 40×20mm = 800mm';
             }
+        }
+
+        // ===== SHUTTLE SELECTOR =====
+        function renderShuttleSelectors() {
+            // Concrete
+            const availC = document.getElementById('availableConcrete');
+            const selC = document.getElementById('selectedConcrete');
+            availC.innerHTML = anchorageState.availableConcrete
+                .filter(g => !anchorageState.selectedConcrete.includes(g))
+                .map(g => `<option value="${g}">${g}</option>`).join('');
+            selC.innerHTML = sortGrades(anchorageState.selectedConcrete)
+                .map(g => `<option value="${g}">${g}</option>`).join('');
+
+            // Steel
+            const availS = document.getElementById('availableSteel');
+            const selS = document.getElementById('selectedSteel');
+            availS.innerHTML = anchorageState.availableSteel
+                .filter(g => !anchorageState.selectedSteel.includes(g))
+                .map(g => `<option value="${g}">${g}</option>`).join('');
+            selS.innerHTML = sortGrades(anchorageState.selectedSteel)
+                .map(g => `<option value="${g}">${g}</option>`).join('');
+        }
+
+        function sortGrades(grades) {
+            return grades.slice().sort((a, b) => {
+                const numA = parseFloat(a.replace(/[^0-9.]/g, '')) || 0;
+                const numB = parseFloat(b.replace(/[^0-9.]/g, '')) || 0;
+                return numA - numB;
+            });
+        }
+
+        function shuttleConcrete(action) {
+            const avail = document.getElementById('availableConcrete');
+            const sel = document.getElementById('selectedConcrete');
+            if (action === 'add') {
+                Array.from(avail.selectedOptions).forEach(opt => {
+                    anchorageState.selectedConcrete.push(opt.value);
+                });
+            } else {
+                const toRemove = Array.from(sel.selectedOptions).map(o => o.value);
+                anchorageState.selectedConcrete = anchorageState.selectedConcrete.filter(g => !toRemove.includes(g));
+            }
+            renderShuttleSelectors();
+            renderDiameterMatrices();
+        }
+
+        function shuttleSteel(action) {
+            const avail = document.getElementById('availableSteel');
+            const sel = document.getElementById('selectedSteel');
+            if (action === 'add') {
+                Array.from(avail.selectedOptions).forEach(opt => {
+                    anchorageState.selectedSteel.push(opt.value);
+                });
+            } else {
+                const toRemove = Array.from(sel.selectedOptions).map(o => o.value);
+                anchorageState.selectedSteel = anchorageState.selectedSteel.filter(g => !toRemove.includes(g));
+            }
+            renderShuttleSelectors();
+            renderDiameterMatrices();
+        }
+
+        // ===== EDIT MATERIAL LIST POPUP =====
+        function editMaterialList(type) {
+            const isConc = type === 'concrete';
+            const list = isConc ? anchorageState.availableConcrete : anchorageState.availableSteel;
+            const label = isConc ? 'Mác Bê tông' : 'Mác Thép';
+
+            const current = list.join(', ');
+            const input = prompt(
+                `Chỉnh sửa danh sách ${label}:\n\n` +
+                `Nhập các mác cách nhau bởi dấu phẩy (,)\n` +
+                `VD: B20, B25, B30\n\n` +
+                `Danh sách hiện tại:`,
+                current
+            );
+
+            if (input !== null) {
+                const newList = input.split(',').map(s => s.trim().toUpperCase()).filter(s => s);
+                if (isConc) {
+                    anchorageState.availableConcrete = newList;
+                    // Keep only selected items that still exist in available
+                    anchorageState.selectedConcrete = anchorageState.selectedConcrete.filter(g => newList.includes(g));
+                } else {
+                    anchorageState.availableSteel = newList;
+                    anchorageState.selectedSteel = anchorageState.selectedSteel.filter(g => newList.includes(g));
+                }
+                renderShuttleSelectors();
+                renderDiameterMatrices();
+            }
+        }
+
+        // ===== SAVE/LOAD PRESET =====
+        function saveCurrentPreset() {
+            const name = prompt('Nhập tên preset:', anchorageState.standardName || 'My Preset');
+            if (!name) return;
+
+            const presetData = {
+                name: name,
+                mode: anchorageState.mode,
+                availableConcrete: anchorageState.availableConcrete,
+                availableSteel: anchorageState.availableSteel,
+                selectedConcrete: anchorageState.selectedConcrete,
+                selectedSteel: anchorageState.selectedSteel,
+                anchorageValues: anchorageState.anchorageValues,
+                spliceValues: anchorageState.spliceValues
+            };
+
+            localStorage.setItem('DTS_AnchoragePreset_' + name.replace(/\s/g, '_'), JSON.stringify(presetData));
+            anchorageState.standardName = name;
+            document.getElementById('currentStandard').textContent = name;
+            renderSavedPresets(); // Update UI
+        }
+
+        function renderSavedPresets() {
+            const container = document.getElementById('savedPresetsContainer');
+            if (!container) return;
+
+            const presets = [];
+            for (let i = 0; i < localStorage.length; i++) {
+                const key = localStorage.key(i);
+                if (key.startsWith('DTS_AnchoragePreset_')) {
+                    presets.push(key.replace('DTS_AnchoragePreset_', '').replace(/_/g, ' '));
+                }
+            }
+
+            if (presets.length === 0) {
+                container.innerHTML = '<span style="color:#999;font-size:11px;">Chưa có preset đã lưu</span>';
+                return;
+            }
+
+            container.innerHTML = presets.map(p =>
+                `<button class="btn-secondary btn-sm" onclick="loadSavedPresetByName('${p.replace(/'/g, "\\'")}')" 
+                    style="font-size:10px;padding:2px 6px;" title="${p}">📁 ${p}</button>`
+            ).join('');
+        }
+
+        function loadSavedPresetByName(name) {
+            const key = 'DTS_AnchoragePreset_' + name.replace(/\s/g, '_');
+            const dataStr = localStorage.getItem(key);
+            if (!dataStr) return;
+
+            try {
+                const presetData = JSON.parse(dataStr);
+                Object.assign(anchorageState, presetData);
+                document.getElementById('currentStandard').textContent = presetData.name;
+                document.querySelector(`input[name="calcMode"][value="${presetData.mode}"]`).checked = true;
+                updateModeLabel();
+                updateAnchorageHint();
+                renderShuttleSelectors();
+                renderDiameterMatrices();
+            } catch (e) {
+                alert('Lỗi đọc preset: ' + e.message);
+            }
+        }
+
+        function createNewPreset() {
+            const name = prompt('Nhập tên preset mới:');
+            if (!name) return;
+
+            // Reset to empty state
+            anchorageState.standardName = name;
+            anchorageState.mode = 'ByFactor';
+            anchorageState.availableConcrete = ['B20', 'B25', 'B30', 'B35'];
+            anchorageState.availableSteel = ['CB300', 'CB400'];
+            anchorageState.selectedConcrete = ['B25'];
+            anchorageState.selectedSteel = ['CB400'];
+            anchorageState.anchorageValues = {};
+            anchorageState.spliceValues = {};
+
+            // Auto-save to localStorage
+            const presetData = {
+                name: name,
+                mode: anchorageState.mode,
+                availableConcrete: anchorageState.availableConcrete,
+                availableSteel: anchorageState.availableSteel,
+                selectedConcrete: anchorageState.selectedConcrete,
+                selectedSteel: anchorageState.selectedSteel,
+                anchorageValues: anchorageState.anchorageValues,
+                spliceValues: anchorageState.spliceValues
+            };
+            localStorage.setItem('DTS_AnchoragePreset_' + name.replace(/\s/g, '_'), JSON.stringify(presetData));
+
+            // Update UI
+            document.getElementById('currentStandard').textContent = name;
+            document.querySelector('input[name="calcMode"][value="ByFactor"]').checked = true;
+            highlightPresetButton(null); // No preset active
+            updateModeLabel();
+            updateAnchorageHint();
+            renderShuttleSelectors();
+            renderDiameterMatrices();
+            renderSavedPresets(); // Update saved presets list
+        }
+
+        function deleteSavedPreset() {
+            const presets = [];
+            for (let i = 0; i < localStorage.length; i++) {
+                const key = localStorage.key(i);
+                if (key.startsWith('DTS_AnchoragePreset_')) {
+                    presets.push(key.replace('DTS_AnchoragePreset_', '').replace(/_/g, ' '));
+                }
+            }
+
+            if (presets.length === 0) {
+                alert('Chưa có preset nào được lưu.');
+                return;
+            }
+
+            const name = prompt('Chọn preset để XÓA:\n\n' + presets.map((p, i) => `${i + 1}. ${p}`).join('\n') + '\n\nNhập số thứ tự:');
+            const idx = parseInt(name) - 1;
+            if (isNaN(idx) || idx < 0 || idx >= presets.length) return;
+
+            const key = 'DTS_AnchoragePreset_' + presets[idx].replace(/\\s/g, '_');
+            if (confirm(`Xóa preset "${presets[idx]}"?`)) {
+                localStorage.removeItem(key);
+                alert('Đã xóa.');
+            }
+        }
+
+        // ===== GET ACTIVE DIAMETERS FROM GENERAL TAB =====
+        function getActiveDiameters() {
+            const chips = document.querySelectorAll('#inventoryGrid .diameter-chip.active');
+            return Array.from(chips).map(c => parseInt(c.dataset.diameter)).sort((a, b) => a - b);
+        }
+
+        // ===== DIAMETER-BASED MATRIX WITH SYNC =====
+        function renderDiameterMatrices() {
+            renderDiameterMatrix('anchorageMatrixWrapper', anchorageState.anchorageValues, 'anc');
+            renderDiameterMatrix('spliceMatrixWrapper', anchorageState.spliceValues, 'spl');
+        }
+
+        function renderDiameterMatrix(wrapperId, valueMap, prefix) {
+            const wrapper = document.getElementById(wrapperId);
+            if (!wrapper) return;
+
+            const concretes = sortGrades(anchorageState.selectedConcrete);
+            const steels = sortGrades(anchorageState.selectedSteel);
+            const activeDiams = getActiveDiameters(); // Sync with General tab
+
+            if (concretes.length === 0 || steels.length === 0) {
+                wrapper.innerHTML = '<p style="color:#999;">Chọn vật liệu bên trên để hiển thị bảng.</p>';
+                return;
+            }
+
+            // Build material pairs as columns
+            const pairs = [];
+            concretes.forEach(c => steels.forEach(s => pairs.push({ c, s, key: `${c}_${s}` })));
+
+            let html = `<table id="${prefix}Table" class="matrix-table" style="width:100%;font-size:11px;border-collapse:collapse;">
+                <thead><tr>
+                    <th style="border:1px solid #ccc;background:#e3f2fd;padding:4px;min-width:40px;">Ø</th>`;
+            pairs.forEach((p, colIdx) => {
+                html += `<th style="border:1px solid #ccc;background:#f0f0f0;padding:4px;text-align:center;min-width:55px;cursor:pointer;" onclick="selectMatrixCol('${prefix}', ${colIdx}, ${DIAMETERS.length})">${p.c}<br>${p.s}</th>`;
+            });
+            html += '</tr></thead><tbody>';
+
+            DIAMETERS.forEach((d, rowIdx) => {
+                const isActive = activeDiams.length === 0 || activeDiams.includes(d);
+                const rowStyle = isActive ? '' : 'opacity:0.4;background:#f9f9f9;';
+                html += `<tr style="${rowStyle}"><td style="border:1px solid #ccc;background:#f5f5f5;padding:4px;font-weight:600;cursor:pointer;" onclick="selectMatrixRow('${prefix}', ${rowIdx}, ${pairs.length})">D${d}</td>`;
+                pairs.forEach(p => {
+                    const val = valueMap[p.key]?.[d] ?? '';
+                    html += `<td style="border:1px solid #ccc;padding:0;"><input type="text" 
+                        data-prefix="${prefix}" data-key="${p.key}" data-diameter="${d}"
+                        value="${val}" style="width:100%;text-align:center;border:none;background:transparent;padding:3px;box-sizing:border-box;"
+                        onchange="updateMatrixValue(this)" onfocus="this.select()"></td>`;
+                });
+                html += '</tr>';
+            });
+            html += '</tbody></table>';
+            wrapper.innerHTML = html;
+
+            // Add event listeners for Excel-like behavior
+            const allInputs = wrapper.querySelectorAll('input');
+            allInputs.forEach((input, idx) => {
+                input.addEventListener('paste', handleExcelPaste);
+                input.addEventListener('keydown', (e) => handleMatrixKeydown(e, allInputs, idx, pairs.length));
+            });
+        }
+
+        // ===== EXCEL KEYBOARD NAVIGATION =====
+        function handleMatrixKeydown(e, allInputs, currentIdx, colCount) {
+            const key = e.key;
+            const ctrl = e.ctrlKey;
+
+            // Ctrl+A = select ALL cells in the table
+            if (ctrl && key === 'a') {
+                e.preventDefault();
+                allInputs.forEach(inp => {
+                    inp.classList.add('selected');
+                    inp.style.background = '#bbdefb';
+                });
+                return;
+            }
+
+            // Arrow key navigation
+            let newIdx = currentIdx;
+            if (key === 'ArrowRight' || key === 'Tab') {
+                if (!e.shiftKey) {
+                    newIdx = currentIdx + 1;
+                    if (key === 'Tab') e.preventDefault();
+                }
+            } else if (key === 'ArrowLeft' || (key === 'Tab' && e.shiftKey)) {
+                newIdx = currentIdx - 1;
+                if (key === 'Tab') e.preventDefault();
+            } else if (key === 'ArrowDown' || key === 'Enter') {
+                newIdx = currentIdx + colCount;
+                e.preventDefault();
+            } else if (key === 'ArrowUp') {
+                newIdx = currentIdx - colCount;
+                e.preventDefault();
+            }
+
+            // Ctrl + Arrow = jump to edge
+            if (ctrl) {
+                if (key === 'ArrowRight') newIdx = Math.floor(currentIdx / colCount) * colCount + colCount - 1;
+                else if (key === 'ArrowLeft') newIdx = Math.floor(currentIdx / colCount) * colCount;
+                else if (key === 'ArrowDown') newIdx = (allInputs.length - colCount) + (currentIdx % colCount);
+                else if (key === 'ArrowUp') newIdx = currentIdx % colCount;
+            }
+
+            // Focus new cell if valid
+            if (newIdx >= 0 && newIdx < allInputs.length && newIdx !== currentIdx) {
+                allInputs[newIdx].focus();
+                allInputs[newIdx].select();
+            }
+        }
+
+        // ===== MATRIX SELECTION HELPERS =====
+        function selectMatrixRow(prefix, rowIdx, colCount) {
+            clearMatrixSelection();
+            const table = document.getElementById(prefix + 'Table');
+            if (!table) return;
+            const inputs = table.querySelectorAll('tbody tr')[rowIdx]?.querySelectorAll('input');
+            inputs?.forEach(inp => {
+                inp.classList.add('selected');
+                inp.style.background = '#bbdefb';
+            });
+        }
+
+        function selectMatrixCol(prefix, colIdx, rowCount) {
+            clearMatrixSelection();
+            const table = document.getElementById(prefix + 'Table');
+            if (!table) return;
+            const rows = table.querySelectorAll('tbody tr');
+            rows.forEach(row => {
+                const inputs = row.querySelectorAll('input');
+                if (inputs[colIdx]) {
+                    inputs[colIdx].classList.add('selected');
+                    inputs[colIdx].style.background = '#bbdefb';
+                }
+            });
+        }
+
+        function clearMatrixSelection() {
+            document.querySelectorAll('.matrix-table input.selected').forEach(inp => {
+                inp.classList.remove('selected');
+                inp.style.background = 'transparent';
+            });
+        }
+
+        // ===== EXCEL PASTE SUPPORT =====
+        function handleExcelPaste(e) {
+            const clipData = e.clipboardData.getData('text');
+            if (!clipData.includes('\t') && !clipData.includes('\n')) return; // Not tabular data
+
+            e.preventDefault();
+            const rows = clipData.trim().split('\n').map(r => r.split('\t'));
+            const startInput = e.target;
+            const table = startInput.closest('table');
+            const allInputs = Array.from(table.querySelectorAll('input'));
+            const startIdx = allInputs.indexOf(startInput);
+            const colCount = table.querySelectorAll('thead th').length - 1; // Minus diameter column
+
+            let idx = startIdx;
+            rows.forEach(row => {
+                row.forEach(val => {
+                    if (allInputs[idx]) {
+                        const numVal = parseFloat(val) || 0;
+                        allInputs[idx].value = numVal;
+                        updateMatrixValue(allInputs[idx]);
+                    }
+                    idx++;
+                });
+                // Move to next row
+                idx = startIdx + (Math.floor((idx - startIdx) / colCount) + 1) * colCount;
+            });
+        }
+
+        function updateMatrixValue(input) {
+            const prefix = input.dataset.prefix;
+            const key = input.dataset.key;
+            const diameter = parseInt(input.dataset.diameter);
+            const value = parseFloat(input.value) || 0;
+
+            const map = prefix === 'anc' ? anchorageState.anchorageValues : anchorageState.spliceValues;
+            if (!map[key]) map[key] = {};
+            map[key][diameter] = value;
+        }
+
+        // ===== LOAD/SAVE =====
+        function loadAnchorageTab() {
+            // Load from data or use defaults
+            if (data.Anchorage?.StandardName) {
+                anchorageState.standardName = data.Anchorage.StandardName;
+            }
+            if (data.Anchorage?.Mode) {
+                anchorageState.mode = data.Anchorage.Mode;
+            }
+            if (data.Anchorage?.AvailableConcreteGrades) {
+                anchorageState.availableConcrete = data.Anchorage.AvailableConcreteGrades;
+            }
+            if (data.Anchorage?.AvailableSteelGrades) {
+                anchorageState.availableSteel = data.Anchorage.AvailableSteelGrades;
+            }
+            if (data.Anchorage?.ConcreteGrades) {
+                anchorageState.selectedConcrete = data.Anchorage.ConcreteGrades;
+            }
+            if (data.Anchorage?.SteelGrades) {
+                anchorageState.selectedSteel = data.Anchorage.SteelGrades;
+            }
+            if (data.Anchorage?.AnchorageValues) {
+                anchorageState.anchorageValues = data.Anchorage.AnchorageValues;
+            }
+            if (data.Anchorage?.SpliceValues) {
+                anchorageState.spliceValues = data.Anchorage.SpliceValues;
+            }
+
+            // Update UI
+            document.getElementById('currentStandard').textContent = anchorageState.standardName;
+            const modeRadio = document.querySelector(`input[name="calcMode"][value="${anchorageState.mode}"]`);
+            if (modeRadio) modeRadio.checked = true;
+            updateAnchorageHint();
+            renderShuttleSelectors();
+            renderDiameterMatrices();
         }
 
         function collectAnchorageData() {
             const getVal = (id) => { const el = document.getElementById(id); return el ? parseFloat(el.value) || 0 : 0; };
 
             return {
-                ConcreteGrades: [...concreteGrades],
-                SteelGrades: [...steelGrades],
-                AnchorageFactors: { ...anchorageFactors },
-                SpliceFactors: { ...spliceFactors },
+                StandardName: anchorageState.standardName,
+                Mode: anchorageState.mode,
+                AvailableConcreteGrades: [...anchorageState.availableConcrete],
+                AvailableSteelGrades: [...anchorageState.availableSteel],
+                ConcreteGrades: [...anchorageState.selectedConcrete],
+                SteelGrades: [...anchorageState.selectedSteel],
+                AnchorageValues: JSON.parse(JSON.stringify(anchorageState.anchorageValues)),
+                SpliceValues: JSON.parse(JSON.stringify(anchorageState.spliceValues)),
                 Hook90Factor: getVal('Hook90Factor') || 12,
                 MinHook90Length: getVal('MinHook90Length') || 150,
                 Hook135Factor: getVal('Hook135Factor') || 6,
@@ -1048,6 +1645,11 @@
                 document.getElementById('GirderBotSpliceZone').value = data.Detailing?.GirderRule?.BotSpliceZone ?? 0;
                 setChk('GirderAllowLapInJoint', data.Detailing?.GirderRule?.AllowLapSpliceInJoint ?? true);
             }
+
+            // Tab 4: Anchorage - Initialize saved presets and matrix
+            renderSavedPresets();
+            renderShuttleSelectors();
+            renderDiameterMatrices();
         }
 
         function doSave() {
