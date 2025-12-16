@@ -1229,7 +1229,106 @@ namespace DTS_Engine.Commands
                 prevHeight = spanHeight;
             }
 
+            // ===== INTEGRATE RebarCuttingAlgorithm =====
+            // Tính toán các đoạn thép cắt + nối + hook
+            CalculateBarSegmentsForGroup(group, settings);
+
             return group;
+        }
+
+        /// <summary>
+        /// Tính toán và populate TopBarSegments/BotBarSegments cho BeamGroup
+        /// Sử dụng RebarCuttingAlgorithm từ C# (không để JS tính)
+        /// </summary>
+        private void CalculateBarSegmentsForGroup(BeamGroup group, DtsSettings settings)
+        {
+            try
+            {
+                var algorithm = new Core.Algorithms.RebarCuttingAlgorithm(settings);
+
+                // Convert spans to SpanInfo for algorithm
+                var spanInfos = new List<Core.Algorithms.SpanInfo>();
+                double cumPos = 0;
+                foreach (var span in group.Spans)
+                {
+                    spanInfos.Add(new Core.Algorithms.SpanInfo
+                    {
+                        SpanId = span.SpanId,
+                        Length = span.Length * 1000, // Convert m to mm
+                        StartPos = cumPos * 1000
+                    });
+                    cumPos += span.Length;
+                }
+
+                double totalLengthMm = group.TotalLength * 1000;
+                string groupType = group.GroupType?.ToUpperInvariant() ?? "BEAM";
+
+                // Calculate TOP bar segments
+                var topResult = algorithm.AutoCutBars(totalLengthMm, spanInfos, true, groupType);
+
+                // Determine support types for hooks
+                var firstSupport = group.Supports?.FirstOrDefault();
+                var lastSupport = group.Supports?.LastOrDefault();
+                string startSupportType = SupportTypeToString(firstSupport?.Type ?? SupportType.FreeEnd);
+                string endSupportType = SupportTypeToString(lastSupport?.Type ?? SupportType.FreeEnd);
+
+                // Apply staggering and end anchorage
+                algorithm.ApplyStaggering(topResult, 20, 2); // D20, 2 bars per layer
+                algorithm.ApplyEndAnchorage(topResult, startSupportType, endSupportType, 20);
+
+                // Convert to DTO for JSON
+                group.TopBarSegments = topResult.Segments.Select(s => new BarSegmentDto
+                {
+                    StartPos = s.StartPos / 1000.0,  // Convert back to meters for JS
+                    EndPos = s.EndPos / 1000.0,
+                    SpliceAtStart = s.SpliceAtStart,
+                    SpliceAtEnd = s.SpliceAtEnd,
+                    SplicePosition = s.SpliceAtEnd ? s.SplicePosition / 1000.0 : (double?)null,
+                    IsStaggered = s.IsStaggered,
+                    BarIndex = s.BarIndex,
+                    HookAtStart = s.HookAtStart,
+                    HookAtEnd = s.HookAtEnd,
+                    HookAngle = s.HookAngle,
+                    HookLength = s.HookLength / 1000.0
+                }).ToList();
+
+                // Calculate BOT bar segments
+                var botResult = algorithm.AutoCutBars(totalLengthMm, spanInfos, false, groupType);
+                algorithm.ApplyStaggering(botResult, 20, 2);
+                algorithm.ApplyEndAnchorage(botResult, startSupportType, endSupportType, 20);
+
+                group.BotBarSegments = botResult.Segments.Select(s => new BarSegmentDto
+                {
+                    StartPos = s.StartPos / 1000.0,
+                    EndPos = s.EndPos / 1000.0,
+                    SpliceAtStart = s.SpliceAtStart,
+                    SpliceAtEnd = s.SpliceAtEnd,
+                    SplicePosition = s.SpliceAtEnd ? s.SplicePosition / 1000.0 : (double?)null,
+                    IsStaggered = s.IsStaggered,
+                    BarIndex = s.BarIndex,
+                    HookAtStart = s.HookAtStart,
+                    HookAtEnd = s.HookAtEnd,
+                    HookAngle = s.HookAngle,
+                    HookLength = s.HookLength / 1000.0
+                }).ToList();
+
+                WriteMessage($"   Đã tính {group.TopBarSegments.Count} đoạn thép TOP, {group.BotBarSegments.Count} đoạn thép BOT");
+            }
+            catch (System.Exception ex)
+            {
+                WriteMessage($"   Lỗi tính toán bar segments: {ex.Message}");
+            }
+        }
+
+        private string SupportTypeToString(SupportType type)
+        {
+            switch (type)
+            {
+                case SupportType.Column: return "COLUMN";
+                case SupportType.Wall: return "WALL";
+                case SupportType.Beam: return "BEAM";
+                default: return "FREEEND";
+            }
         }
 
         /// <summary>

@@ -42,6 +42,9 @@ namespace DTS_Engine.Core.Algorithms
 
         /// <summary>Chiều dài hook (mm)</summary>
         public double HookLength { get; set; }
+
+        /// <summary>Là thanh thuộc nhóm stagger (so le)</summary>
+        public bool IsStaggered { get; set; }
     }
 
     /// <summary>
@@ -265,6 +268,7 @@ namespace DTS_Engine.Core.Algorithms
                 if (segment.BarIndex % 2 == 1)
                 {
                     segment.SplicePosition += staggerDist;
+                    segment.IsStaggered = true; // Mark as staggered
 
                     // Đảm bảo không vượt quá chiều dài thanh tiếp theo
                     int nextIndex = segment.BarIndex + 1;

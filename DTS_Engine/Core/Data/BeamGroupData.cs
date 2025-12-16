@@ -43,6 +43,27 @@ namespace DTS_Engine.Core.Data
         public string Stirrup { get; set; }
     }
 
+    // ===== DTO CHO BAR SEGMENT (JS Viewer) =====
+    /// <summary>
+    /// DTO để truyền kết quả RebarCuttingAlgorithm sang JS Viewer.
+    /// Dùng PascalCase để match với JSON serialization mặc định.
+    /// </summary>
+    public class BarSegmentDto
+    {
+        public double StartPos { get; set; }
+        public double EndPos { get; set; }
+        public double Length => EndPos - StartPos;
+        public bool SpliceAtStart { get; set; }
+        public bool SpliceAtEnd { get; set; }
+        public double? SplicePosition { get; set; }
+        public bool IsStaggered { get; set; }
+        public int BarIndex { get; set; }
+        public bool HookAtStart { get; set; }
+        public bool HookAtEnd { get; set; }
+        public int HookAngle { get; set; } = 90;
+        public double HookLength { get; set; }
+    }
+
     // ===== LOẠI GỐI ĐỠ =====
     public enum SupportType
     {
@@ -255,6 +276,17 @@ namespace DTS_Engine.Core.Data
         /// Hash của geometry để detect thay đổi (Re-hydration)
         /// </summary>
         public string GeometryHash { get; set; }
+
+        // ===== PRE-CALCULATED BAR SEGMENTS (từ RebarCuttingAlgorithm) =====
+        /// <summary>
+        /// Danh sách đoạn thép TOP đã tính toán (cắt + nối + hook)
+        /// </summary>
+        public List<BarSegmentDto> TopBarSegments { get; set; } = new List<BarSegmentDto>();
+
+        /// <summary>
+        /// Danh sách đoạn thép BOT đã tính toán (cắt + nối + hook)
+        /// </summary>
+        public List<BarSegmentDto> BotBarSegments { get; set; } = new List<BarSegmentDto>();
 
         /// <summary>
         /// User đã chỉnh sửa thủ công chưa?
