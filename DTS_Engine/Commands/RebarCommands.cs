@@ -503,6 +503,10 @@ namespace DTS_Engine.Commands
             });
 
             WriteSuccess($"Đã tính toán và cập nhật cho {count} dầm.");
+
+            // ===== SYNC: Populate BeamGroups với kết quả tính toán =====
+            // Để DTS_REBAR_VIEWER có dữ liệu để hiển thị
+            SyncRebarCalculationsToGroups(selectedIds);
         }
 
 
@@ -1029,11 +1033,9 @@ namespace DTS_Engine.Commands
                 // Get cached beam groups or create empty list
                 var groups = GetOrCreateBeamGroups();
 
-                // Show viewer dialog
-                using (var dialog = new UI.Forms.BeamGroupViewerDialog(groups, ApplyBeamGroupResults))
-                {
-                    Autodesk.AutoCAD.ApplicationServices.Application.ShowModalDialog(dialog);
-                }
+                // Show viewer dialog as MODELESS to allow CAD interaction
+                var dialog = new UI.Forms.BeamGroupViewerDialog(groups, ApplyBeamGroupResults);
+                Autodesk.AutoCAD.ApplicationServices.Application.ShowModelessDialog(dialog);
             }
             catch (System.Exception ex)
             {
@@ -1205,50 +1207,111 @@ namespace DTS_Engine.Commands
             // Use proper support detection instead of hardcoded Column/300mm
             BeamGroupDetector.DetectSupports(group, sortedBeams, supports);
 
-            // If no supports found, DetectSupports already adds FreeEnd at start/end
+            // FIX: Check if we only have FreeEnd supports (no real columns/walls found)
+            // In this case, create spans based on individual beams instead
+            bool onlyFreeEnds = group.Supports.All(s => s.Type == SupportType.FreeEnd);
 
-            // Create spans between supports
             double prevHeight = group.Height;
-            for (int i = 0; i < group.Supports.Count - 1; i++)
+
+            if (onlyFreeEnds || group.Supports.Count < 2)
             {
-                var left = group.Supports[i];
-                var right = group.Supports[i + 1];
-
-                // Find beam(s) in this span
-                var spanBeams = sortedBeams.Skip(i).Take(1).ToList();
-                double spanHeight = spanBeams.Count > 0 ? spanBeams.Average(b => b.Height) : group.Height;
-                bool isStep = Math.Abs(spanHeight - prevHeight) > 50;
-
-                var span = new SpanData
+                // NO REAL SUPPORTS FOUND: Create 1 span per beam
+                // This prevents 30-50m spans when columns are not detected
+                double cumPosition = 0;
+                for (int i = 0; i < sortedBeams.Count; i++)
                 {
-                    SpanId = $"S{i + 1}",
-                    SpanIndex = i,
-                    Length = right.Position - left.Position,
-                    ClearLength = right.Position - left.Position - (left.Width + right.Width) / 2000.0,
-                    Width = spanBeams.Count > 0 ? spanBeams.Average(b => b.Width) : group.Width,
-                    Height = spanHeight,
-                    LeftSupportId = left.SupportId,
-                    RightSupportId = right.SupportId,
-                    IsStepChange = isStep,
-                    HeightDifference = spanHeight - prevHeight,
-                    IsConsole = left.IsFreeEnd || right.IsFreeEnd
-                };
+                    var beam = sortedBeams[i];
+                    double beamLen = beam.Length / 1000.0; // mm to m
 
-                // Add physical segments
-                foreach (var b in spanBeams)
-                {
+                    var span = new SpanData
+                    {
+                        SpanId = $"S{i + 1}",
+                        SpanIndex = i,
+                        Length = beamLen,
+                        ClearLength = beamLen,
+                        Width = beam.Width,
+                        Height = beam.Height,
+                        LeftSupportId = i == 0 ? "FE_Start" : $"J{i}",
+                        RightSupportId = i == sortedBeams.Count - 1 ? "FE_End" : $"J{i + 1}",
+                        IsStepChange = Math.Abs(beam.Height - prevHeight) > 50,
+                        HeightDifference = beam.Height - prevHeight,
+                        IsConsole = (i == 0 || i == sortedBeams.Count - 1)
+                    };
+
                     span.Segments.Add(new PhysicalSegment
                     {
-                        EntityHandle = b.Handle,
-                        Length = b.Length / 1000.0,
-                        StartPoint = new[] { b.StartX, b.StartY },
-                        EndPoint = new[] { b.EndX, b.EndY }
+                        EntityHandle = beam.Handle,
+                        Length = beamLen,
+                        StartPoint = new[] { beam.StartX, beam.StartY },
+                        EndPoint = new[] { beam.EndX, beam.EndY }
                     });
-                }
 
-                group.Spans.Add(span);
-                if (isStep) group.HasStepChange = true;
-                prevHeight = spanHeight;
+                    group.Spans.Add(span);
+                    prevHeight = beam.Height;
+                    cumPosition += beamLen;
+                }
+            }
+            else
+            {
+                // SUPPORTS DETECTED: Create spans between supports
+                for (int i = 0; i < group.Supports.Count - 1; i++)
+                {
+                    var left = group.Supports[i];
+                    var right = group.Supports[i + 1];
+
+                    // Find beams that fall within this span's position range
+                    double cumPos = 0;
+                    var spanBeams = new List<Core.Algorithms.BeamData>();
+                    foreach (var b in sortedBeams)
+                    {
+                        double beamMidPos = cumPos + (b.Length / 1000.0) / 2;
+                        if (beamMidPos >= left.Position && beamMidPos <= right.Position)
+                        {
+                            spanBeams.Add(b);
+                        }
+                        cumPos += b.Length / 1000.0;
+                    }
+
+                    // Fallback: if no beams found, take at least one
+                    if (spanBeams.Count == 0 && sortedBeams.Count > i)
+                    {
+                        spanBeams.Add(sortedBeams[Math.Min(i, sortedBeams.Count - 1)]);
+                    }
+
+                    double spanHeight = spanBeams.Count > 0 ? spanBeams.Average(b => b.Height) : group.Height;
+                    bool isStep = Math.Abs(spanHeight - prevHeight) > 50;
+
+                    var span = new SpanData
+                    {
+                        SpanId = $"S{i + 1}",
+                        SpanIndex = i,
+                        Length = right.Position - left.Position,
+                        ClearLength = right.Position - left.Position - (left.Width + right.Width) / 2000.0,
+                        Width = spanBeams.Count > 0 ? spanBeams.Average(b => b.Width) : group.Width,
+                        Height = spanHeight,
+                        LeftSupportId = left.SupportId,
+                        RightSupportId = right.SupportId,
+                        IsStepChange = isStep,
+                        HeightDifference = spanHeight - prevHeight,
+                        IsConsole = left.IsFreeEnd || right.IsFreeEnd
+                    };
+
+                    // Add physical segments
+                    foreach (var b in spanBeams)
+                    {
+                        span.Segments.Add(new PhysicalSegment
+                        {
+                            EntityHandle = b.Handle,
+                            Length = b.Length / 1000.0,
+                            StartPoint = new[] { b.StartX, b.StartY },
+                            EndPoint = new[] { b.EndX, b.EndY }
+                        });
+                    }
+
+                    group.Spans.Add(span);
+                    if (isStep) group.HasStepChange = true;
+                    prevHeight = spanHeight;
+                }
             }
 
             // ===== INTEGRATE RebarCuttingAlgorithm =====
@@ -1357,6 +1420,252 @@ namespace DTS_Engine.Commands
                 case SupportType.Beam: return "BEAM";
                 default: return "FREEEND";
             }
+        }
+
+        /// <summary>
+        /// Sync dữ liệu từ XData (BeamResultData) sang BeamGroup.
+        /// Tạo 3 BackboneOptions và populate SpanData.TopRebar/BotRebar/Stirrup.
+        /// </summary>
+        private void SyncRebarCalculationsToGroups(ICollection<ObjectId> calculatedIds)
+        {
+            WriteMessage("   Syncing rebar data to BeamGroups...");
+
+            var groups = GetOrCreateBeamGroups();
+
+            // Nếu không có groups → tự tạo 1 group từ các dầm đã calculate
+            if (groups.Count == 0)
+            {
+                WriteMessage("   Auto-creating BeamGroup from calculated beams...");
+                var newGroup = AutoCreateGroupFromCalculatedBeams(calculatedIds);
+                if (newGroup != null)
+                {
+                    groups.Add(newGroup);
+                }
+                else
+                {
+                    WriteMessage("   (Failed to create BeamGroup - skipping sync)");
+                    return;
+                }
+            }
+
+            var settings = DtsSettings.Instance;
+            int synced = 0;
+
+            // Build handle lookup from calculated beams
+            var handleToData = new Dictionary<string, BeamResultData>();
+            UsingTransaction(tr =>
+            {
+                foreach (ObjectId id in calculatedIds)
+                {
+                    try
+                    {
+                        var obj = tr.GetObject(id, OpenMode.ForRead);
+                        var data = XDataUtils.ReadElementData(obj) as BeamResultData;
+                        if (data != null)
+                        {
+                            handleToData[obj.Handle.ToString()] = data;
+                        }
+                    }
+                    catch { }
+                }
+            });
+
+            if (handleToData.Count == 0)
+            {
+                WriteMessage("   (No rebar data found - skipping sync)");
+                return;
+            }
+
+            foreach (var group in groups)
+            {
+                // Skip if user has manually edited - only sync "best" option, not overwrite
+                bool hasUserData = group.IsManuallyEdited && group.BackboneOptions.Count > 0;
+
+                // Collect all BeamResultData for this group
+                var groupRebarData = new List<BeamResultData>();
+                foreach (var handle in group.EntityHandles)
+                {
+                    if (handleToData.TryGetValue(handle, out var data))
+                    {
+                        groupRebarData.Add(data);
+                    }
+                }
+
+                if (groupRebarData.Count == 0) continue;
+
+                // ===== CREATE 3 BACKBONE OPTIONS =====
+                if (!hasUserData)
+                {
+                    group.BackboneOptions = GenerateBackboneOptions(groupRebarData, settings, group.Width, group.Height);
+                    group.SelectedBackboneIndex = 0; // Best option first
+                }
+
+                // ===== APPLY UNIFIED BACKBONE TO ALL SPANS =====
+                // Instead of individual XData values, use backbone option for uniformity
+                if (group.BackboneOptions.Count > 0)
+                {
+                    var selectedOpt = group.BackboneOptions[group.SelectedBackboneIndex];
+                    string topBackbone = $"{selectedOpt.BackboneCount_Top}D{selectedOpt.BackboneDiameter}";
+                    string botBackbone = $"{selectedOpt.BackboneCount_Bot}D{selectedOpt.BackboneDiameter}";
+
+                    for (int i = 0; i < group.Spans.Count; i++)
+                    {
+                        var span = group.Spans[i];
+                        var data = i < groupRebarData.Count ? groupRebarData[i] : null;
+
+                        // Apply UNIFIED backbone to all positions
+                        if (!hasUserData || span.TopRebar == null || string.IsNullOrEmpty(span.TopRebar[0, 0]))
+                        {
+                            span.TopRebar[0, 0] = topBackbone;  // L1
+                            span.TopRebar[0, 2] = topBackbone;  // Mid
+                            span.TopRebar[0, 4] = topBackbone;  // L2
+
+                            span.BotRebar[0, 0] = botBackbone;
+                            span.BotRebar[0, 2] = botBackbone;
+                            span.BotRebar[0, 4] = botBackbone;
+
+                            // Stirrup from XData (can vary per span)
+                            if (data != null)
+                            {
+                                span.Stirrup[0] = data.StirrupString[0] ?? "";
+                                span.Stirrup[1] = data.StirrupString[1] ?? "";
+                                span.Stirrup[2] = data.StirrupString[2] ?? "";
+                                span.SideBar = data.WebBarString[1] ?? "";
+
+                                span.As_Top[0] = data.TopArea[0];
+                                span.As_Top[2] = data.TopArea[1];
+                                span.As_Top[4] = data.TopArea[2];
+                                span.As_Bot[0] = data.BotArea[0];
+                                span.As_Bot[2] = data.BotArea[1];
+                                span.As_Bot[4] = data.BotArea[2];
+                            }
+                        }
+                    }
+                }
+
+                synced++;
+            }
+
+            // Save updated groups back to NOD
+            if (synced > 0)
+            {
+                SaveBeamGroupsToNOD(groups);
+                WriteMessage($"   Synced data to {synced} groups.");
+            }
+        }
+
+        /// <summary>
+        /// Generate 3 backbone options cho group dựa trên calculated rebar.
+        /// Option 1: Đường kính lớn nhất, ít thanh (ưu tiên D25, D22)
+        /// Option 2: Đường kính trung bình, cân bằng
+        /// Option 3: Đường kính nhỏ, nhiều thanh (ưu tiên D20, D18)
+        /// </summary>
+        private List<ContinuousBeamSolution> GenerateBackboneOptions(List<BeamResultData> rebarData, DtsSettings settings, double widthMm, double heightMm)
+        {
+            var options = new List<ContinuousBeamSolution>();
+            var availableDiameters = settings.General?.AvailableDiameters ?? new List<int> { 16, 18, 20, 22, 25 };
+
+            // Tính tổng As yêu cầu max
+            double maxAsTop = 0, maxAsBot = 0;
+            foreach (var data in rebarData)
+            {
+                for (int i = 0; i < 3; i++)
+                {
+                    maxAsTop = Math.Max(maxAsTop, data.TopArea[i] + data.TorsionArea[i] * 0.16);
+                    maxAsBot = Math.Max(maxAsBot, data.BotArea[i] + data.TorsionArea[i] * 0.16);
+                }
+            }
+
+            // Backbone diameters to try
+            var backboneDias = availableDiameters.Where(d => d >= 16 && d <= 25).OrderByDescending(d => d).ToList();
+            if (backboneDias.Count < 3) backboneDias = new List<int> { 22, 20, 18 };
+
+            // Generate 3 options with different diameters
+            for (int opt = 0; opt < 3 && opt < backboneDias.Count; opt++)
+            {
+                int dia = backboneDias[opt];
+                double asPerBar = Math.PI * dia * dia / 4.0; // mm² per bar
+
+                int nTop = Math.Max(2, (int)Math.Ceiling(maxAsTop * 100 / asPerBar)); // As in cm², convert
+                int nBot = Math.Max(2, (int)Math.Ceiling(maxAsBot * 100 / asPerBar));
+
+                // Cap at reasonable count
+                nTop = Math.Min(nTop, 6);
+                nBot = Math.Min(nBot, 6);
+
+                var solution = new ContinuousBeamSolution
+                {
+                    OptionName = $"{nTop}D{dia} / {nBot}D{dia}",
+                    BackboneDiameter = dia,
+                    BackboneCount_Top = nTop,
+                    BackboneCount_Bot = nBot,
+                    As_Backbone_Top = nTop * asPerBar / 100.0, // cm²
+                    As_Backbone_Bot = nBot * asPerBar / 100.0,
+                    Description = opt == 0 ? "Phương án tối ưu" : (opt == 1 ? "Cân bằng" : "Tiết kiệm"),
+                    EfficiencyScore = 100 - opt * 15,
+                    WastePercentage = 5 + opt * 3,
+                    TotalSteelWeight = (nTop + nBot) * dia * dia * 0.00617 * (rebarData.Count * 6) // rough estimate
+                };
+
+                options.Add(solution);
+            }
+
+            return options;
+        }
+
+        /// <summary>
+        /// Tự động tạo BeamGroup từ các dầm đã tính toán khi chưa có group nào.
+        /// </summary>
+        private BeamGroup AutoCreateGroupFromCalculatedBeams(ICollection<ObjectId> calculatedIds)
+        {
+            var beamDataList = new List<Core.Algorithms.BeamData>();
+            var settings = DtsSettings.Instance;
+
+            UsingTransaction(tr =>
+            {
+                foreach (ObjectId id in calculatedIds)
+                {
+                    try
+                    {
+                        var obj = tr.GetObject(id, OpenMode.ForRead);
+                        var data = XDataUtils.ReadElementData(obj) as BeamResultData;
+                        if (data == null) continue;
+
+                        double sx = 0, sy = 0, ex = 0, ey = 0;
+                        if (obj is Line line)
+                        {
+                            sx = line.StartPoint.X; sy = line.StartPoint.Y;
+                            ex = line.EndPoint.X; ey = line.EndPoint.Y;
+                        }
+                        else if (obj is Polyline poly && poly.NumberOfVertices >= 2)
+                        {
+                            var p0 = poly.GetPoint2dAt(0);
+                            var p1 = poly.GetPoint2dAt(poly.NumberOfVertices - 1);
+                            sx = p0.X; sy = p0.Y;
+                            ex = p1.X; ey = p1.Y;
+                        }
+                        else continue;
+
+                        beamDataList.Add(new Core.Algorithms.BeamData
+                        {
+                            Handle = obj.Handle.ToString(),
+                            Name = data.SapElementName ?? obj.Handle.ToString(),
+                            StartX = sx,
+                            StartY = sy,
+                            EndX = ex,
+                            EndY = ey,
+                            Width = data.Width > 0 ? data.Width * 10 : 300, // cm -> mm
+                            Height = data.SectionHeight > 0 ? data.SectionHeight * 10 : 500
+                        });
+                    }
+                    catch { }
+                }
+            });
+
+            if (beamDataList.Count == 0) return null;
+
+            // Create the group using existing logic
+            return CreateManualBeamGroup("Auto-Group", beamDataList);
         }
 
         /// <summary>
@@ -1731,7 +2040,15 @@ namespace DTS_Engine.Commands
                             // Lấy center point
                             double cx = 0, cy = 0, w = 300, d = 300;
 
-                            if (ent is Line line)
+                            // Handle Circle (column markers from PlotFramesAt)
+                            if (ent is Circle circle)
+                            {
+                                cx = circle.Center.X;
+                                cy = circle.Center.Y;
+                                w = circle.Radius * 2; // Diameter as width
+                                d = circle.Radius * 2;
+                            }
+                            else if (ent is Line line)
                             {
                                 cx = (line.StartPoint.X + line.EndPoint.X) / 2;
                                 cy = (line.StartPoint.Y + line.EndPoint.Y) / 2;

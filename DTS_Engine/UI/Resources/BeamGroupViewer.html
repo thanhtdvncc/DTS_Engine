@@ -4,491 +4,247 @@
 <head>
     <meta charset="UTF-8">
     <title>DTS Beam Group Viewer</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+    <script>
+        tailwind.config = {
+            theme: {
+                extend: {
+                    colors: {
+                        primary: '#3b82f6',
+                        accent: '#f59e0b',
+                        danger: '#ef4444',
+                        success: '#22c55e'
+                    }
+                }
+            }
+        }
+    </script>
     <style>
-        :root {
-            --bg: #1a1a2e;
-            --surface: #16213e;
-            --card: #1f2940;
-            --primary: #0f3460;
-            --accent: #e94560;
-            --text: #f1f1f1;
-            --muted: #8892a0;
-            --success: #4ade80;
-            --warning: #fbbf24;
-            --danger: #ef4444;
+        ::-webkit-scrollbar {
+            width: 6px;
+            height: 6px;
         }
 
-        * {
-            margin: 0;
-            padding: 0;
-            box-sizing: border-box;
-        }
-
-        body {
-            font-family: 'Segoe UI', sans-serif;
-            background: var(--bg);
-            color: var(--text);
-            height: 100vh;
-            display: flex;
-            flex-direction: column;
-            overflow: hidden;
-        }
-
-        header {
-            background: var(--surface);
-            padding: 12px 20px;
-            border-bottom: 1px solid rgba(255, 255, 255, 0.1);
-            display: flex;
-            align-items: center;
-            gap: 20px;
-            flex-wrap: wrap;
-        }
-
-        .header-title {
-            font-size: 16px;
-            font-weight: 600;
-            color: var(--accent);
-        }
-
-        .nav-group {
-            display: flex;
-            align-items: center;
-            gap: 8px;
-        }
-
-        .nav-btn {
-            background: var(--primary);
-            border: none;
-            color: var(--text);
-            padding: 6px 12px;
-            border-radius: 4px;
-            cursor: pointer;
-            font-size: 14px;
-        }
-
-        .nav-btn:hover {
-            background: var(--accent);
-        }
-
-        select {
-            background: var(--card);
-            border: 1px solid rgba(255, 255, 255, 0.2);
-            color: var(--text);
-            padding: 6px 10px;
-            border-radius: 4px;
-            font-size: 13px;
-            min-width: 180px;
-        }
-
-        .tools-group {
-            margin-left: auto;
-            display: flex;
-            gap: 8px;
-        }
-
-        .tool-btn {
-            background: transparent;
-            border: 1px solid var(--accent);
-            color: var(--accent);
-            padding: 5px 10px;
-            border-radius: 4px;
-            cursor: pointer;
-            font-size: 12px;
-        }
-
-        .tool-btn:hover {
-            background: var(--accent);
-            color: white;
-        }
-
-        main {
-            flex: 1;
-            display: flex;
-            flex-direction: column;
-            overflow: hidden;
-        }
-
-        .canvas-container {
-            flex: 0 0 280px;
-            background: var(--surface);
-            overflow-x: auto;
-            overflow-y: hidden;
-            position: relative;
-            border-bottom: 1px solid rgba(255, 255, 255, 0.1);
-        }
-
-        #beamCanvas {
-            display: block;
-            min-width: 100%;
-        }
-
-        .metrics-bar {
-            background: var(--card);
-            padding: 10px 20px;
-            display: flex;
-            align-items: center;
-            gap: 30px;
-            font-size: 13px;
-            flex-wrap: wrap;
-        }
-
-        .metric {
-            display: flex;
-            align-items: center;
-            gap: 6px;
-        }
-
-        .metric-label {
-            color: var(--muted);
-        }
-
-        .metric-value {
-            font-weight: 600;
-        }
-
-        .metric-value.good {
-            color: var(--success);
-        }
-
-        .metric-value.warn {
-            color: var(--warning);
-        }
-
-        .warning-tag {
-            background: var(--warning);
-            color: #000;
-            padding: 2px 8px;
+        ::-webkit-scrollbar-thumb {
+            background: #cbd5e1;
             border-radius: 3px;
-            font-size: 11px;
-            font-weight: 600;
         }
 
-        .input-section {
-            flex: 1;
-            overflow-y: auto;
-            padding: 15px 20px;
+        .span-row.highlighted {
+            background: rgba(59, 130, 246, 0.15) !important;
         }
 
-        .input-header {
-            display: flex;
-            align-items: center;
-            gap: 15px;
-            margin-bottom: 15px;
-            flex-wrap: wrap;
+        .span-row:hover {
+            background: rgba(59, 130, 246, 0.08);
         }
 
-        .input-header label {
-            display: flex;
-            align-items: center;
-            gap: 5px;
-            font-size: 13px;
+        .span-row.selected {
+            background: rgba(34, 197, 94, 0.15);
         }
 
-        .span-table {
-            width: 100%;
-            border-collapse: collapse;
-            font-size: 12px;
+        .toast {
+            animation: slideUp 0.3s ease, fadeOut 2.5s 0.5s forwards;
         }
 
-        .span-table th {
-            background: var(--primary);
-            padding: 8px 6px;
-            text-align: center;
-            font-weight: 500;
-            border: 1px solid rgba(255, 255, 255, 0.1);
+        @keyframes slideUp {
+            from {
+                transform: translate(-50%, 100%);
+                opacity: 0;
+            }
+
+            to {
+                transform: translate(-50%, 0);
+                opacity: 1;
+            }
         }
 
-        .span-table td {
-            padding: 4px;
-            border: 1px solid rgba(255, 255, 255, 0.1);
-            text-align: center;
+        @keyframes fadeOut {
+            to {
+                opacity: 0;
+            }
         }
 
-        .span-table input[type="text"] {
-            width: 60px;
-            background: var(--card);
-            border: 1px solid rgba(255, 255, 255, 0.2);
-            color: var(--text);
-            padding: 4px 6px;
-            border-radius: 3px;
-            text-align: center;
-            font-size: 11px;
-        }
-
-        .span-table input[type="text"]:focus {
-            border-color: var(--accent);
+        input[type="text"]:focus {
             outline: none;
-        }
-
-        .span-table .inactive {
-            opacity: 0.4;
-        }
-
-        .span-table .section-label {
-            background: var(--primary);
-            font-weight: 600;
-            text-align: left;
-            padding-left: 10px;
-        }
-
-        footer {
-            background: var(--surface);
-            padding: 12px 20px;
-            border-top: 1px solid rgba(255, 255, 255, 0.1);
-            display: flex;
-            justify-content: space-between;
-            align-items: center;
-        }
-
-        .footer-left,
-        .footer-right {
-            display: flex;
-            gap: 10px;
-        }
-
-        .btn {
-            padding: 8px 16px;
-            border: none;
-            border-radius: 4px;
-            cursor: pointer;
-            font-size: 13px;
-            font-weight: 500;
-        }
-
-        .btn-secondary {
-            background: var(--card);
-            color: var(--text);
-            border: 1px solid rgba(255, 255, 255, 0.2);
-        }
-
-        .btn-primary {
-            background: var(--accent);
-            color: white;
-        }
-
-        .btn:hover {
-            opacity: 0.9;
-        }
-
-        .stirrup-row {
-            margin-top: 15px;
-            display: flex;
-            align-items: center;
-            gap: 15px;
-        }
-
-        .stirrup-row input {
-            width: 140px;
-            background: var(--card);
-            border: 1px solid rgba(255, 255, 255, 0.2);
-            color: var(--text);
-            padding: 6px 10px;
-            border-radius: 4px;
-        }
-
-        /* Highlight states for bidirectional sync */
-        .span-table tr.highlighted {
-            background: rgba(233, 69, 96, 0.3) !important;
-        }
-
-        .span-table tr:hover {
-            background: rgba(233, 69, 96, 0.15);
-        }
-
-        /* Quick Picker Popup */
-        .quick-picker {
-            position: fixed;
-            background: var(--card);
-            border: 1px solid var(--accent);
-            border-radius: 6px;
-            padding: 8px;
-            display: none;
-            z-index: 1000;
-            box-shadow: 0 4px 12px rgba(0, 0, 0, 0.5);
-        }
-
-        .quick-picker.show {
-            display: block;
-        }
-
-        .quick-picker-title {
-            font-size: 11px;
-            color: var(--muted);
-            margin-bottom: 5px;
-        }
-
-        .quick-picker-grid {
-            display: grid;
-            grid-template-columns: repeat(4, 1fr);
-            gap: 4px;
-        }
-
-        .quick-picker-btn {
-            background: var(--primary);
-            border: none;
-            color: var(--text);
-            padding: 6px 10px;
-            border-radius: 3px;
-            cursor: pointer;
-            font-size: 11px;
-        }
-
-        .quick-picker-btn:hover {
-            background: var(--accent);
-        }
-
-        /* Bulk Edit Mode */
-        .bulk-mode .span-table tr.selected {
-            background: rgba(74, 222, 128, 0.2);
+            border-color: #3b82f6;
+            box-shadow: 0 0 0 2px rgba(59, 130, 246, 0.2);
         }
     </style>
 </head>
 
-<body>
-    <header>
-        <span class="header-title">DTS Beam Group Viewer</span>
+<body class="bg-slate-100 text-slate-800 font-sans text-sm h-screen flex flex-col overflow-hidden">
 
-        <div class="nav-group">
-            <button class="nav-btn" onclick="prevGroup()">◀</button>
-            <select id="groupSelect" onchange="loadGroup(this.value)"></select>
-            <button class="nav-btn" onclick="nextGroup()">▶</button>
-        </div>
+    <!-- HEADER -->
+    <header class="flex-none bg-slate-900 text-white shadow-md z-50">
+        <div class="px-4 py-2 flex justify-between items-center gap-4">
+            <div class="flex items-center gap-3">
+                <i class="fa-solid fa-layer-group text-amber-500 text-xl"></i>
+                <h1 class="text-lg font-bold">DTS Rebar Viewer</h1>
+            </div>
 
-        <div class="nav-group">
-            <label>Phương án:</label>
-            <select id="optionSelect" onchange="selectOption(this.value)"></select>
-        </div>
+            <div class="flex items-center gap-3">
+                <button class="nav-btn px-2 py-1 bg-slate-700 hover:bg-slate-600 rounded" onclick="prevGroup()">
+                    <i class="fa-solid fa-chevron-left"></i>
+                </button>
+                <select id="groupSelect" onchange="loadGroup(this.value)"
+                    class="bg-slate-800 border border-slate-600 text-white px-3 py-1 rounded min-w-[180px]"></select>
+                <button class="nav-btn px-2 py-1 bg-slate-700 hover:bg-slate-600 rounded" onclick="nextGroup()">
+                    <i class="fa-solid fa-chevron-right"></i>
+                </button>
+            </div>
 
-        <div class="tools-group">
-            <button class="tool-btn" onclick="copyFormat()">🖌 Copy Format</button>
-            <button class="tool-btn" onclick="bulkEdit()">Bulk Edit</button>
+            <div class="flex items-center gap-2">
+                <label class="text-xs text-slate-400">Phương án:</label>
+                <select id="optionSelect" onchange="selectOption(this.value)"
+                    class="bg-slate-800 border border-slate-600 text-white px-2 py-1 rounded text-xs"></select>
+            </div>
+
+            <div class="flex gap-2">
+                <button class="px-3 py-1 bg-blue-600 hover:bg-blue-500 text-white rounded text-xs font-bold"
+                    onclick="highlightInCAD()"><i class="fa-solid fa-eye mr-1"></i>Highlight CAD</button>
+                <button class="px-3 py-1 bg-slate-700 hover:bg-slate-600 text-white rounded text-xs"
+                    onclick="copyFormat()"><i class="fa-solid fa-paintbrush mr-1"></i>Copy Format</button>
+            </div>
         </div>
     </header>
 
-    <main>
-        <div class="canvas-container">
-            <canvas id="beamCanvas" height="260"></canvas>
+    <!-- MAIN -->
+    <main class="flex-1 flex flex-col overflow-hidden">
+        <!-- CANVAS CONTAINER -->
+        <div class="flex-none h-[200px] bg-white border-b border-slate-200 overflow-x-auto overflow-y-hidden relative"
+            id="canvasContainer">
+            <canvas id="beamCanvas" height="180"></canvas>
         </div>
 
-        <div class="metrics-bar">
-            <div class="metric">
-                <span class="metric-label">Backbone:</span>
-                <span class="metric-value" id="metricBackbone">2D22</span>
+        <!-- METRICS BAR -->
+        <div
+            class="flex-none bg-slate-50 border-b border-slate-200 px-4 py-2 flex items-center gap-6 text-xs flex-wrap">
+            <div class="flex items-center gap-2">
+                <span class="text-slate-500">Backbone:</span>
+                <span class="font-bold text-blue-600" id="metricBackbone">-</span>
             </div>
-            <div class="metric">
-                <span class="metric-label">As:</span>
-                <span class="metric-value" id="metricAs">7.6 cm²</span>
+            <div class="flex items-center gap-2">
+                <span class="text-slate-500">As:</span>
+                <span class="font-bold" id="metricAs">-</span>
             </div>
-            <div class="metric">
-                <span class="metric-label">Waste:</span>
-                <span class="metric-value" id="metricWaste">8.5%</span>
+            <div class="flex items-center gap-2">
+                <span class="text-slate-500">Waste:</span>
+                <span class="font-bold" id="metricWaste">-</span>
             </div>
-            <div class="metric">
-                <span class="metric-label">Weight:</span>
-                <span class="metric-value" id="metricWeight">245 kg</span>
+            <div class="flex items-center gap-2">
+                <span class="text-slate-500">Weight:</span>
+                <span class="font-bold" id="metricWeight">-</span>
             </div>
-            <div class="metric">
-                <span class="metric-label">Score:</span>
-                <span class="metric-value good" id="metricScore">92</span>
+            <div class="flex items-center gap-2">
+                <span class="text-slate-500">Score:</span>
+                <span class="font-bold text-green-600" id="metricScore">-</span>
             </div>
-            <div id="warningsContainer"></div>
+            <div id="warningsContainer" class="flex gap-2"></div>
         </div>
 
-        <div class="input-section">
-            <div class="input-header">
-                <label><input type="checkbox" id="autoApply" checked> Auto Apply (đồng bộ thép suốt)</label>
-                <button class="tool-btn" onclick="selectAllSpans()">Select All</button>
-                <button class="tool-btn" onclick="selectNoneSpans()">Select None</button>
+        <!-- TABLE SECTION -->
+        <div class="flex-1 overflow-auto p-3">
+            <div class="flex items-center gap-3 mb-2">
+                <label class="flex items-center gap-1 text-xs">
+                    <input type="checkbox" id="autoApply" checked class="w-3.5 h-3.5">
+                    Auto Apply
+                </label>
+                <button class="px-2 py-1 bg-slate-200 hover:bg-slate-300 rounded text-xs"
+                    onclick="selectAllSpans()">Select All</button>
+                <button class="px-2 py-1 bg-slate-200 hover:bg-slate-300 rounded text-xs"
+                    onclick="selectNoneSpans()">Select None</button>
+                <div class="ml-auto text-xs text-slate-500">
+                    <span id="groupInfo">-</span>
+                </div>
             </div>
 
-            <table class="span-table" id="spanTable">
-                <thead>
-                    <tr>
-                        <th rowspan="2">Nhịp</th>
-                        <th rowspan="2">Active</th>
-                        <th colspan="5">THÉP TRÊN (Top)</th>
-                        <th colspan="5">THÉP DƯỚI (Bot)</th>
-                        <th colspan="3">Stirrup</th>
-                        <th rowspan="2">Side</th>
-                    </tr>
-                    <tr>
-                        <th>GốiT</th>
-                        <th>L/4T</th>
-                        <th>Giữa</th>
-                        <th>L/4P</th>
-                        <th>GốiP</th>
-                        <th>GốiT</th>
-                        <th>L/4T</th>
-                        <th>Giữa</th>
-                        <th>L/4P</th>
-                        <th>GốiP</th>
-                        <th>Đầu</th>
-                        <th>Giữa</th>
-                        <th>Cuối</th>
-                    </tr>
-                </thead>
-                <tbody id="spanTableBody">
-                </tbody>
-            </table>
+            <div class="bg-white rounded border border-slate-200 overflow-hidden">
+                <table class="w-full text-xs">
+                    <thead class="bg-slate-100 sticky top-0">
+                        <tr>
+                            <th class="p-2 text-left w-16">Nhịp</th>
+                            <th class="p-2 text-center w-12">✓</th>
+                            <th class="p-2 text-center w-16">L (m)</th>
+                            <th class="p-2 text-center w-20">b×h</th>
+                            <th colspan="3" class="p-2 text-center bg-red-50 text-red-700">THÉP TRÊN</th>
+                            <th colspan="3" class="p-2 text-center bg-blue-50 text-blue-700">THÉP DƯỚI</th>
+                            <th colspan="3" class="p-2 text-center bg-slate-100">ĐAI</th>
+                            <th class="p-2 text-center">Gia cường</th>
+                        </tr>
+                        <tr class="text-[10px] text-slate-500">
+                            <th></th>
+                            <th></th>
+                            <th></th>
+                            <th></th>
+                            <th class="p-1 bg-red-50">L1</th>
+                            <th class="p-1 bg-red-50">Mid</th>
+                            <th class="p-1 bg-red-50">L2</th>
+                            <th class="p-1 bg-blue-50">L1</th>
+                            <th class="p-1 bg-blue-50">Mid</th>
+                            <th class="p-1 bg-blue-50">L2</th>
+                            <th class="p-1">L1</th>
+                            <th class="p-1">Mid</th>
+                            <th class="p-1">L2</th>
+                            <th></th>
+                        </tr>
+                    </thead>
+                    <tbody id="spanTableBody"></tbody>
+                </table>
+            </div>
 
-            <div class="stirrup-row">
-                <label>Stirrup pattern:</label>
-                <input type="text" id="stirrupPattern" value="a100/150/100" placeholder="a100/150/100">
-                <button class="tool-btn" onclick="applyStirrupPattern()">Apply to Active</button>
+            <div class="mt-3 flex items-center gap-3">
+                <label class="text-xs text-slate-500">Stirrup pattern:</label>
+                <input type="text" id="stirrupPattern" value="d8a100/150/100"
+                    class="border border-slate-300 rounded px-2 py-1 text-xs w-32">
+                <button class="px-2 py-1 bg-slate-200 hover:bg-slate-300 rounded text-xs"
+                    onclick="applyStirrupPattern()">
+                    Apply to Active
+                </button>
             </div>
         </div>
     </main>
 
-    <footer>
-        <div class="footer-left">
-            <button class="btn btn-secondary" onclick="doSave()">Save</button>
-            <button class="btn btn-secondary" onclick="doExport()">Export</button>
-            <button class="btn btn-secondary" onclick="doImport()">Import</button>
+    <!-- FOOTER -->
+    <footer class="flex-none bg-white border-t border-slate-200 px-4 py-2 flex justify-between items-center">
+        <div class="flex gap-2">
+            <button class="px-3 py-1.5 bg-slate-200 hover:bg-slate-300 rounded text-xs font-medium" onclick="doSave()">
+                <i class="fa-solid fa-save mr-1"></i>Save
+            </button>
+            <button class="px-3 py-1.5 bg-slate-200 hover:bg-slate-300 rounded text-xs font-medium"
+                onclick="doExport()">
+                <i class="fa-solid fa-file-export mr-1"></i>Export
+            </button>
+            <button class="px-3 py-1.5 bg-slate-200 hover:bg-slate-300 rounded text-xs font-medium"
+                onclick="doImport()">
+                <i class="fa-solid fa-file-import mr-1"></i>Import
+            </button>
         </div>
-        <div class="footer-right">
-            <button class="btn btn-secondary" onclick="doCancel()">Cancel</button>
-            <button class="btn btn-primary" onclick="applyToDrawing()">Apply to Drawing</button>
+        <div class="flex gap-2">
+            <button class="px-3 py-1.5 bg-slate-300 hover:bg-slate-400 rounded text-xs font-medium"
+                onclick="doCancel()">
+                Cancel
+            </button>
+            <button class="px-4 py-1.5 bg-blue-600 hover:bg-blue-500 text-white rounded text-xs font-bold"
+                onclick="applyToDrawing()">
+                <i class="fa-solid fa-check mr-1"></i>Apply to Drawing
+            </button>
         </div>
     </footer>
-
-    <!-- Quick Picker Popups -->
-    <div class="quick-picker" id="diameterPicker">
-        <div class="quick-picker-title">Đường kính thép chủ:</div>
-        <div class="quick-picker-grid">
-            <button class="quick-picker-btn" onclick="pickDiameter('2D14')">2D14</button>
-            <button class="quick-picker-btn" onclick="pickDiameter('2D16')">2D16</button>
-            <button class="quick-picker-btn" onclick="pickDiameter('2D18')">2D18</button>
-            <button class="quick-picker-btn" onclick="pickDiameter('2D20')">2D20</button>
-            <button class="quick-picker-btn" onclick="pickDiameter('2D22')">2D22</button>
-            <button class="quick-picker-btn" onclick="pickDiameter('2D25')">2D25</button>
-            <button class="quick-picker-btn" onclick="pickDiameter('3D20')">3D20</button>
-            <button class="quick-picker-btn" onclick="pickDiameter('3D22')">3D22</button>
-        </div>
-    </div>
-
-    <div class="quick-picker" id="stirrupPicker">
-        <div class="quick-picker-title">Bước đai:</div>
-        <div class="quick-picker-grid">
-            <button class="quick-picker-btn" onclick="pickStirrup('d8a100')">d8a100</button>
-            <button class="quick-picker-btn" onclick="pickStirrup('d8a150')">d8a150</button>
-            <button class="quick-picker-btn" onclick="pickStirrup('d8a200')">d8a200</button>
-            <button class="quick-picker-btn" onclick="pickStirrup('d10a100')">d10a100</button>
-            <button class="quick-picker-btn" onclick="pickStirrup('d10a150')">d10a150</button>
-            <button class="quick-picker-btn" onclick="pickStirrup('d10a200')">d10a200</button>
-        </div>
-    </div>
 
     <script>
         // Data from C#
         const data = __DATA_JSON__;
         let currentGroupIndex = 0;
         let currentGroup = null;
+        let highlightedSpanIndex = -1;
+        let spanBounds = [];
 
-        const MIN_SPAN_WIDTH = 250;
-        const PIXELS_PER_METER = 80;
-        const CANVAS_PADDING = 40;
-        const BEAM_HEIGHT = 80;
-        const SUPPORT_HEIGHT = 120;
+        // RELATIVE SIZING: Min span width, max canvas width scaled
+        const MIN_SPAN_WIDTH = 80;
+        const MAX_CANVAS_WIDTH = 1600;
+        const CANVAS_PADDING = 30;
+        const BEAM_HEIGHT = 50;
 
         function init() {
             populateGroupSelect();
@@ -504,7 +260,7 @@
             data.groups.forEach((g, i) => {
                 const opt = document.createElement('option');
                 opt.value = i;
-                opt.textContent = g.GroupName || `Group ${i + 1}`;
+                opt.textContent = `${g.GroupName || 'Group ' + (i + 1)} (${g.Spans?.length || 0} nhịp)`;
                 sel.appendChild(opt);
             });
         }
@@ -518,24 +274,23 @@
             renderCanvas();
             renderTable();
             updateMetrics();
+            updateGroupInfo();
         }
 
-        function prevGroup() {
-            if (currentGroupIndex > 0) loadGroup(currentGroupIndex - 1);
-        }
-
-        function nextGroup() {
-            if (currentGroupIndex < data.groups.length - 1) loadGroup(currentGroupIndex + 1);
-        }
+        function prevGroup() { if (currentGroupIndex > 0) loadGroup(currentGroupIndex - 1); }
+        function nextGroup() { if (currentGroupIndex < data.groups.length - 1) loadGroup(currentGroupIndex + 1); }
 
         function populateOptionSelect() {
             const sel = document.getElementById('optionSelect');
             sel.innerHTML = '';
-            if (!currentGroup.BackboneOptions) return;
+            if (!currentGroup?.BackboneOptions) {
+                sel.innerHTML = '<option>No options</option>';
+                return;
+            }
             currentGroup.BackboneOptions.forEach((opt, i) => {
                 const option = document.createElement('option');
                 option.value = i;
-                option.textContent = `${opt.OptionName} - ${opt.Description}${i === 0 ? ' (Best)' : ''}`;
+                option.textContent = `${opt.OptionName || 'Option ' + (i + 1)}${i === 0 ? ' (Best)' : ''}`;
                 sel.appendChild(option);
             });
             sel.value = currentGroup.SelectedBackboneIndex || 0;
@@ -543,316 +298,45 @@
 
         function selectOption(index) {
             currentGroup.SelectedBackboneIndex = parseInt(index);
-            updateMetrics();
-        }
 
-        function renderCanvas() {
-            const canvas = document.getElementById('beamCanvas');
-            const ctx = canvas.getContext('2d');
-
-            if (!currentGroup || !currentGroup.Spans) return;
-
-            // Calculate total width
-            let totalWidth = CANVAS_PADDING * 2;
-            currentGroup.Spans.forEach(span => {
-                totalWidth += Math.max(span.Length * PIXELS_PER_METER, MIN_SPAN_WIDTH);
-            });
-            totalWidth += currentGroup.Supports ? currentGroup.Supports.length * 30 : 0;
-
-            canvas.width = Math.max(totalWidth, 800);
-            const height = canvas.height;
-
-            // Clear
-            ctx.fillStyle = '#16213e';
-            ctx.fillRect(0, 0, canvas.width, height);
-
-            let x = CANVAS_PADDING;
-            const beamY = 80;
-
-            // Draw supports and spans
-            currentGroup.Spans.forEach((span, i) => {
-                const spanWidth = Math.max(span.Length * PIXELS_PER_METER, MIN_SPAN_WIDTH);
-
-                // Left support
-                if (i === 0 && currentGroup.Supports && currentGroup.Supports[0]) {
-                    drawSupport(ctx, x, beamY, currentGroup.Supports[0]);
-                    x += 15;
-                }
-
-                // Beam span
-                drawSpan(ctx, x, beamY, spanWidth, span);
-                x += spanWidth;
-
-                // Right support
-                if (currentGroup.Supports && currentGroup.Supports[i + 1]) {
-                    drawSupport(ctx, x, beamY, currentGroup.Supports[i + 1]);
-                    x += 15;
-                }
-            });
-
-            // Dimension line
-            drawDimensions(ctx, beamY + BEAM_HEIGHT + 40);
-        }
-
-        function drawSupport(ctx, x, y, support) {
-            const w = 20;
-            const h = SUPPORT_HEIGHT;
-
-            ctx.fillStyle = support.Type === 3 ? '#444' : '#0f3460'; // FreeEnd darker
-            ctx.fillRect(x - w / 2, y - 20, w, h);
-
-            ctx.fillStyle = '#fff';
-            ctx.font = '10px sans-serif';
-            ctx.textAlign = 'center';
-            ctx.fillText(support.GridName || support.SupportId, x, y + h - 30);
-        }
-
-        function drawSpan(ctx, x, y, width, span) {
-            // Beam rect
-            ctx.fillStyle = '#1f4068';
-            ctx.strokeStyle = '#e94560';
-            ctx.lineWidth = 2;
-            ctx.fillRect(x, y, width, BEAM_HEIGHT);
-            ctx.strokeRect(x, y, width, BEAM_HEIGHT);
-
-            // Span label
-            ctx.fillStyle = '#fff';
-            ctx.font = 'bold 12px sans-serif';
-            ctx.textAlign = 'center';
-            ctx.fillText(span.SpanId, x + width / 2, y + 20);
-
-            // Dimensions text
-            ctx.fillStyle = '#8892a0';
-            ctx.font = '11px sans-serif';
-            ctx.fillText(`${span.Width}x${span.Height}`, x + width / 2, y + 35);
-            ctx.fillText(`L=${span.Length.toFixed(2)}m`, x + width / 2, y + 50);
-
-            // Step change indicator
-            if (span.IsStepChange) {
-                ctx.fillStyle = '#fbbf24';
-                ctx.fillText('⚠️', x + width - 15, y + 15);
-            }
-        }
-
-        function drawDimensions(ctx, y) {
-            if (!currentGroup.Spans) return;
-
-            let x = CANVAS_PADDING;
-            ctx.strokeStyle = '#555';
-            ctx.fillStyle = '#aaa';
-            ctx.font = '10px sans-serif';
-            ctx.textAlign = 'center';
-
-            currentGroup.Spans.forEach(span => {
-                const w = Math.max(span.Length * PIXELS_PER_METER, MIN_SPAN_WIDTH);
-
-                // Dimension line
-                ctx.beginPath();
-                ctx.moveTo(x + 15, y);
-                ctx.lineTo(x + w - 15, y);
-                ctx.stroke();
-
-                // Arrows
-                ctx.beginPath();
-                ctx.moveTo(x + 15, y);
-                ctx.lineTo(x + 20, y - 3);
-                ctx.lineTo(x + 20, y + 3);
-                ctx.fill();
-
-                ctx.beginPath();
-                ctx.moveTo(x + w - 15, y);
-                ctx.lineTo(x + w - 20, y - 3);
-                ctx.lineTo(x + w - 20, y + 3);
-                ctx.fill();
-
-                // Text
-                ctx.fillText(`${span.Length.toFixed(2)}m`, x + w / 2, y - 5);
-
-                x += w + 30;
-            });
-        }
-
-        /// <summary>
-        /// Vẽ điểm đánh dấu mối nối thép - ellipse nghiêng 45°
-        /// </summary>
-        function drawSpliceMarker(ctx, x, y, color) {
-            ctx.save();
-
-            // Di chuyển đến vị trí marker
-            ctx.translate(x, y);
-
-            // Xoay 45 độ (PI/4 radians)
-            ctx.rotate(Math.PI / 4);
-
-            // Vẽ ellipse
-            ctx.beginPath();
-            ctx.ellipse(0, 0, 8, 4, 0, 0, Math.PI * 2);
-
-            // Style: nét mảnh, không fill
-            ctx.strokeStyle = color;
-            ctx.lineWidth = 1.5;
-            ctx.stroke();
-
-            // Optional: vẽ đường chéo nhỏ trong ellipse
-            ctx.beginPath();
-            ctx.moveTo(-4, 0);
-            ctx.lineTo(4, 0);
-            ctx.stroke();
-
-            ctx.restore();
-        }
-
-        /// <summary>
-        /// Vẽ móc neo (Hook) tại gối biên - 90° hoặc 180°
-        /// </summary>
-        function drawHook(ctx, x, y, direction, hookLength, color, angle = 90) {
-            ctx.save();
-            ctx.strokeStyle = color;
-            ctx.lineWidth = 2.5;
-            ctx.lineCap = 'round';
-
-            const hookPx = Math.min(hookLength * 0.15, 20); // Scale hook length to pixels
-
-            ctx.beginPath();
-            ctx.moveTo(x, y);
-
-            if (angle === 90) {
-                // Móc 90° - vẽ nét cong vuông góc
-                if (direction === 'left') {
-                    // Hook hướng xuống dưới tại đầu trái
-                    ctx.lineTo(x, y + hookPx);
-                } else {
-                    // Hook hướng xuống dưới tại đầu phải
-                    ctx.lineTo(x, y + hookPx);
-                }
-            } else if (angle === 180) {
-                // Móc 180° - vẽ nét cong quay lại
-                ctx.arc(x + (direction === 'left' ? hookPx / 2 : -hookPx / 2), y, hookPx / 2,
-                    direction === 'left' ? Math.PI : 0,
-                    direction === 'left' ? 0 : Math.PI,
-                    direction === 'left');
-            }
-
-            ctx.stroke();
-            ctx.restore();
-        }
-
-        /// <summary>
-        /// Lấy segments đã được tính toán từ C# (RebarCuttingAlgorithm)
-        /// KHÔNG tính toán lại ở phía client để tránh logic trùng lặp
-        /// </summary>
-        function getPreCalculatedSegments(isTopBar) {
-            // Ưu tiên dùng dữ liệu đã tính từ server (C#)
-            const key = isTopBar ? 'TopBarSegments' : 'BotBarSegments';
-
-            if (currentGroup && currentGroup[key] && currentGroup[key].length > 0) {
-                // Đã có dữ liệu từ C# - sử dụng trực tiếp
-                return currentGroup[key];
-            }
-
-            // Fallback: Tạo segment đơn giản (không splice) cho hiển thị cơ bản
-            const totalLength = currentGroup?.Spans?.reduce((sum, s) => sum + s.Length, 0) || 0;
-            const settings = data.settings || {};
-            const detailing = settings.Detailing || {};
-            const skipSplice = detailing.SkipSplice || false;
-            const maxBarLength = (detailing.MaxBarLength || 11700) / 1000;
-
-            // Nếu dầm ngắn hoặc SkipSplice - 1 đoạn duy nhất
-            if (totalLength <= maxBarLength || skipSplice) {
-                return [{
-                    StartPos: 0,
-                    EndPos: totalLength,
-                    SpliceAtEnd: false,
-                    SplicePosition: null,
-                    HookAtStart: false,
-                    HookAtEnd: false,
-                    IsStaggered: false
-                }];
-            }
-
-            // Dầm dài nhưng chưa có dữ liệu từ C# - tạo segments giả để hiển thị cảnh báo
-            const numBars = Math.ceil(totalLength / maxBarLength);
-            const segments = [];
-            let pos = 0;
-            for (let i = 0; i < numBars; i++) {
-                const endPos = Math.min(pos + maxBarLength, totalLength);
-                segments.push({
-                    StartPos: pos,
-                    EndPos: endPos,
-                    SpliceAtEnd: (i < numBars - 1),
-                    SplicePosition: endPos,
-                    HookAtStart: (i === 0),
-                    HookAtEnd: (i === numBars - 1),
-                    IsStaggered: (i % 2 === 1),
-                    NeedsServerCalc: true // Flag: cần tính toán từ server
+            // Populate span rebar from selected backbone option
+            const opt = currentGroup.BackboneOptions?.[index];
+            if (opt) {
+                const backbone = `${opt.BackboneCount_Top}D${opt.BackboneDiameter}`;
+                const botBackbone = `${opt.BackboneCount_Bot}D${opt.BackboneDiameter}`;
+                currentGroup.Spans.forEach(span => {
+                    // Only update if not manually edited
+                    if (!span._userEdited) {
+                        if (!span.TopRebar) span.TopRebar = [[], [], []];
+                        if (!span.BotRebar) span.BotRebar = [[], [], []];
+                        span.TopRebar[0][0] = backbone;
+                        span.TopRebar[0][2] = backbone;
+                        span.TopRebar[0][4] = backbone;
+                        span.BotRebar[0][0] = botBackbone;
+                        span.BotRebar[0][2] = botBackbone;
+                        span.BotRebar[0][4] = botBackbone;
+                    }
                 });
-                pos = endPos;
             }
-            return segments;
+
+            updateMetrics();
+            renderCanvas();
+            renderTable();
         }
 
-        /// <summary>
-        /// Kiểm tra gối có cần hook không
-        /// </summary>
-        function needsHook(support) {
-            if (!support) return false;
-            const type = (support.Type || '').toString().toUpperCase();
-            return type.includes('COLUMN') || type.includes('WALL') || type === '0' || type === '1';
-        }
-
-        function renderTable() {
-            const tbody = document.getElementById('spanTableBody');
-            tbody.innerHTML = '';
-
-            if (!currentGroup || !currentGroup.Spans) return;
-
-            currentGroup.Spans.forEach((span, i) => {
-                const tr = document.createElement('tr');
-                tr.className = span.IsActive === false ? 'inactive' : '';
-                tr.dataset.spanIndex = i;
-
-                // Span ID
-                tr.innerHTML = `<td>${span.SpanId}</td>`;
-
-                // Active checkbox
-                tr.innerHTML += `<td><input type="checkbox" ${span.IsActive !== false ? 'checked' : ''} 
-                    onchange="toggleSpanActive(${i}, this.checked)"></td>`;
-
-                // Top rebar (5 positions)
-                for (let p = 0; p < 5; p++) {
-                    const val = span.TopRebar && span.TopRebar[0] ? span.TopRebar[0][p] || '' : '';
-                    tr.innerHTML += `<td><input type="text" value="${val}" 
-                        onchange="updateRebar(${i}, 'Top', ${p}, this.value)"></td>`;
-                }
-
-                // Bot rebar (5 positions)
-                for (let p = 0; p < 5; p++) {
-                    const val = span.BotRebar && span.BotRebar[0] ? span.BotRebar[0][p] || '' : '';
-                    tr.innerHTML += `<td><input type="text" value="${val}" 
-                        onchange="updateRebar(${i}, 'Bot', ${p}, this.value)"></td>`;
-                }
-
-                // Stirrup (3 positions)
-                for (let p = 0; p < 3; p++) {
-                    const val = span.Stirrup ? span.Stirrup[p] || '' : '';
-                    tr.innerHTML += `<td><input type="text" value="${val}" 
-                        onchange="updateStirrup(${i}, ${p}, this.value)"></td>`;
-                }
-
-                // Side bar
-                tr.innerHTML += `<td><input type="text" value="${span.SideBar || ''}" 
-                    onchange="updateSideBar(${i}, this.value)"></td>`;
-
-                tbody.appendChild(tr);
-            });
+        function updateGroupInfo() {
+            const info = document.getElementById('groupInfo');
+            if (!currentGroup) { info.textContent = '-'; return; }
+            const totalL = currentGroup.TotalLength?.toFixed(2) || '-';
+            const beamCount = currentGroup.EntityHandles?.length || 0;
+            info.textContent = `Tổng: ${totalL}m | ${beamCount} dầm | ${currentGroup.Spans?.length || 0} nhịp`;
         }
 
         function updateMetrics() {
             if (!currentGroup) return;
-
             const opt = currentGroup.BackboneOptions?.[currentGroup.SelectedBackboneIndex || 0];
             if (opt) {
-                document.getElementById('metricBackbone').textContent = opt.OptionName;
+                document.getElementById('metricBackbone').textContent = opt.OptionName || '-';
                 document.getElementById('metricAs').textContent = `${opt.As_Backbone_Top?.toFixed(1) || 0} cm²`;
                 document.getElementById('metricWaste').textContent = `${opt.WastePercentage?.toFixed(1) || 0}%`;
                 document.getElementById('metricWeight').textContent = `${opt.TotalSteelWeight?.toFixed(0) || 0} kg`;
@@ -861,14 +345,238 @@
 
             // Warnings
             const warnings = [];
-            if (currentGroup.HasStepChange) warnings.push('Giật cấp');
-            if (currentGroup.RequiresSplice) warnings.push('Cần nối thép');
-            if (currentGroup.HasConsole) warnings.push('Có đầu thừa');
+            if (currentGroup.HasStepChange) warnings.push({ icon: '⚠️', text: 'Giật cấp', cls: 'bg-amber-100 text-amber-700' });
+            if (currentGroup.RequiresSplice) warnings.push({ icon: '🔗', text: 'Nối thép', cls: 'bg-blue-100 text-blue-700' });
+            if (currentGroup.HasConsole) warnings.push({ icon: '📐', text: 'Console', cls: 'bg-purple-100 text-purple-700' });
 
             document.getElementById('warningsContainer').innerHTML = warnings
-                .map(w => `<span class="warning-tag">⚠️ ${w}</span>`).join(' ');
+                .map(w => `<span class="px-2 py-0.5 rounded text-[10px] font-bold ${w.cls}">${w.icon} ${w.text}</span>`).join('');
         }
 
+        // ============ CANVAS RENDERING (RELATIVE LENGTHS) ============
+        function renderCanvas() {
+            const canvas = document.getElementById('beamCanvas');
+            const ctx = canvas.getContext('2d');
+
+            if (!currentGroup?.Spans?.length) {
+                canvas.width = 400;
+                ctx.fillStyle = '#f8fafc';
+                ctx.fillRect(0, 0, 400, 180);
+                ctx.fillStyle = '#94a3b8';
+                ctx.font = '14px sans-serif';
+                ctx.textAlign = 'center';
+                ctx.fillText('Không có dữ liệu nhịp', 200, 90);
+                return;
+            }
+
+            spanBounds = [];
+            const spans = currentGroup.Spans;
+
+            // Calculate relative widths (use sqrt for better visual scaling)
+            const lengths = spans.map(s => s.Length || 1);
+            const maxLen = Math.max(...lengths);
+            const minLen = Math.min(...lengths);
+
+            // Scale: each span gets width proportional to its length, but with min/max limits
+            const availableWidth = MAX_CANVAS_WIDTH - CANVAS_PADDING * 2 - spans.length * 10;
+            const totalLen = lengths.reduce((a, b) => a + b, 0);
+
+            let totalWidth = CANVAS_PADDING * 2;
+            const spanWidths = lengths.map(len => {
+                const ratio = len / totalLen;
+                const w = Math.max(MIN_SPAN_WIDTH, ratio * availableWidth);
+                totalWidth += w + 10; // +10 for support gap
+                return w;
+            });
+
+            canvas.width = Math.min(totalWidth, MAX_CANVAS_WIDTH);
+            const height = 180;
+
+            // Clear with light background
+            ctx.fillStyle = '#f8fafc';
+            ctx.fillRect(0, 0, canvas.width, height);
+
+            let x = CANVAS_PADDING;
+            const beamY = 60;
+
+            // Draw beams
+            spans.forEach((span, i) => {
+                const w = spanWidths[i];
+
+                // Support symbol
+                if (i === 0) {
+                    drawSupport(ctx, x, beamY);
+                    x += 5;
+                }
+
+                // Store bounds
+                spanBounds.push({ x, y: beamY, width: w, height: BEAM_HEIGHT, index: i });
+
+                // Draw beam segment
+                const isHighlighted = i === highlightedSpanIndex;
+                ctx.fillStyle = isHighlighted ? '#dbeafe' : '#e2e8f0';
+                ctx.strokeStyle = isHighlighted ? '#3b82f6' : '#64748b';
+                ctx.lineWidth = isHighlighted ? 2 : 1;
+                ctx.fillRect(x, beamY, w, BEAM_HEIGHT);
+                ctx.strokeRect(x, beamY, w, BEAM_HEIGHT);
+
+                // Draw rebar lines
+                drawRebarLines(ctx, x, beamY, w, span);
+
+                // Span label
+                ctx.fillStyle = '#1e293b';
+                ctx.font = 'bold 11px sans-serif';
+                ctx.textAlign = 'center';
+                ctx.fillText(span.SpanId, x + w / 2, beamY + BEAM_HEIGHT / 2 + 4);
+
+                // Dimension
+                ctx.fillStyle = '#64748b';
+                ctx.font = '10px sans-serif';
+                ctx.fillText(`${(span.Length || 0).toFixed(2)}m`, x + w / 2, beamY + BEAM_HEIGHT + 12);
+                ctx.fillText(`${span.Width || 0}×${span.Height || 0}`, x + w / 2, beamY - 5);
+
+                x += w;
+
+                // Support between spans
+                drawSupport(ctx, x, beamY);
+                x += 10;
+            });
+
+            // Scroll to highlighted span
+            if (highlightedSpanIndex >= 0 && spanBounds[highlightedSpanIndex]) {
+                const bound = spanBounds[highlightedSpanIndex];
+                const container = document.getElementById('canvasContainer');
+                const scrollTarget = bound.x - container.clientWidth / 2 + bound.width / 2;
+                container.scrollTo({ left: scrollTarget, behavior: 'smooth' });
+            }
+        }
+
+        function drawSupport(ctx, x, y) {
+            ctx.fillStyle = '#475569';
+            ctx.beginPath();
+            ctx.moveTo(x, y + BEAM_HEIGHT);
+            ctx.lineTo(x - 6, y + BEAM_HEIGHT + 15);
+            ctx.lineTo(x + 6, y + BEAM_HEIGHT + 15);
+            ctx.closePath();
+            ctx.fill();
+        }
+
+        function drawRebarLines(ctx, x, y, w, span) {
+            const topY = y + 8;
+            const botY = y + BEAM_HEIGHT - 8;
+
+            // Draw backbone (continuous red line)
+            ctx.strokeStyle = '#ef4444';
+            ctx.lineWidth = 2;
+            ctx.setLineDash([]);
+
+            // Top backbone
+            ctx.beginPath();
+            ctx.moveTo(x + 3, topY);
+            ctx.lineTo(x + w - 3, topY);
+            ctx.stroke();
+
+            // Bottom backbone
+            ctx.strokeStyle = '#3b82f6';
+            ctx.beginPath();
+            ctx.moveTo(x + 3, botY);
+            ctx.lineTo(x + w - 3, botY);
+            ctx.stroke();
+
+            // Draw addon bars (dashed) if different from backbone
+            const topRebar = span.TopRebar?.[0];
+            const botRebar = span.BotRebar?.[0];
+
+            ctx.setLineDash([4, 2]);
+            ctx.lineWidth = 1.5;
+
+            if (topRebar?.[0]) {
+                ctx.strokeStyle = '#f97316';
+                ctx.beginPath();
+                ctx.moveTo(x + 3, topY + 4);
+                ctx.lineTo(x + w * 0.3, topY + 4);
+                ctx.stroke();
+            }
+            if (topRebar?.[2]) {
+                ctx.strokeStyle = '#f97316';
+                ctx.beginPath();
+                ctx.moveTo(x + w * 0.7, topY + 4);
+                ctx.lineTo(x + w - 3, topY + 4);
+                ctx.stroke();
+            }
+
+            ctx.setLineDash([]);
+        }
+
+        // ============ TABLE RENDERING ============
+        function renderTable() {
+            const tbody = document.getElementById('spanTableBody');
+            tbody.innerHTML = '';
+
+            if (!currentGroup?.Spans) return;
+
+            currentGroup.Spans.forEach((span, i) => {
+                const tr = document.createElement('tr');
+                tr.className = `span-row border-b border-slate-100 ${span.IsActive === false ? 'opacity-40' : ''} ${i === highlightedSpanIndex ? 'highlighted' : ''}`;
+                tr.dataset.spanIndex = i;
+
+                // Mouse events for sync
+                tr.addEventListener('mouseenter', () => highlightSpan(i));
+                tr.addEventListener('mouseleave', clearHighlight);
+
+                tr.innerHTML = `
+                    <td class="p-2 font-medium">${span.SpanId}</td>
+                    <td class="p-2 text-center">
+                        <input type="checkbox" ${span.IsActive !== false ? 'checked' : ''} 
+                            onchange="toggleSpanActive(${i}, this.checked)" class="w-3.5 h-3.5">
+                    </td>
+                    <td class="p-2 text-center text-slate-600">${(span.Length || 0).toFixed(2)}</td>
+                    <td class="p-2 text-center text-slate-600">${span.Width || 0}×${span.Height || 0}</td>
+                    ${renderRebarInputs(i, span, 'Top', 3)}
+                    ${renderRebarInputs(i, span, 'Bot', 3)}
+                    ${renderStirrupInputs(i, span)}
+                    <td class="p-2">
+                        <input type="text" value="${span.SideBar || ''}" 
+                            onchange="updateSideBar(${i}, this.value)"
+                            class="w-full border border-slate-200 rounded px-1 py-0.5 text-center text-xs">
+                    </td>
+                `;
+
+                tbody.appendChild(tr);
+            });
+        }
+
+        function renderRebarInputs(spanIndex, span, type, count) {
+            const arr = type === 'Top' ? span.TopRebar?.[0] : span.BotRebar?.[0];
+            const bgClass = type === 'Top' ? 'bg-red-50' : 'bg-blue-50';
+            let html = '';
+            const positions = [0, 2, 4]; // Left, Mid, Right
+
+            positions.slice(0, count).forEach((p, idx) => {
+                const val = arr?.[p] || '';
+                html += `<td class="p-1 ${bgClass}">
+                    <input type="text" value="${val}" 
+                        onchange="updateRebar(${spanIndex}, '${type}', ${p}, this.value)"
+                        class="w-full border border-slate-200 rounded px-1 py-0.5 text-center text-xs bg-white">
+                </td>`;
+            });
+            return html;
+        }
+
+        function renderStirrupInputs(spanIndex, span) {
+            let html = '';
+            for (let p = 0; p < 3; p++) {
+                const val = span.Stirrup?.[p] || '';
+                html += `<td class="p-1">
+                    <input type="text" value="${val}" 
+                        onchange="updateStirrup(${spanIndex}, ${p}, this.value)"
+                        class="w-full border border-slate-200 rounded px-1 py-0.5 text-center text-xs">
+                </td>`;
+            }
+            return html;
+        }
+
+        // ============ DATA UPDATE FUNCTIONS ============
         function toggleSpanActive(index, active) {
             currentGroup.Spans[index].IsActive = active;
             renderTable();
@@ -882,7 +590,7 @@
             span[arr][0][pos] = value;
 
             // Auto apply
-            if (document.getElementById('autoApply').checked && pos < 5) {
+            if (document.getElementById('autoApply').checked) {
                 for (let i = spanIndex + 1; i < currentGroup.Spans.length; i++) {
                     if (currentGroup.Spans[i].IsActive !== false) {
                         if (!currentGroup.Spans[i][arr]) currentGroup.Spans[i][arr] = [[], [], []];
@@ -892,6 +600,7 @@
                 }
                 renderTable();
             }
+            renderCanvas();
         }
 
         function updateStirrup(spanIndex, pos, value) {
@@ -916,49 +625,58 @@
 
         function applyStirrupPattern() {
             const pattern = document.getElementById('stirrupPattern').value;
-            const parts = pattern.replace('a', '').split('/');
+            const parts = pattern.replace(/[a-zA-Z]/g, '').split('/');
+            const dia = pattern.match(/d(\d+)/)?.[1] || '8';
 
             currentGroup.Spans.forEach(span => {
                 if (span.IsActive !== false) {
                     span.Stirrup = [
-                        `d8a${parts[0] || 100}`,
-                        `d8a${parts[1] || 150}`,
-                        `d8a${parts[2] || 100}`
+                        `d${dia}a${parts[0] || 100}`,
+                        `d${dia}a${parts[1] || 150}`,
+                        `d${dia}a${parts[2] || 100}`
                     ];
                 }
             });
             renderTable();
+            showToast('✓ Đã apply stirrup pattern');
         }
 
-        function copyFormat() {
-            alert('Click nhịp nguồn, sau đó click nhịp đích để copy format');
+        // ============ HIGHLIGHT & SYNC ============
+        function highlightSpan(index) {
+            highlightedSpanIndex = index;
+            document.querySelectorAll('.span-row').forEach((tr, i) => {
+                tr.classList.toggle('highlighted', i === index);
+            });
+            renderCanvas();
+
+            // AUTO HIGHLIGHT IN CAD: send handles to C#
+            const span = currentGroup?.Spans?.[index];
+            if (span?.Segments?.length > 0) {
+                const handles = span.Segments.map(s => s.EntityHandle).filter(h => h);
+                if (handles.length > 0) {
+                    window.chrome.webview.postMessage('HIGHLIGHT|' + JSON.stringify(handles));
+                }
+            }
         }
 
-        function bulkEdit() {
-            alert('Chọn nhiều nhịp (Ctrl+Click trong bảng), sau đó sửa 1 ô để đồng bộ');
+        function clearHighlight() {
+            highlightedSpanIndex = -1;
+            document.querySelectorAll('.span-row').forEach(tr => tr.classList.remove('highlighted'));
+            renderCanvas();
         }
 
-        function doSave() {
-            window.chrome.webview.postMessage('SAVE|' + JSON.stringify(data));
+        // ============ CAD INTEGRATION ============
+        function highlightInCAD() {
+            if (!currentGroup?.EntityHandles?.length) {
+                showToast('⚠️ Không có dầm để highlight');
+                return;
+            }
+            // Send message to C# to highlight beams
+            window.chrome.webview.postMessage('HIGHLIGHT|' + JSON.stringify(currentGroup.EntityHandles));
+            showToast('✓ Đã highlight ' + currentGroup.EntityHandles.length + ' dầm trên CAD');
         }
 
-        function doExport() {
-            window.chrome.webview.postMessage('EXPORT');
-        }
-
-        function doImport() {
-            window.chrome.webview.postMessage('IMPORT');
-        }
-
-        function doCancel() {
-            window.chrome.webview.postMessage('CANCEL');
-        }
-
-        function applyToDrawing() {
-            window.chrome.webview.postMessage('APPLY|' + JSON.stringify(data));
-        }
-
-        // ============ ENHANCED: Copy Format Mode ============
+        // ============ COPY FORMAT ============
         let copyFormatMode = false;
         let copySourceSpan = null;
 
@@ -969,615 +687,53 @@
             showToast('Click nhịp nguồn để copy format...');
         }
 
-        function handleCopyFormatClick(spanIndex) {
-            if (copySourceSpan === null) {
-                copySourceSpan = currentGroup.Spans[spanIndex];
-                showToast('Chọn nhịp nguồn: ' + copySourceSpan.SpanId + '. Click nhịp đích...');
-            } else {
-                // Copy format to destination
-                const dest = currentGroup.Spans[spanIndex];
-                dest.TopRebar = JSON.parse(JSON.stringify(copySourceSpan.TopRebar || []));
-                dest.BotRebar = JSON.parse(JSON.stringify(copySourceSpan.BotRebar || []));
-                dest.Stirrup = [...(copySourceSpan.Stirrup || [])];
-                dest.SideBar = copySourceSpan.SideBar;
+        // ============ ACTIONS ============
+        function doSave() { window.chrome.webview.postMessage('SAVE|' + JSON.stringify(data)); }
+        function doExport() { window.chrome.webview.postMessage('EXPORT'); }
+        function doImport() { window.chrome.webview.postMessage('IMPORT'); }
+        function doCancel() { window.chrome.webview.postMessage('CANCEL'); }
+        function applyToDrawing() { window.chrome.webview.postMessage('APPLY|' + JSON.stringify(data)); }
 
-                copyFormatMode = false;
-                copySourceSpan = null;
-                document.body.style.cursor = 'default';
-                renderTable();
-                showToast('\u2705 Đã copy format sang ' + dest.SpanId);
-            }
-        }
-
-        // ============ ENHANCED: Bulk Edit Mode ============
-        let bulkEditMode = false;
-        let selectedSpanIndices = [];
-
-        function bulkEdit() {
-            bulkEditMode = !bulkEditMode;
-            selectedSpanIndices = [];
-            document.body.classList.toggle('bulk-mode', bulkEditMode);
-
-            if (bulkEditMode) {
-                showToast('Bulk Edit ON: Ctrl+Click chọn nhiều nhịp, sửa 1 ô để đồng bộ');
-            } else {
-                showToast('Bulk Edit OFF');
-            }
-            renderTable();
-        }
-
-        function toggleSpanSelection(index, event) {
-            if (!bulkEditMode) return;
-
-            if (event.ctrlKey || event.metaKey) {
-                const idx = selectedSpanIndices.indexOf(index);
-                if (idx >= 0) {
-                    selectedSpanIndices.splice(idx, 1);
-                } else {
-                    selectedSpanIndices.push(index);
-                }
-                renderTable();
-            }
-        }
-
-        // ============ ENHANCED: Bidirectional Sync (Table <-> Canvas) ============
-        let highlightedSpanIndex = -1;
-        let spanBounds = []; // Store span bounds for canvas click detection
-
-        function highlightSpan(index) {
-            highlightedSpanIndex = index;
-
-            // Highlight table row
-            document.querySelectorAll('#spanTableBody tr').forEach((tr, i) => {
-                tr.classList.toggle('highlighted', i === index);
-            });
-
-            // Redraw canvas with highlight
-            renderCanvas();
-        }
-
-        function clearHighlight() {
-            highlightedSpanIndex = -1;
-            document.querySelectorAll('#spanTableBody tr').forEach(tr => {
-                tr.classList.remove('highlighted');
-            });
-            renderCanvas();
-        }
-
-        // ============ ENHANCED: Quick Picker ============
-        let activeInput = null;
-        let activeInputType = null; // 'diameter' or 'stirrup'
-
-        function showQuickPicker(input, type) {
-            activeInput = input;
-            activeInputType = type;
-
-            const picker = document.getElementById(type === 'stirrup' ? 'stirrupPicker' : 'diameterPicker');
-            const rect = input.getBoundingClientRect();
-
-            picker.style.left = rect.left + 'px';
-            picker.style.top = (rect.bottom + 5) + 'px';
-            picker.classList.add('show');
-        }
-
-        function hideQuickPickers() {
-            document.querySelectorAll('.quick-picker').forEach(p => p.classList.remove('show'));
-        }
-
-        function pickDiameter(val) {
-            if (activeInput) {
-                activeInput.value = val;
-                activeInput.dispatchEvent(new Event('change'));
-            }
-            hideQuickPickers();
-        }
-
-        function pickStirrup(val) {
-            if (activeInput) {
-                activeInput.value = val;
-                activeInput.dispatchEvent(new Event('change'));
-            }
-            hideQuickPickers();
-        }
-
-        // ============ ENHANCED: Keyboard Navigation ============
-        function handleKeyDown(event, input) {
-            const td = input.closest('td');
-            const tr = input.closest('tr');
-            const tbody = document.getElementById('spanTableBody');
-            const tds = Array.from(tr.querySelectorAll('td'));
-            const colIndex = tds.indexOf(td);
-            const rows = Array.from(tbody.querySelectorAll('tr'));
-            const rowIndex = rows.indexOf(tr);
-
-            switch (event.key) {
-                case 'Enter':
-                    // Move to same column, next row
-                    event.preventDefault();
-                    if (rowIndex < rows.length - 1) {
-                        const nextRow = rows[rowIndex + 1];
-                        const nextInput = nextRow.querySelectorAll('td')[colIndex]?.querySelector('input');
-                        if (nextInput) nextInput.focus();
-                    }
-                    break;
-                case 'Tab':
-                    // Default Tab behavior is fine
-                    break;
-                case 'ArrowDown':
-                    event.preventDefault();
-                    if (rowIndex < rows.length - 1) {
-                        const nextRow = rows[rowIndex + 1];
-                        const nextInput = nextRow.querySelectorAll('td')[colIndex]?.querySelector('input');
-                        if (nextInput) nextInput.focus();
-                    }
-                    break;
-                case 'ArrowUp':
-                    event.preventDefault();
-                    if (rowIndex > 0) {
-                        const prevRow = rows[rowIndex - 1];
-                        const prevInput = prevRow.querySelectorAll('td')[colIndex]?.querySelector('input');
-                        if (prevInput) prevInput.focus();
-                    }
-                    break;
-            }
-        }
-
-        // ============ Toast notification ============
+        // ============ TOAST ============
         function showToast(msg) {
             const existing = document.querySelector('.toast');
             if (existing) existing.remove();
 
             const toast = document.createElement('div');
-            toast.className = 'toast';
+            toast.className = 'toast fixed bottom-16 left-1/2 -translate-x-1/2 bg-slate-900 text-white px-4 py-2 rounded shadow-lg text-sm z-50';
             toast.textContent = msg;
-            toast.style.cssText = `
-                position: fixed;
-                bottom: 80px;
-                left: 50%;
-                transform: translateX(-50%);
-                background: var(--accent);
-                color: white;
-                padding: 10px 20px;
-                border-radius: 6px;
-                font-size: 13px;
-                z-index: 2000;
-                animation: fadeOut 3s forwards;
-            `;
             document.body.appendChild(toast);
             setTimeout(() => toast.remove(), 3000);
         }
 
-        // ============ UPDATED: renderTable with enhanced features ============
-        function renderTable() {
-            const tbody = document.getElementById('spanTableBody');
-            tbody.innerHTML = '';
-
-            if (!currentGroup || !currentGroup.Spans) return;
-
-            currentGroup.Spans.forEach((span, i) => {
-                const tr = document.createElement('tr');
-                tr.className = span.IsActive === false ? 'inactive' : '';
-                if (bulkEditMode && selectedSpanIndices.includes(i)) {
-                    tr.classList.add('selected');
-                }
-                if (i === highlightedSpanIndex) {
-                    tr.classList.add('highlighted');
-                }
-                tr.dataset.spanIndex = i;
-
-                // Mouse events for bidirectional sync
-                tr.addEventListener('mouseenter', () => highlightSpan(i));
-                tr.addEventListener('mouseleave', clearHighlight);
-                tr.addEventListener('click', (e) => {
-                    if (copyFormatMode) {
-                        handleCopyFormatClick(i);
-                    } else {
-                        toggleSpanSelection(i, e);
-                    }
-                });
-
-                // Span ID
-                tr.innerHTML = `<td>${span.SpanId}</td>`;
-
-                // Active checkbox
-                tr.innerHTML += `<td><input type="checkbox" ${span.IsActive !== false ? 'checked' : ''} 
-                    onchange="toggleSpanActive(${i}, this.checked)"></td>`;
-
-                // Top rebar (5 positions) with quick picker
-                for (let p = 0; p < 5; p++) {
-                    const val = span.TopRebar && span.TopRebar[0] ? span.TopRebar[0][p] || '' : '';
-                    tr.innerHTML += `<td><input type="text" value="${val}" 
-                        onchange="updateRebarBulk(${i}, 'Top', ${p}, this.value)"
-                        ondblclick="showQuickPicker(this, 'diameter')"
-                        onkeydown="handleKeyDown(event, this)"></td>`;
-                }
-
-                // Bot rebar (5 positions)
-                for (let p = 0; p < 5; p++) {
-                    const val = span.BotRebar && span.BotRebar[0] ? span.BotRebar[0][p] || '' : '';
-                    tr.innerHTML += `<td><input type="text" value="${val}" 
-                        onchange="updateRebarBulk(${i}, 'Bot', ${p}, this.value)"
-                        ondblclick="showQuickPicker(this, 'diameter')"
-                        onkeydown="handleKeyDown(event, this)"></td>`;
-                }
-
-                // Stirrup (3 positions) with quick picker
-                for (let p = 0; p < 3; p++) {
-                    const val = span.Stirrup ? span.Stirrup[p] || '' : '';
-                    tr.innerHTML += `<td><input type="text" value="${val}" 
-                        onchange="updateStirrupBulk(${i}, ${p}, this.value)"
-                        ondblclick="showQuickPicker(this, 'stirrup')"
-                        onkeydown="handleKeyDown(event, this)"></td>`;
-                }
-
-                // Side bar
-                tr.innerHTML += `<td><input type="text" value="${span.SideBar || ''}" 
-                    onchange="updateSideBar(${i}, this.value)"
-                    onkeydown="handleKeyDown(event, this)"></td>`;
-
-                tbody.appendChild(tr);
-            });
-        }
-
-        // Bulk-aware update functions
-        function updateRebarBulk(spanIndex, type, pos, value) {
-            const indicesToUpdate = bulkEditMode && selectedSpanIndices.length > 0
-                ? selectedSpanIndices
-                : [spanIndex];
-
-            indicesToUpdate.forEach(idx => {
-                const span = currentGroup.Spans[idx];
-                const arr = type === 'Top' ? 'TopRebar' : 'BotRebar';
-                if (!span[arr]) span[arr] = [[], [], []];
-                if (!span[arr][0]) span[arr][0] = [];
-                span[arr][0][pos] = value;
-            });
-
-            // Auto apply if enabled
-            if (document.getElementById('autoApply').checked && !bulkEditMode) {
-                updateRebar(spanIndex, type, pos, value);
-            }
-
-            if (bulkEditMode && selectedSpanIndices.length > 0) {
-                renderTable();
-            }
-        }
-
-        function updateStirrupBulk(spanIndex, pos, value) {
-            const indicesToUpdate = bulkEditMode && selectedSpanIndices.length > 0
-                ? selectedSpanIndices
-                : [spanIndex];
-
-            indicesToUpdate.forEach(idx => {
-                const span = currentGroup.Spans[idx];
-                if (!span.Stirrup) span.Stirrup = [];
-                span.Stirrup[pos] = value;
-            });
-
-            if (bulkEditMode && selectedSpanIndices.length > 0) {
-                renderTable();
-            }
-        }
-
-        // ============ UPDATED: Canvas with click detection and highlighting ============
-        function renderCanvas() {
-            const canvas = document.getElementById('beamCanvas');
-            const ctx = canvas.getContext('2d');
-
-            if (!currentGroup || !currentGroup.Spans) return;
-
-            spanBounds = []; // Reset bounds
-
-            // Calculate total width
-            let totalWidth = CANVAS_PADDING * 2;
-            currentGroup.Spans.forEach(span => {
-                totalWidth += Math.max(span.Length * PIXELS_PER_METER, MIN_SPAN_WIDTH);
-            });
-            totalWidth += currentGroup.Supports ? currentGroup.Supports.length * 30 : 0;
-
-            canvas.width = Math.max(totalWidth, 800);
-            const height = canvas.height;
-
-            // Clear
-            ctx.fillStyle = '#16213e';
-            ctx.fillRect(0, 0, canvas.width, height);
-
-            let x = CANVAS_PADDING;
-            const beamY = 80;
-
-            // Draw supports and spans
-            currentGroup.Spans.forEach((span, i) => {
-                const spanWidth = Math.max(span.Length * PIXELS_PER_METER, MIN_SPAN_WIDTH);
-
-                // Left support
-                if (i === 0 && currentGroup.Supports && currentGroup.Supports[0]) {
-                    drawSupport(ctx, x, beamY, currentGroup.Supports[0]);
-                    x += 15;
-                }
-
-                // Store span bounds for click detection
-                spanBounds.push({ x: x, y: beamY, width: spanWidth, height: BEAM_HEIGHT, index: i });
-
-                // Beam span (with highlight if selected)
-                drawSpan(ctx, x, beamY, spanWidth, span, i === highlightedSpanIndex);
-                x += spanWidth;
-
-                // Right support
-                if (currentGroup.Supports && currentGroup.Supports[i + 1]) {
-                    drawSupport(ctx, x, beamY, currentGroup.Supports[i + 1]);
-                    x += 15;
-                }
-            });
-
-            // Dimension line
-            drawDimensions(ctx, beamY + BEAM_HEIGHT + 40);
-
-            // ============ DRAW CONTINUOUS BACKBONE WITH HOOKS AND SPLICES ============
-            const totalBeamLength = currentGroup.Spans.reduce((sum, s) => sum + s.Length, 0);
-            const groupType = currentGroup.GroupType || 'BEAM';
-
-            // Get pre-calculated bar segments from C# or fallback
-            const topSegments = getPreCalculatedSegments(true);
-            const botSegments = getPreCalculatedSegments(false);
-
-            // Get start X position for backbone drawing
-            let backboneStartX = CANVAS_PADDING;
-            if (currentGroup.Supports && currentGroup.Supports[0]) {
-                backboneStartX += 15;
-            }
-
-            const BACKBONE_Y_TOP = beamY + 12;
-            const BACKBONE_Y_BOT = beamY + BEAM_HEIGHT - 10;
-            const pxPerM = PIXELS_PER_METER;
-
-            // Draw hooks at beam start (if first support is Column/Wall)
-            const firstSupport = currentGroup.Supports?.[0];
-            const lastSupport = currentGroup.Supports?.[currentGroup.Supports?.length - 1];
-
-            if (needsHook(firstSupport)) {
-                const hookLen = (data.settings?.Anchorage?.Hook90Factor || 12) * 20; // Assume D20
-                drawHook(ctx, backboneStartX, BACKBONE_Y_TOP, 'left', hookLen, '#ff6b8a', 90);
-                drawHook(ctx, backboneStartX, BACKBONE_Y_BOT, 'left', hookLen, '#ff6b8a', 90);
-            }
-
-            // Draw hooks at beam end
-            let backboneEndX = backboneStartX + totalBeamLength * pxPerM;
-            if (needsHook(lastSupport)) {
-                const hookLen = (data.settings?.Anchorage?.Hook90Factor || 12) * 20;
-                drawHook(ctx, backboneEndX, BACKBONE_Y_TOP, 'right', hookLen, '#ff6b8a', 90);
-                drawHook(ctx, backboneEndX, BACKBONE_Y_BOT, 'right', hookLen, '#ff6b8a', 90);
-            }
-
-            // Draw splice markers from pre-calculated segments
-            const skipSplice = data.settings?.Detailing?.SkipSplice || false;
-            if (!skipSplice) {
-                topSegments.forEach(seg => {
-                    // Support both camelCase (fallback) and PascalCase (C#) property names
-                    const spliceAtEnd = seg.SpliceAtEnd ?? seg.spliceAtEnd;
-                    const splicePosition = seg.SplicePosition ?? seg.splicePosition;
-                    const isStaggered = seg.IsStaggered ?? seg.isStaggered;
-
-                    if (spliceAtEnd && splicePosition) {
-                        const spliceX = backboneStartX + splicePosition * pxPerM;
-                        drawSpliceMarker(ctx, spliceX, BACKBONE_Y_TOP, isStaggered ? '#4db8ff' : '#ff6b8a');
-                    }
-                });
-
-                botSegments.forEach(seg => {
-                    const spliceAtEnd = seg.SpliceAtEnd ?? seg.spliceAtEnd;
-                    const splicePosition = seg.SplicePosition ?? seg.splicePosition;
-                    const isStaggered = seg.IsStaggered ?? seg.isStaggered;
-
-                    if (spliceAtEnd && splicePosition) {
-                        const spliceX = backboneStartX + splicePosition * pxPerM;
-                        drawSpliceMarker(ctx, spliceX, BACKBONE_Y_BOT, isStaggered ? '#4db8ff' : '#ff6b8a');
-                    }
-                });
-            }
-
-            // Draw bar count label (if beam is long enough to need cutting)
-            if (topSegments.length > 1) {
-                ctx.fillStyle = '#fbbf24';
-                ctx.font = '10px sans-serif';
-                ctx.textAlign = 'left';
-                ctx.fillText(`${topSegments.length} thanh`, backboneStartX + 5, beamY - 5);
-
-                // Show warning if segments need server calculation
-                if (topSegments.some(s => s.NeedsServerCalc)) {
-                    ctx.fillStyle = '#f97316';
-                    ctx.fillText('(tạm tính)', backboneStartX + 70, beamY - 5);
-                }
-            }
-        }
-
-        function drawSpan(ctx, x, y, width, span, isHighlighted) {
-            // Beam rect with highlight
-            ctx.fillStyle = isHighlighted ? '#2a5a8a' : '#1f4068';
-            ctx.strokeStyle = isHighlighted ? '#ff6b8a' : '#e94560';
-            ctx.lineWidth = isHighlighted ? 3 : 2;
-            ctx.fillRect(x, y, width, BEAM_HEIGHT);
-            ctx.strokeRect(x, y, width, BEAM_HEIGHT);
-
-            // ============ REBAR VISUALIZATION ============
-            const REBAR_OFFSET_TOP = 15;       // Distance from top edge
-            const REBAR_OFFSET_BOT = 12;       // Distance from bottom edge
-            const BACKBONE_Y_TOP = y + REBAR_OFFSET_TOP;
-            const BACKBONE_Y_BOT = y + BEAM_HEIGHT - REBAR_OFFSET_BOT;
-
-            // Get backbone from selected option
-            const backbone = currentGroup.BackboneOptions?.[currentGroup.SelectedBackboneIndex || 0];
-
-            // Draw Backbone bars (continuous - pink/red)
-            if (backbone) {
-                ctx.strokeStyle = '#ff6b8a'; // Pink for backbone
-                ctx.lineWidth = 3;
-                ctx.setLineDash([]);
-
-                // Top backbone
-                ctx.beginPath();
-                ctx.moveTo(x + 5, BACKBONE_Y_TOP);
-                ctx.lineTo(x + width - 5, BACKBONE_Y_TOP);
-                ctx.stroke();
-
-                // Bottom backbone
-                ctx.beginPath();
-                ctx.moveTo(x + 5, BACKBONE_Y_BOT);
-                ctx.lineTo(x + width - 5, BACKBONE_Y_BOT);
-                ctx.stroke();
-
-                // Backbone label
-                ctx.fillStyle = '#ff6b8a';
-                ctx.font = '9px sans-serif';
-                ctx.textAlign = 'left';
-                if (backbone.OptionName) {
-                    ctx.fillText(backbone.OptionName.replace('Top: ', ''), x + 8, BACKBONE_Y_TOP - 3);
-                }
-            }
-
-            // Draw Addon bars (span-specific - blue) if defined
-            const topRebar = span.TopRebar?.[0];
-            const botRebar = span.BotRebar?.[0];
-
-            ctx.strokeStyle = '#4db8ff'; // Blue for addon
-            ctx.lineWidth = 2;
-            ctx.setLineDash([5, 3]); // Dashed for addon
-
-            // Top addon - draw at positions 0 (left), 2 (mid), 4 (right)
-            if (topRebar) {
-                const hasLeft = topRebar[0] && topRebar[0] !== backbone?.OptionName?.split(',')[0];
-                const hasMid = topRebar[2];
-                const hasRight = topRebar[4] && topRebar[4] !== backbone?.OptionName?.split(',')[0];
-
-                if (hasLeft) {
-                    ctx.beginPath();
-                    ctx.moveTo(x + 3, BACKBONE_Y_TOP + 5);
-                    ctx.lineTo(x + width * 0.3, BACKBONE_Y_TOP + 5);
-                    ctx.stroke();
-                }
-                if (hasMid) {
-                    ctx.beginPath();
-                    ctx.moveTo(x + width * 0.35, BACKBONE_Y_TOP + 5);
-                    ctx.lineTo(x + width * 0.65, BACKBONE_Y_TOP + 5);
-                    ctx.stroke();
-                }
-                if (hasRight) {
-                    ctx.beginPath();
-                    ctx.moveTo(x + width * 0.7, BACKBONE_Y_TOP + 5);
-                    ctx.lineTo(x + width - 3, BACKBONE_Y_TOP + 5);
-                    ctx.stroke();
-                }
-            }
-
-            // Bottom addon
-            if (botRebar) {
-                const hasLeft = botRebar[0];
-                const hasMid = botRebar[2];
-                const hasRight = botRebar[4];
-
-                if (hasLeft) {
-                    ctx.beginPath();
-                    ctx.moveTo(x + 3, BACKBONE_Y_BOT - 5);
-                    ctx.lineTo(x + width * 0.3, BACKBONE_Y_BOT - 5);
-                    ctx.stroke();
-                }
-                if (hasMid) {
-                    ctx.beginPath();
-                    ctx.moveTo(x + width * 0.35, BACKBONE_Y_BOT - 5);
-                    ctx.lineTo(x + width * 0.65, BACKBONE_Y_BOT - 5);
-                    ctx.stroke();
-                }
-                if (hasRight) {
-                    ctx.beginPath();
-                    ctx.moveTo(x + width * 0.7, BACKBONE_Y_BOT - 5);
-                    ctx.lineTo(x + width - 3, BACKBONE_Y_BOT - 5);
-                    ctx.stroke();
-                }
-            }
-
-            ctx.setLineDash([]); // Reset dash
-
-            // ============ SPLICE MARKERS (Ellipse 45°) ============
-            // Check if splice visualization is enabled (not SkipSplice mode)
-            const skipSplice = data.settings?.Detailing?.SkipSplice || false;
-
-            if (!skipSplice) {
-                // Draw splice markers at bar ends (where bars would connect)
-                // Position: at ~30% and ~70% of span for illustration
-
-                // Top bar splice markers
-                if (currentGroup.RequiresSplice) {
-                    drawSpliceMarker(ctx, x + width * 0.35, BACKBONE_Y_TOP, '#ff6b8a');
-                    drawSpliceMarker(ctx, x + width * 0.65, BACKBONE_Y_TOP, '#ff6b8a');
-                }
-
-                // Bottom bar splice markers  
-                if (currentGroup.RequiresSplice) {
-                    drawSpliceMarker(ctx, x + width * 0.25, BACKBONE_Y_BOT, '#ff6b8a');
-                    drawSpliceMarker(ctx, x + width * 0.75, BACKBONE_Y_BOT, '#ff6b8a');
-                }
-            }
-
-            // ============ END REBAR VISUALIZATION ============
-
-            // Span label
-            ctx.fillStyle = '#fff';
-            ctx.font = 'bold 12px sans-serif';
-            ctx.textAlign = 'center';
-            ctx.fillText(span.SpanId, x + width / 2, y + BEAM_HEIGHT / 2 + 5);
-
-            // Dimensions text (below beam)
-            ctx.fillStyle = '#8892a0';
-            ctx.font = '11px sans-serif';
-            ctx.fillText(`${span.Width}x${span.Height}`, x + width / 2, y + BEAM_HEIGHT + 15);
-            ctx.fillText(`L=${span.Length.toFixed(2)}m`, x + width / 2, y + BEAM_HEIGHT + 28);
-
-            // Step change indicator
-            if (span.IsStepChange) {
-                ctx.fillStyle = '#fbbf24';
-                ctx.fillText('⚠️', x + width - 15, y + 15);
-            }
-        }
-
-        // Canvas mouse events
-        document.getElementById('beamCanvas').addEventListener('mousemove', function (e) {
-            const rect = this.getBoundingClientRect();
-            const x = e.clientX - rect.left;
-            const y = e.clientY - rect.top;
-
-            let found = -1;
-            for (const bound of spanBounds) {
-                if (x >= bound.x && x <= bound.x + bound.width &&
-                    y >= bound.y && y <= bound.y + bound.height) {
-                    found = bound.index;
-                    break;
-                }
-            }
-
-            if (found !== highlightedSpanIndex) {
-                if (found >= 0) {
-                    highlightSpan(found);
-                } else {
-                    clearHighlight();
-                }
-            }
-        });
-
+        // ============ CANVAS EVENTS ============
         document.getElementById('beamCanvas').addEventListener('click', function (e) {
             const rect = this.getBoundingClientRect();
             const x = e.clientX - rect.left;
             const y = e.clientY - rect.top;
 
             for (const bound of spanBounds) {
-                if (x >= bound.x && x <= bound.x + bound.width &&
-                    y >= bound.y && y <= bound.y + bound.height) {
+                if (x >= bound.x && x <= bound.x + bound.width && y >= bound.y && y <= bound.y + bound.height) {
                     if (copyFormatMode) {
-                        handleCopyFormatClick(bound.index);
+                        if (!copySourceSpan) {
+                            copySourceSpan = currentGroup.Spans[bound.index];
+                            showToast('Chọn nhịp đích...');
+                        } else {
+                            const dest = currentGroup.Spans[bound.index];
+                            dest.TopRebar = JSON.parse(JSON.stringify(copySourceSpan.TopRebar || []));
+                            dest.BotRebar = JSON.parse(JSON.stringify(copySourceSpan.BotRebar || []));
+                            dest.Stirrup = [...(copySourceSpan.Stirrup || [])];
+                            copyFormatMode = false;
+                            document.body.style.cursor = 'default';
+                            renderTable();
+                            showToast('✓ Copied format to ' + dest.SpanId);
+                        }
                     } else {
-                        // Scroll to and focus the row
+                        // Scroll table to row
                         const row = document.querySelector(`tr[data-span-index="${bound.index}"]`);
                         if (row) {
                             row.scrollIntoView({ behavior: 'smooth', block: 'center' });
-                            row.querySelector('input')?.focus();
+                            highlightSpan(bound.index);
                         }
                     }
                     break;
@@ -1585,14 +741,7 @@
             }
         });
 
-        // Hide pickers on click outside
-        document.addEventListener('click', function (e) {
-            if (!e.target.closest('.quick-picker') && !e.target.matches('input[type="text"]')) {
-                hideQuickPickers();
-            }
-        });
-
-        // Initialize
+        // Init
         init();
     </script>
 </body>

@@ -169,6 +169,58 @@ namespace DTS_Engine.UI.Forms
                 }
                 return;
             }
+
+            if (message.StartsWith("HIGHLIGHT|"))
+            {
+                try
+                {
+                    string json = message.Substring(10);
+                    var handles = JsonConvert.DeserializeObject<List<string>>(json);
+                    if (handles != null && handles.Count > 0)
+                    {
+                        // Invoke on main thread to highlight in CAD
+                        this.BeginInvoke(new Action(() => HighlightBeamsInCAD(handles)));
+                    }
+                }
+                catch { }
+                return;
+            }
+        }
+
+        private void HighlightBeamsInCAD(List<string> handles)
+        {
+            try
+            {
+                var doc = Autodesk.AutoCAD.ApplicationServices.Application.DocumentManager.MdiActiveDocument;
+                if (doc == null) return;
+
+                var ids = new List<Autodesk.AutoCAD.DatabaseServices.ObjectId>();
+                using (var tr = doc.Database.TransactionManager.StartOpenCloseTransaction())
+                {
+                    foreach (var handle in handles)
+                    {
+                        try
+                        {
+                            var h = new Autodesk.AutoCAD.DatabaseServices.Handle(
+                                long.Parse(handle, System.Globalization.NumberStyles.HexNumber));
+                            var objId = doc.Database.GetObjectId(false, h, 0);
+                            if (objId != Autodesk.AutoCAD.DatabaseServices.ObjectId.Null && !objId.IsErased)
+                            {
+                                ids.Add(objId);
+                            }
+                        }
+                        catch { }
+                    }
+                }
+
+                if (ids.Count > 0)
+                {
+                    // Use transient graphics or selection to highlight
+                    doc.Editor.SetImpliedSelection(ids.ToArray());
+                    doc.Editor.UpdateScreen();
+                }
+            }
+            catch { }
         }
 
         private void HandleExport()

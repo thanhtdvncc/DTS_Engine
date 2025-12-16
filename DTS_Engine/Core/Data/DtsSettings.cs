@@ -147,6 +147,32 @@ namespace DTS_Engine.Core.Data
         /// Chiều cao text label khi plot thép (mặc định = 1)
         /// </summary>
         public double TextHeight { get; set; } = 1;
+
+        /// <summary>
+        /// Mác thép chủ (MPa). Mặc định CB400-V = 400
+        /// User nhập trực tiếp hoặc chọn từ dropdown
+        /// </summary>
+        public double SteelGradeMain { get; set; } = 400;
+
+        /// <summary>
+        /// Mác thép đai (MPa). Mặc định CB300-V = 300
+        /// </summary>
+        public double SteelGradeStirrup { get; set; } = 300;
+
+        /// <summary>
+        /// Mác bê tông (MPa). Mặc định B25 = 25
+        /// </summary>
+        public double ConcreteGrade { get; set; } = 25;
+
+        /// <summary>
+        /// Tên mác thép (hiển thị). VD: "CB400-V", "AIII"
+        /// </summary>
+        public string SteelGradeName { get; set; } = "CB400-V";
+
+        /// <summary>
+        /// Tên mác bê tông (hiển thị). VD: "B25", "C30"
+        /// </summary>
+        public string ConcreteGradeName { get; set; } = "B25";
     }
 
     /// <summary>

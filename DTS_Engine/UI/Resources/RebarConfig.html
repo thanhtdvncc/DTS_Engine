@@ -356,6 +356,29 @@
             </div>
 
             <div class="section">
+                <div class="section-header">Mác vật liệu (Material Grades)</div>
+                <div class="section-body">
+                    <div class="row">
+                        <div class="col"><label>Mác thép chủ</label><input type="text" id="SteelGradeName"
+                                placeholder="CB400-V"></div>
+                        <div class="col"><label>fy (MPa)</label><input type="number" id="SteelGradeMain" value="400"
+                                min="200" max="600"></div>
+                        <div class="col"><label>Thép đai fy (MPa)</label><input type="number" id="SteelGradeStirrup"
+                                value="300" min="200" max="500"></div>
+                    </div>
+                    <div class="row">
+                        <div class="col"><label>Mác bê tông</label><input type="text" id="ConcreteGradeName"
+                                placeholder="B25"></div>
+                        <div class="col"><label>f'c (MPa)</label><input type="number" id="ConcreteGrade" value="25"
+                                min="15" max="60"></div>
+                        <div class="col"></div>
+                    </div>
+                    <div class="hint">Nhập trực tiếp mác vật liệu theo dự án. VD: CB400-V (fy=400), B25 (f'c=25)
+                    </div>
+                </div>
+            </div>
+
+            <div class="section">
                 <div class="section-header">Import / Export Settings</div>
                 <div class="section-body">
                     <div class="row">
@@ -771,6 +794,12 @@
             setId('ZoneL2_Ratio', data.General?.ZoneL2_Ratio);
             if (data.General?.Unit) document.getElementById('Unit').value = data.General.Unit;
             setId('TextHeight', data.General?.TextHeight ?? 1);
+            // Material Grades
+            setId('SteelGradeName', data.General?.SteelGradeName ?? 'CB400-V');
+            setId('SteelGradeMain', data.General?.SteelGradeMain ?? 400);
+            setId('SteelGradeStirrup', data.General?.SteelGradeStirrup ?? 300);
+            setId('ConcreteGradeName', data.General?.ConcreteGradeName ?? 'B25');
+            setId('ConcreteGrade', data.General?.ConcreteGrade ?? 25);
 
             // Tab 1: Beam
             setId('MainBarRange', data.Beam?.MainBarRange);
@@ -898,7 +927,13 @@
                     ZoneL2_Ratio: getVal('ZoneL2_Ratio'),
                     Unit: document.getElementById('Unit').value,
                     DecimalPlaces: data.General?.DecimalPlaces || 2,
-                    TextHeight: getVal('TextHeight') || 1
+                    TextHeight: getVal('TextHeight') || 1,
+                    // Material Grades
+                    SteelGradeName: getVal('SteelGradeName') || 'CB400-V',
+                    SteelGradeMain: getVal('SteelGradeMain') || 400,
+                    SteelGradeStirrup: getVal('SteelGradeStirrup') || 300,
+                    ConcreteGradeName: getVal('ConcreteGradeName') || 'B25',
+                    ConcreteGrade: getVal('ConcreteGrade') || 25
                 },
                 Beam: {
                     MainBarRange: getVal('MainBarRange') || '16-25',
