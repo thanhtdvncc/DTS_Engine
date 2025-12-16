@@ -738,137 +738,57 @@
         }
 
         /// <summary>
-        /// Tính toán các đoạn thép với mối nối (JS version of RebarCuttingAlgorithm)
+        /// Lấy segments đã được tính toán từ C# (RebarCuttingAlgorithm)
+        /// KHÔNG tính toán lại ở phía client để tránh logic trùng lặp
         /// </summary>
-        function computeBarSegments(totalLengthM, spans, isTopBar, groupType) {
+        function getPreCalculatedSegments(isTopBar) {
+            // Ưu tiên dùng dữ liệu đã tính từ server (C#)
+            const key = isTopBar ? 'TopBarSegments' : 'BotBarSegments';
+
+            if (currentGroup && currentGroup[key] && currentGroup[key].length > 0) {
+                // Đã có dữ liệu từ C# - sử dụng trực tiếp
+                return currentGroup[key];
+            }
+
+            // Fallback: Tạo segment đơn giản (không splice) cho hiển thị cơ bản
+            const totalLength = currentGroup?.Spans?.reduce((sum, s) => sum + s.Length, 0) || 0;
             const settings = data.settings || {};
             const detailing = settings.Detailing || {};
-            const anchorage = settings.Anchorage || {};
-
-            const maxBarLength = (detailing.MaxBarLength || 11700) / 1000; // Convert to meters
-            const totalLength = totalLengthM;
             const skipSplice = detailing.SkipSplice || false;
+            const maxBarLength = (detailing.MaxBarLength || 11700) / 1000;
 
-            const segments = [];
-
-            // Case 1: Short beam or SkipSplice mode - no cutting needed
+            // Nếu dầm ngắn hoặc SkipSplice - 1 đoạn duy nhất
             if (totalLength <= maxBarLength || skipSplice) {
-                segments.push({
-                    startPos: 0,
-                    endPos: totalLength,
-                    spliceAtEnd: false,
-                    splicePosition: null,
-                    hookAtStart: false,
-                    hookAtEnd: false,
-                    isStaggered: false
-                });
-                return segments;
+                return [{
+                    StartPos: 0,
+                    EndPos: totalLength,
+                    SpliceAtEnd: false,
+                    SplicePosition: null,
+                    HookAtStart: false,
+                    HookAtEnd: false,
+                    IsStaggered: false
+                }];
             }
 
-            // Case 2: Long beam - need to cut
+            // Dầm dài nhưng chưa có dữ liệu từ C# - tạo segments giả để hiển thị cảnh báo
             const numBars = Math.ceil(totalLength / maxBarLength);
-            const idealLength = totalLength / numBars;
-
-            // Get splice zone based on group type and bar position
-            const rule = groupType?.toUpperCase() === 'GIRDER'
-                ? (detailing.GirderRule || {})
-                : (detailing.BeamRule || {});
-            const spliceZone = isTopBar
-                ? (rule.TopSpliceZone ?? 2) // Default: MidSpan
-                : (rule.BotSpliceZone ?? 0); // Default: Support
-
-            // Build allowed zones for each span
-            const supportRatio = rule.SupportZoneRatio || 0.25;
-            const allowedZones = [];
-            let cumLen = 0;
-
-            spans.forEach(span => {
-                const spanLen = span.Length;
-                const spanStart = cumLen;
-                const spanEnd = cumLen + spanLen;
-
-                if (spliceZone === 0) { // Support
-                    allowedZones.push({ start: spanStart, end: spanStart + spanLen * supportRatio });
-                    allowedZones.push({ start: spanEnd - spanLen * supportRatio, end: spanEnd });
-                } else if (spliceZone === 1) { // QuarterSpan
-                    allowedZones.push({ start: spanStart + spanLen * supportRatio, end: spanEnd - spanLen * supportRatio });
-                } else { // MidSpan
-                    allowedZones.push({ start: spanStart + spanLen * 0.35, end: spanStart + spanLen * 0.65 });
-                }
-
-                cumLen = spanEnd;
-            });
-
-            // Cut bars
-            let currentPos = 0;
+            const segments = [];
+            let pos = 0;
             for (let i = 0; i < numBars; i++) {
-                let targetEnd = Math.min(currentPos + idealLength, totalLength);
-                const isLastBar = (i === numBars - 1);
-
-                if (isLastBar) {
-                    targetEnd = totalLength;
-                }
-
-                // Find valid splice point
-                let actualEnd = targetEnd;
-                let hasSplice = !isLastBar;
-
-                if (hasSplice) {
-                    actualEnd = findValidSplicePoint(targetEnd, allowedZones, idealLength * 0.2);
-                }
-
-                // Apply staggering for odd-indexed bars
-                const staggerDist = Math.max(
-                    (detailing.MinStaggerDistance || 600) / 1000,
-                    idealLength * 0.05
-                );
-                const isStaggered = (i % 2 === 1) && hasSplice;
-                const splicePos = isStaggered ? (actualEnd + staggerDist) : actualEnd;
-
+                const endPos = Math.min(pos + maxBarLength, totalLength);
                 segments.push({
-                    startPos: currentPos,
-                    endPos: actualEnd,
-                    spliceAtEnd: hasSplice,
-                    splicePosition: Math.min(splicePos, totalLength - 0.2),
-                    hookAtStart: (i === 0),
-                    hookAtEnd: isLastBar,
-                    isStaggered: isStaggered,
-                    barIndex: i
+                    StartPos: pos,
+                    EndPos: endPos,
+                    SpliceAtEnd: (i < numBars - 1),
+                    SplicePosition: endPos,
+                    HookAtStart: (i === 0),
+                    HookAtEnd: (i === numBars - 1),
+                    IsStaggered: (i % 2 === 1),
+                    NeedsServerCalc: true // Flag: cần tính toán từ server
                 });
-
-                currentPos = actualEnd;
+                pos = endPos;
             }
-
             return segments;
-        }
-
-        function findValidSplicePoint(targetPos, allowedZones, searchRange) {
-            // Check if target is already in allowed zone
-            for (const zone of allowedZones) {
-                if (targetPos >= zone.start && targetPos <= zone.end) {
-                    return targetPos;
-                }
-            }
-
-            // Find nearest allowed zone
-            let bestPos = targetPos;
-            let minDist = Infinity;
-
-            for (const zone of allowedZones) {
-                const distToStart = Math.abs(targetPos - zone.start);
-                if (distToStart < minDist && distToStart <= searchRange) {
-                    minDist = distToStart;
-                    bestPos = zone.start + 0.05;
-                }
-
-                const distToEnd = Math.abs(targetPos - zone.end);
-                if (distToEnd < minDist && distToEnd <= searchRange) {
-                    minDist = distToEnd;
-                    bestPos = zone.end - 0.05;
-                }
-            }
-
-            return bestPos;
         }
 
         /// <summary>
@@ -1396,9 +1316,9 @@
             const totalBeamLength = currentGroup.Spans.reduce((sum, s) => sum + s.Length, 0);
             const groupType = currentGroup.GroupType || 'BEAM';
 
-            // Compute bar segments using algorithm
-            const topSegments = computeBarSegments(totalBeamLength, currentGroup.Spans, true, groupType);
-            const botSegments = computeBarSegments(totalBeamLength, currentGroup.Spans, false, groupType);
+            // Get pre-calculated bar segments from C# or fallback
+            const topSegments = getPreCalculatedSegments(true);
+            const botSegments = getPreCalculatedSegments(false);
 
             // Get start X position for backbone drawing
             let backboneStartX = CANVAS_PADDING;
@@ -1428,20 +1348,29 @@
                 drawHook(ctx, backboneEndX, BACKBONE_Y_BOT, 'right', hookLen, '#ff6b8a', 90);
             }
 
-            // Draw splice markers from computed segments
+            // Draw splice markers from pre-calculated segments
             const skipSplice = data.settings?.Detailing?.SkipSplice || false;
             if (!skipSplice) {
                 topSegments.forEach(seg => {
-                    if (seg.spliceAtEnd && seg.splicePosition) {
-                        const spliceX = backboneStartX + seg.splicePosition * pxPerM;
-                        drawSpliceMarker(ctx, spliceX, BACKBONE_Y_TOP, seg.isStaggered ? '#4db8ff' : '#ff6b8a');
+                    // Support both camelCase (fallback) and PascalCase (C#) property names
+                    const spliceAtEnd = seg.SpliceAtEnd ?? seg.spliceAtEnd;
+                    const splicePosition = seg.SplicePosition ?? seg.splicePosition;
+                    const isStaggered = seg.IsStaggered ?? seg.isStaggered;
+
+                    if (spliceAtEnd && splicePosition) {
+                        const spliceX = backboneStartX + splicePosition * pxPerM;
+                        drawSpliceMarker(ctx, spliceX, BACKBONE_Y_TOP, isStaggered ? '#4db8ff' : '#ff6b8a');
                     }
                 });
 
                 botSegments.forEach(seg => {
-                    if (seg.spliceAtEnd && seg.splicePosition) {
-                        const spliceX = backboneStartX + seg.splicePosition * pxPerM;
-                        drawSpliceMarker(ctx, spliceX, BACKBONE_Y_BOT, seg.isStaggered ? '#4db8ff' : '#ff6b8a');
+                    const spliceAtEnd = seg.SpliceAtEnd ?? seg.spliceAtEnd;
+                    const splicePosition = seg.SplicePosition ?? seg.splicePosition;
+                    const isStaggered = seg.IsStaggered ?? seg.isStaggered;
+
+                    if (spliceAtEnd && splicePosition) {
+                        const spliceX = backboneStartX + splicePosition * pxPerM;
+                        drawSpliceMarker(ctx, spliceX, BACKBONE_Y_BOT, isStaggered ? '#4db8ff' : '#ff6b8a');
                     }
                 });
             }
@@ -1452,6 +1381,12 @@
                 ctx.font = '10px sans-serif';
                 ctx.textAlign = 'left';
                 ctx.fillText(`${topSegments.length} thanh`, backboneStartX + 5, beamY - 5);
+
+                // Show warning if segments need server calculation
+                if (topSegments.some(s => s.NeedsServerCalc)) {
+                    ctx.fillStyle = '#f97316';
+                    ctx.fillText('(tạm tính)', backboneStartX + 70, beamY - 5);
+                }
             }
         }
 

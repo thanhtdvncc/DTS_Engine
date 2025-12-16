@@ -145,6 +145,8 @@ namespace DTS_Engine.Commands
 
             // 7. Update XData and Plot Labels based on displayMode
             int successCount = 0;
+            int insufficientCount = 0; // NEW: Track beams where Aprov < Areq
+            var insufficientBeamIds = new List<ObjectId>(); // NEW: For highlighting
             var settings = RebarSettings.Instance;
 
             UsingTransaction(tr =>
@@ -185,9 +187,35 @@ namespace DTS_Engine.Commands
                                 continue;
                             }
 
-                            // Step 2: Write XData
                             try
                             {
+                                // === NEW: Sync Highlight - Compare Areq_new vs Aprov_old ===
+                                var existingData = XDataUtils.ReadElementData(obj) as BeamResultData;
+                                if (existingData != null && existingData.TopAreaProv != null)
+                                {
+                                    // Check if existing Aprov is insufficient for new Areq
+                                    bool isInsufficient = false;
+                                    for (int i = 0; i < 3; i++)
+                                    {
+                                        double areqTop = designData.TopArea[i] + designData.TorsionArea[i] * settings.TorsionRatioTop;
+                                        double areqBot = designData.BotArea[i] + designData.TorsionArea[i] * settings.TorsionRatioBot;
+
+                                        if (existingData.TopAreaProv[i] < areqTop * 0.99 ||
+                                            existingData.BotAreaProv[i] < areqBot * 0.99)
+                                        {
+                                            isInsufficient = true;
+                                            break;
+                                        }
+                                    }
+
+                                    if (isInsufficient)
+                                    {
+                                        insufficientBeamIds.Add(cadId);
+                                        insufficientCount++;
+                                    }
+                                }
+                                // === END Sync Highlight ===
+
                                 XDataUtils.WriteElementData(obj, designData, tr);
                             }
                             catch (System.Exception ex2)
@@ -286,6 +314,17 @@ namespace DTS_Engine.Commands
 
             string[] modeNames = { "Tổng hợp", "Thép dọc", "Thép xoắn", "Thép Đai/Sườn" };
             WriteSuccess($"Đã cập nhật Label thép ({modeNames[displayMode]}) cho {successCount} dầm.");
+
+            // === NEW: Highlight insufficient beams in RED ===
+            if (insufficientCount > 0)
+            {
+                WriteMessage($"\n⚠️ CẢNH BÁO: Phát hiện {insufficientCount} dầm thiếu khả năng chịu lực sau khi cập nhật từ SAP!");
+                WriteMessage("   Các dầm này đã được highlight MÀU ĐỎ trên bản vẽ.");
+
+                // Highlight all insufficient beams
+                VisualUtils.HighlightObjects(insufficientBeamIds, 1); // 1 = Red
+            }
+            // === END Sync Highlight ===
         }
 
         /// <summary>
@@ -392,13 +431,12 @@ namespace DTS_Engine.Commands
 
                     if (data == null) continue;
 
-                    // Validate Dimensions
+                    // Validate Dimensions - NO LONGER USE HARDCODED FALLBACK
                     if (data.Width <= 0 || data.SectionHeight <= 0)
                     {
-                        // Try fallback to defaults or user data?
-                        // For safe fail, skip or assume 20x30
-                        data.Width = 22; // Default fallback
-                        data.SectionHeight = 30;
+                        // CRITICAL: Do not use hardcoded values, report error and skip
+                        WriteMessage($" -> Lỗi: Dầm {data.SapElementName ?? "?"} thiếu tiết diện (Width={data.Width}, Height={data.SectionHeight}). Bỏ qua.");
+                        continue;
                     }
 
                     // Calculate Rebar and update directly into data object
@@ -734,10 +772,64 @@ namespace DTS_Engine.Commands
                         continue;
                     }
 
-                    // Check if calculation was done (TopAreaProv should be populated)
-                    if (data.TopAreaProv == null || data.TopAreaProv[0] <= 0)
+                    // === FIX Issue 3: Protect user data - Check NOD first ===
+                    // Priority: NOD_BEAM_GROUPS (user edited) > XData > Recalculate
+
+                    // 1. Validate dimensions first
+                    if (data.Width <= 0 || data.SectionHeight <= 0)
                     {
-                        // Re-calculate if needed
+                        WriteMessage($" -> Lỗi: Dầm {sapName} thiếu tiết diện. Bỏ qua.");
+                        failCount++;
+                        continue;
+                    }
+
+                    // 2. Check if beam exists in NOD (user has edited in BeamGroupViewer)
+                    bool hasNodData = false;
+                    string nodJson = XDataUtils.LoadBeamGroupsFromNOD(AcadUtils.Db, tr);
+                    if (!string.IsNullOrEmpty(nodJson))
+                    {
+                        try
+                        {
+                            var nodGroups = Newtonsoft.Json.JsonConvert.DeserializeObject<List<BeamGroup>>(nodJson);
+                            if (nodGroups != null)
+                            {
+                                foreach (var group in nodGroups)
+                                {
+                                    // Match by SpanId or by physical segment SAP name
+                                    var matchingSpan = group.Spans?.FirstOrDefault(s =>
+                                        s.SpanId == sapName ||
+                                        s.Segments?.Any(seg => seg.SapFrameName == sapName) == true);
+                                    if (matchingSpan != null)
+                                    {
+                                        // Found in NOD - use user's choice
+                                        // TopRebar is [layer, position] - get layer 0, positions 0,1,2
+                                        if (matchingSpan.TopRebar != null)
+                                        {
+                                            for (int i = 0; i < 3; i++)
+                                            {
+                                                string topStr = matchingSpan.TopRebar[0, i];
+                                                string botStr = matchingSpan.BotRebar?[0, i];
+                                                if (!string.IsNullOrEmpty(topStr))
+                                                    data.TopAreaProv[i] = RebarStringParser.Parse(topStr);
+                                                if (!string.IsNullOrEmpty(botStr))
+                                                    data.BotAreaProv[i] = RebarStringParser.Parse(botStr);
+                                            }
+                                            hasNodData = true;
+                                            WriteMessage($"   {sapName}: Sử dụng dữ liệu từ BeamGroupViewer (user edited)");
+                                        }
+                                        break;
+                                    }
+                                }
+                            }
+                        }
+                        catch { /* JSON parse error - continue without NOD data */ }
+                    }
+
+                    // 3. Check XData (already calculated)
+                    if (!hasNodData && (data.TopAreaProv == null || data.TopAreaProv[0] <= 0))
+                    {
+                        // 4. Last resort: Re-calculate (only if no user data exists)
+                        WriteMessage($"   {sapName}: Không có dữ liệu user, tính toán lại...");
                         for (int i = 0; i < 3; i++)
                         {
                             double asTop = data.TopArea[i] + data.TorsionArea[i] * settings.TorsionRatioTop;
@@ -750,6 +842,7 @@ namespace DTS_Engine.Commands
                             data.BotAreaProv[i] = RebarStringParser.Parse(sBot);
                         }
                     }
+                    // === END Fix Issue 3 ===
 
                     // Use calculated values from data
                     double[] topProv = data.TopAreaProv;
