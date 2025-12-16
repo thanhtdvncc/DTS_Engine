@@ -252,8 +252,8 @@ namespace DTS_Engine.Core.Algorithms
         {
             if (result.Segments.Count < 2 || barsPerLayer < 2) return;
 
-            // Tính khoảng cách so le
-            double spliceLength = _anchorage.GetSpliceLength(barDiameter, true);
+            // Tính khoảng cách so le - sử dụng default grades
+            double spliceLength = _anchorage.GetSpliceLength(barDiameter, "B25", "CB400");
             double staggerDist = Math.Max(
                 _detailing.MinStaggerDistance,
                 spliceLength * _detailing.StaggerFactorLd

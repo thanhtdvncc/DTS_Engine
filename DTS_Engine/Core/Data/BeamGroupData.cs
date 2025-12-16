@@ -288,6 +288,17 @@ namespace DTS_Engine.Core.Data
         /// </summary>
         public List<BarSegmentDto> BotBarSegments { get; set; } = new List<BarSegmentDto>();
 
+        // ===== MATERIAL GRADES (per-group override) =====
+        /// <summary>
+        /// Mác bê tông cho nhóm dầm này (mặc định theo global settings)
+        /// </summary>
+        public string ConcreteGrade { get; set; } = "B25";
+
+        /// <summary>
+        /// Mác thép cho nhóm dầm này  (mặc định theo global settings)
+        /// </summary>
+        public string SteelGrade { get; set; } = "CB400";
+
         /// <summary>
         /// User đã chỉnh sửa thủ công chưa?
         /// </summary>

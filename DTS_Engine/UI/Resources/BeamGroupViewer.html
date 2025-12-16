@@ -100,9 +100,38 @@
                     class="bg-slate-800 border border-slate-600 text-white px-2 py-1 rounded text-xs"></select>
             </div>
 
-            <div class="flex gap-2">
-                <button class="px-3 py-1 bg-blue-600 hover:bg-blue-500 text-white rounded text-xs font-bold"
-                    onclick="highlightInCAD()"><i class="fa-solid fa-eye mr-1"></i>Highlight CAD</button>
+            <div class="flex items-center gap-2">
+                <label class="text-xs text-slate-400">Bê tông:</label>
+                <select id="concreteGradeSelect" onchange="setGroupConcrete(this.value)"
+                    class="bg-slate-800 border border-slate-600 text-white px-2 py-1 rounded text-xs">
+                    <option value="B20">B20</option>
+                    <option value="B25" selected>B25</option>
+                    <option value="B30">B30</option>
+                    <option value="B35">B35</option>
+                    <option value="B40">B40</option>
+                </select>
+                <label class="text-xs text-slate-400 ml-2">Thép:</label>
+                <select id="steelGradeSelect" onchange="setGroupSteel(this.value)"
+                    class="bg-slate-800 border border-slate-600 text-white px-2 py-1 rounded text-xs">
+                    <option value="CB300">CB300</option>
+                    <option value="CB400" selected>CB400</option>
+                    <option value="CB500">CB500</option>
+                </select>
+            </div>
+
+            <div class="flex gap-2 items-center">
+                <!-- Highlight CAD Toggle -->
+                <label class="flex items-center gap-1 text-xs cursor-pointer">
+                    <span class="text-slate-400">Highlight CAD</span>
+                    <div class="relative">
+                        <input type="checkbox" id="highlightToggle" class="sr-only peer"
+                            onchange="toggleHighlightMode(this.checked)">
+                        <div class="w-8 h-4 bg-slate-600 rounded-full peer-checked:bg-blue-500 transition-colors"></div>
+                        <div
+                            class="absolute top-0.5 left-0.5 w-3 h-3 bg-white rounded-full peer-checked:translate-x-4 transition-transform">
+                        </div>
+                    </div>
+                </label>
                 <button class="px-3 py-1 bg-slate-700 hover:bg-slate-600 text-white rounded text-xs"
                     onclick="copyFormat()"><i class="fa-solid fa-paintbrush mr-1"></i>Copy Format</button>
             </div>
@@ -246,6 +275,33 @@
         const CANVAS_PADDING = 30;
         const BEAM_HEIGHT = 50;
 
+        // HIGHLIGHT MODE & TRANSPARENCY STATE
+        let highlightModeEnabled = false;
+
+        function toggleHighlightMode(enabled) {
+            highlightModeEnabled = enabled;
+            if (enabled) {
+                showToast('✓ Highlight mode ON - form sẽ trong suốt khi rời chuột');
+            } else {
+                // Reset opacity when turned off
+                window.chrome.webview.postMessage('SET_OPACITY|1.0');
+            }
+        }
+
+        // MOUSE ENTER/LEAVE for transparency
+        document.addEventListener('DOMContentLoaded', () => {
+            document.body.addEventListener('mouseenter', () => {
+                if (highlightModeEnabled) {
+                    window.chrome.webview.postMessage('SET_OPACITY|1.0');
+                }
+            });
+            document.body.addEventListener('mouseleave', () => {
+                if (highlightModeEnabled) {
+                    window.chrome.webview.postMessage('SET_OPACITY|0.1'); // 90% transparent
+                }
+            });
+        });
+
         function init() {
             populateGroupSelect();
             if (data.groups && data.groups.length > 0) {
@@ -275,6 +331,7 @@
             renderTable();
             updateMetrics();
             updateGroupInfo();
+            loadMaterialSelects();
         }
 
         function prevGroup() { if (currentGroupIndex > 0) loadGroup(currentGroupIndex - 1); }
@@ -663,6 +720,33 @@
             highlightedSpanIndex = -1;
             document.querySelectorAll('.span-row').forEach(tr => tr.classList.remove('highlighted'));
             renderCanvas();
+        }
+
+        // ============ MATERIAL GRADE SELECTION ============
+        function setGroupConcrete(grade) {
+            if (currentGroup) {
+                currentGroup.ConcreteGrade = grade;
+                showToast(`✓ Đã chọn bê tông ${grade}`);
+            }
+        }
+
+        function setGroupSteel(grade) {
+            if (currentGroup) {
+                currentGroup.SteelGrade = grade;
+                showToast(`✓ Đã chọn thép ${grade}`);
+            }
+        }
+
+        function loadMaterialSelects() {
+            const concreteSelect = document.getElementById('concreteGradeSelect');
+            const steelSelect = document.getElementById('steelGradeSelect');
+
+            if (currentGroup?.ConcreteGrade) {
+                concreteSelect.value = currentGroup.ConcreteGrade;
+            }
+            if (currentGroup?.SteelGrade) {
+                steelSelect.value = currentGroup.SteelGrade;
+            }
         }
 
         // ============ CAD INTEGRATION ============

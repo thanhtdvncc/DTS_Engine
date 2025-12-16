@@ -185,6 +185,25 @@ namespace DTS_Engine.UI.Forms
                 catch { }
                 return;
             }
+
+            // Handle SET_OPACITY message for transparency when highlight mode is ON
+            if (message.StartsWith("SET_OPACITY|"))
+            {
+                try
+                {
+                    string opacityStr = message.Substring(12);
+                    if (double.TryParse(opacityStr, System.Globalization.NumberStyles.Float,
+                        System.Globalization.CultureInfo.InvariantCulture, out double opacity))
+                    {
+                        this.BeginInvoke(new Action(() =>
+                        {
+                            this.Opacity = Math.Max(0.1, Math.Min(1.0, opacity));
+                        }));
+                    }
+                }
+                catch { }
+                return;
+            }
         }
 
         private void HighlightBeamsInCAD(List<string> handles)

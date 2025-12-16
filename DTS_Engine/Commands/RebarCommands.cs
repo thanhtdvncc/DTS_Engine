@@ -1208,12 +1208,18 @@ namespace DTS_Engine.Commands
             BeamGroupDetector.DetectSupports(group, sortedBeams, supports);
 
             // FIX: Check if we only have FreeEnd supports (no real columns/walls found)
-            // In this case, create spans based on individual beams instead
+            // Also check for maximum reasonable span length
             bool onlyFreeEnds = group.Supports.All(s => s.Type == SupportType.FreeEnd);
+            int realSupportCount = group.Supports.Count(s => s.Type == SupportType.Column || s.Type == SupportType.Wall);
+
+            // FIX: If total length is too long (>15m) and only 2 or fewer real supports,
+            // force per-element split to avoid 90m single spans
+            double maxReasonableSpan = 15.0; // 15 meters max span
+            bool forceSplitByElement = (group.TotalLength > maxReasonableSpan * 2) && (realSupportCount < 2);
 
             double prevHeight = group.Height;
 
-            if (onlyFreeEnds || group.Supports.Count < 2)
+            if (onlyFreeEnds || group.Supports.Count < 2 || forceSplitByElement)
             {
                 // NO REAL SUPPORTS FOUND: Create 1 span per beam
                 // This prevents 30-50m spans when columns are not detected

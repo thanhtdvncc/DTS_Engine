@@ -602,52 +602,64 @@
             </div>
         </div>
 
-        <!-- TAB 4: ANCHORAGE (Neo & Nối) -->
+        <!-- TAB 4: ANCHORAGE (Neo & Nối) - MATRIX INPUT -->
         <div class="tab-panel" id="tab4">
             <div class="section">
-                <div class="section-header">Vật liệu</div>
+                <div class="section-header">1. Khai báo Vật liệu (Master Data)</div>
                 <div class="section-body">
                     <div class="row">
-                        <div class="col"><label>Mác bê tông</label>
-                            <select id="ConcreteGrade">
-                                <option value="B20">B20</option>
-                                <option value="B25" selected>B25</option>
-                                <option value="B30">B30</option>
-                                <option value="B35">B35</option>
-                            </select>
+                        <div class="col">
+                            <label>Danh sách Mác Bê tông</label>
+                            <div style="display:flex;gap:4px;margin-bottom:6px;">
+                                <input type="text" id="newConcreteGrade" placeholder="B30" style="width:60px;">
+                                <button class="btn-secondary btn-sm" onclick="addConcreteGrade()">Thêm</button>
+                            </div>
+                            <div id="concreteGradeList" class="diameter-grid" style="gap:4px;"></div>
                         </div>
-                        <div class="col"><label>Mác thép</label>
-                            <select id="SteelGrade">
-                                <option value="CB300V">CB300V</option>
-                                <option value="CB400V" selected>CB400V</option>
-                                <option value="CB500V">CB500V</option>
-                            </select>
+                        <div class="col">
+                            <label>Danh sách Mác Thép</label>
+                            <div style="display:flex;gap:4px;margin-bottom:6px;">
+                                <input type="text" id="newSteelGrade" placeholder="CB400" style="width:80px;">
+                                <button class="btn-secondary btn-sm" onclick="addSteelGrade()">Thêm</button>
+                            </div>
+                            <div id="steelGradeList" class="diameter-grid" style="gap:4px;"></div>
                         </div>
                     </div>
                 </div>
             </div>
 
             <div class="section">
-                <div class="section-header">Hệ số nối thép (Lap Splice)</div>
-                <div class="section-body">
-                    <div class="row">
-                        <div class="col"><label>Vùng kéo (×d)</label><input type="number" id="TensileSpliceFactor"
-                                value="40"></div>
-                        <div class="col"><label>Vùng nén (×d)</label><input type="number" id="CompressiveSpliceFactor"
-                                value="30"></div>
-                        <div class="col"><label>Chiều dài neo (×d)</label><input type="number" id="AnchorageFactor"
-                                value="35"></div>
-                    </div>
-                    <div class="hint">VD: 40d = 40 x đường kính thep. Với D20: L = 40 x 20 = 800mm</div>
+                <div class="section-header">2. Bảng tra Hệ số Neo (Anchorage Factors)</div>
+                <div class="section-body" style="overflow-x:auto;">
+                    <table id="anchorageMatrix" class="matrix-table"
+                        style="width:100%;font-size:11px;border-collapse:collapse;">
+                        <thead></thead>
+                        <tbody></tbody>
+                    </table>
+                    <div class="hint">Nhập hệ số nhân đường kính (d). VD: 40 = 40×d = 40×20mm = 800mm</div>
                 </div>
             </div>
 
             <div class="section">
-                <div class="section-header">Hệ số móc (Hooks)</div>
+                <div class="section-header">3. Bảng tra Hệ số Nối (Splice Factors)</div>
+                <div class="section-body" style="overflow-x:auto;">
+                    <table id="spliceMatrix" class="matrix-table"
+                        style="width:100%;font-size:11px;border-collapse:collapse;">
+                        <thead></thead>
+                        <tbody></tbody>
+                    </table>
+                    <div class="hint">Thường = Anchorage × 1.3 theo TCVN. Nhập trực tiếp nếu khác tiêu chuẩn.</div>
+                </div>
+            </div>
+
+            <div class="section">
+                <div class="section-header">4. Quy cách Móc (Standard Hooks)</div>
                 <div class="section-body">
                     <div class="row">
                         <div class="col"><label>Móc 90° (×d)</label><input type="number" id="Hook90Factor" value="12">
                         </div>
+                        <div class="col"><label>Min 90° (mm)</label><input type="number" id="MinHook90Length"
+                                value="150"></div>
                         <div class="col"><label>Móc 135° (×d)</label><input type="number" id="Hook135Factor" value="6">
                         </div>
                         <div class="col"><label>Móc 180° (×d)</label><input type="number" id="Hook180Factor" value="4">
@@ -656,6 +668,10 @@
                     <div class="row">
                         <div class="col"><label>Chiều dài móc tối thiểu (mm)</label><input type="number"
                                 id="MinHookLength" value="75"></div>
+                        <div class="col"><label>Hệ số mặc định Neo</label><input type="number"
+                                id="DefaultAnchorageFactor" value="40"></div>
+                        <div class="col"><label>Hệ số mặc định Nối</label><input type="number" id="DefaultSpliceFactor"
+                                value="52"></div>
                     </div>
                 </div>
             </div>
@@ -782,6 +798,133 @@
             return Array.from(chips).map(c => parseInt(c.dataset.diameter)).sort((a, b) => a - b);
         }
 
+        // ============ ANCHORAGE MATRIX FUNCTIONS ============
+        let concreteGrades = [];
+        let steelGrades = [];
+        let anchorageFactors = {};
+        let spliceFactors = {};
+
+        function loadAnchorageTab() {
+            // Load lists from data
+            concreteGrades = data.Anchorage?.ConcreteGrades || ['B20', 'B25', 'B30', 'B35', 'B40'];
+            steelGrades = data.Anchorage?.SteelGrades || ['CB300', 'CB400', 'CB500'];
+            anchorageFactors = data.Anchorage?.AnchorageFactors || {};
+            spliceFactors = data.Anchorage?.SpliceFactors || {};
+
+            renderMaterialLists();
+            renderMatrices();
+        }
+
+        function renderMaterialLists() {
+            // Concrete grade list
+            const concreteList = document.getElementById('concreteGradeList');
+            concreteList.innerHTML = concreteGrades.map(g =>
+                `<div class="diameter-chip active" onclick="removeConcreteGrade('${g}')">${g} ×</div>`
+            ).join('');
+
+            // Steel grade list
+            const steelList = document.getElementById('steelGradeList');
+            steelList.innerHTML = steelGrades.map(g =>
+                `<div class="diameter-chip active" onclick="removeSteelGrade('${g}')">${g} ×</div>`
+            ).join('');
+        }
+
+        function addConcreteGrade() {
+            const input = document.getElementById('newConcreteGrade');
+            const val = input.value.trim().toUpperCase();
+            if (val && !concreteGrades.includes(val)) {
+                concreteGrades.push(val);
+                renderMaterialLists();
+                renderMatrices();
+                input.value = '';
+            }
+        }
+
+        function addSteelGrade() {
+            const input = document.getElementById('newSteelGrade');
+            const val = input.value.trim().toUpperCase();
+            if (val && !steelGrades.includes(val)) {
+                steelGrades.push(val);
+                renderMaterialLists();
+                renderMatrices();
+                input.value = '';
+            }
+        }
+
+        function removeConcreteGrade(grade) {
+            concreteGrades = concreteGrades.filter(g => g !== grade);
+            renderMaterialLists();
+            renderMatrices();
+        }
+
+        function removeSteelGrade(grade) {
+            steelGrades = steelGrades.filter(g => g !== grade);
+            renderMaterialLists();
+            renderMatrices();
+        }
+
+        function renderMatrices() {
+            renderMatrix('anchorageMatrix', anchorageFactors, 'anc');
+            renderMatrix('spliceMatrix', spliceFactors, 'spl');
+        }
+
+        function renderMatrix(tableId, factorMap, prefix) {
+            const table = document.getElementById(tableId);
+            if (!table) return;
+
+            // Header row
+            let headerHtml = '<tr><th style="border:1px solid #ccc;background:#f5f5f5;padding:4px;">Bê tông \\ Thép</th>';
+            steelGrades.forEach(s => {
+                headerHtml += `<th style="border:1px solid #ccc;background:#f0f0f0;padding:4px;text-align:center;">${s}</th>`;
+            });
+            headerHtml += '</tr>';
+            table.querySelector('thead').innerHTML = headerHtml;
+
+            // Data rows
+            let bodyHtml = '';
+            concreteGrades.forEach(c => {
+                bodyHtml += `<tr><td style="border:1px solid #ccc;background:#f5f5f5;padding:4px;font-weight:500;">${c}</td>`;
+                steelGrades.forEach(s => {
+                    const key = `${c}_${s}`;
+                    const val = factorMap[key] ?? '';
+                    bodyHtml += `<td style="border:1px solid #ccc;padding:2px;"><input type="number" 
+                        id="${prefix}_${c}_${s}" value="${val}" 
+                        style="width:50px;text-align:center;border:none;background:transparent;"
+                        onchange="updateFactor('${prefix}', '${c}', '${s}', this.value)"></td>`;
+                });
+                bodyHtml += '</tr>';
+            });
+            table.querySelector('tbody').innerHTML = bodyHtml;
+        }
+
+        function updateFactor(prefix, concrete, steel, value) {
+            const key = `${concrete}_${steel}`;
+            const val = parseFloat(value) || 0;
+            if (prefix === 'anc') {
+                anchorageFactors[key] = val;
+            } else {
+                spliceFactors[key] = val;
+            }
+        }
+
+        function collectAnchorageData() {
+            const getVal = (id) => { const el = document.getElementById(id); return el ? parseFloat(el.value) || 0 : 0; };
+
+            return {
+                ConcreteGrades: [...concreteGrades],
+                SteelGrades: [...steelGrades],
+                AnchorageFactors: { ...anchorageFactors },
+                SpliceFactors: { ...spliceFactors },
+                Hook90Factor: getVal('Hook90Factor') || 12,
+                MinHook90Length: getVal('MinHook90Length') || 150,
+                Hook135Factor: getVal('Hook135Factor') || 6,
+                Hook180Factor: getVal('Hook180Factor') || 4,
+                MinHookLength: getVal('MinHookLength') || 75,
+                DefaultAnchorageFactor: getVal('DefaultAnchorageFactor') || 40,
+                DefaultSpliceFactor: getVal('DefaultSpliceFactor') || 52
+            };
+        }
+
         function loadForm() {
             const setId = (id, val) => { const el = document.getElementById(id); if (el) el.value = val ?? ''; };
             const setChk = (id, val) => { const el = document.getElementById(id); if (el) el.checked = val || false; };
@@ -875,18 +1018,17 @@
                 radio.onchange = () => document.getElementById('SortDirection').value = radio.value;
             });
 
-            // Tab 4: Anchorage
-            if (document.getElementById('ConcreteGrade')) {
-                document.getElementById('ConcreteGrade').value = data.Anchorage?.ConcreteGrade || 'B25';
-                document.getElementById('SteelGrade').value = data.Anchorage?.SteelGrade || 'CB400V';
-                setId('TensileSpliceFactor', data.Anchorage?.TensileSpliceFactor ?? 40);
-                setId('CompressiveSpliceFactor', data.Anchorage?.CompressiveSpliceFactor ?? 30);
-                setId('AnchorageFactor', data.Anchorage?.AnchorageFactor ?? 35);
-                setId('Hook90Factor', data.Anchorage?.Hook90Factor ?? 12);
-                setId('Hook135Factor', data.Anchorage?.Hook135Factor ?? 6);
-                setId('Hook180Factor', data.Anchorage?.Hook180Factor ?? 4);
-                setId('MinHookLength', data.Anchorage?.MinHookLength ?? 75);
-            }
+            // Tab 4: Anchorage - Matrix based
+            loadAnchorageTab();
+
+            // Hook settings
+            setId('Hook90Factor', data.Anchorage?.Hook90Factor ?? 12);
+            setId('MinHook90Length', data.Anchorage?.MinHook90Length ?? 150);
+            setId('Hook135Factor', data.Anchorage?.Hook135Factor ?? 6);
+            setId('Hook180Factor', data.Anchorage?.Hook180Factor ?? 4);
+            setId('MinHookLength', data.Anchorage?.MinHookLength ?? 75);
+            setId('DefaultAnchorageFactor', data.Anchorage?.DefaultAnchorageFactor ?? 40);
+            setId('DefaultSpliceFactor', data.Anchorage?.DefaultSpliceFactor ?? 52);
 
             // Tab 5: Detailing
             if (document.getElementById('MaxBarLength')) {
@@ -991,18 +1133,7 @@
                     SortCorner: parseInt(getVal('SortCorner')) || 0,
                     SortDirection: parseInt(getVal('SortDirection')) || 0
                 },
-                Anchorage: {
-                    ConcreteGrade: document.getElementById('ConcreteGrade')?.value || 'B25',
-                    SteelGrade: document.getElementById('SteelGrade')?.value || 'CB400V',
-                    UseSimplifiedRules: true,
-                    TensileSpliceFactor: getVal('TensileSpliceFactor') || 40,
-                    CompressiveSpliceFactor: getVal('CompressiveSpliceFactor') || 30,
-                    AnchorageFactor: getVal('AnchorageFactor') || 35,
-                    Hook90Factor: getVal('Hook90Factor') || 12,
-                    Hook135Factor: getVal('Hook135Factor') || 6,
-                    Hook180Factor: getVal('Hook180Factor') || 4,
-                    MinHookLength: getVal('MinHookLength') || 75
-                },
+                Anchorage: collectAnchorageData(),
                 Detailing: {
                     MaxBarLength: getVal('MaxBarLength') || 11700,
                     MinBarLength: getVal('MinBarLength') || 2000,

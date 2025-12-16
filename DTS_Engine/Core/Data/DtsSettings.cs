@@ -417,34 +417,61 @@ namespace DTS_Engine.Core.Data
 
     /// <summary>
     /// Cấu hình Neo & Nối thép (Anchorage & Splicing)
-    /// Tách biệt quy tắc tính toán và quy tắc bố trí
+    /// Sử dụng bảng tra theo cặp vật liệu (Bê tông + Thép)
     /// </summary>
     public class AnchorageConfig
     {
-        // --- Vật liệu ---
-        /// <summary>Mác bê tông (B20, B25, B30...)</summary>
-        public string ConcreteGrade { get; set; } = "B25";
+        // ===== DANH SÁCH VẬT LIỆU (Master Data) =====
+        /// <summary>Danh sách mác bê tông khả dụng</summary>
+        public List<string> ConcreteGrades { get; set; } = new List<string> { "B20", "B25", "B30", "B35", "B40" };
 
-        /// <summary>Mác thép (CB300V, CB400V, CB500V)</summary>
-        public string SteelGrade { get; set; } = "CB400V";
+        /// <summary>Danh sách mác thép khả dụng</summary>
+        public List<string> SteelGrades { get; set; } = new List<string> { "CB300", "CB400", "CB500" };
 
-        // --- Chế độ tính toán ---
-        /// <summary>True: Dùng hệ số nhân nhanh. False: Dùng bảng tra chi tiết</summary>
-        public bool UseSimplifiedRules { get; set; } = true;
+        // ===== BẢNG TRA HỆ SỐ (Lookup Tables) =====
+        /// <summary>
+        /// Bảng tra hệ số chiều dài Neo (Anchorage Length Factors)
+        /// Key: "ConcreteGrade_SteelGrade" (ví dụ: "B25_CB400")
+        /// Value: Hệ số nhân với đường kính (ví dụ: 35)
+        /// </summary>
+        public Dictionary<string, double> AnchorageFactors { get; set; } = new Dictionary<string, double>
+        {
+            // B20
+            { "B20_CB300", 45 }, { "B20_CB400", 50 }, { "B20_CB500", 55 },
+            // B25
+            { "B25_CB300", 38 }, { "B25_CB400", 42 }, { "B25_CB500", 48 },
+            // B30
+            { "B30_CB300", 32 }, { "B30_CB400", 36 }, { "B30_CB500", 42 },
+            // B35
+            { "B35_CB300", 28 }, { "B35_CB400", 32 }, { "B35_CB500", 38 },
+            // B40
+            { "B40_CB300", 25 }, { "B40_CB400", 28 }, { "B40_CB500", 34 }
+        };
 
-        // --- Quick Settings (Simplified Mode) ---
-        /// <summary>Hệ số nối thép vùng kéo (mặc định 40d)</summary>
-        public double TensileSpliceFactor { get; set; } = 40;
+        /// <summary>
+        /// Bảng tra hệ số chiều dài Nối (Splice Length Factors)
+        /// Thường = Anchorage Factor * 1.3 (theo TCVN)
+        /// </summary>
+        public Dictionary<string, double> SpliceFactors { get; set; } = new Dictionary<string, double>
+        {
+            // B20
+            { "B20_CB300", 58 }, { "B20_CB400", 65 }, { "B20_CB500", 72 },
+            // B25
+            { "B25_CB300", 49 }, { "B25_CB400", 55 }, { "B25_CB500", 62 },
+            // B30
+            { "B30_CB300", 42 }, { "B30_CB400", 47 }, { "B30_CB500", 55 },
+            // B35
+            { "B35_CB300", 36 }, { "B35_CB400", 42 }, { "B35_CB500", 49 },
+            // B40
+            { "B40_CB300", 32 }, { "B40_CB400", 36 }, { "B40_CB500", 44 }
+        };
 
-        /// <summary>Hệ số nối thép vùng nén (mặc định 30d)</summary>
-        public double CompressiveSpliceFactor { get; set; } = 30;
-
-        /// <summary>Hệ số neo thép (mặc định 35d)</summary>
-        public double AnchorageFactor { get; set; } = 35;
-
-        // --- Standard Hooks ---
+        // ===== CẤU HÌNH MÓC CHUẨN (Standard Hooks) =====
         /// <summary>Hệ số móc 90° (12d)</summary>
         public double Hook90Factor { get; set; } = 12;
+
+        /// <summary>Chiều dài móc 90° tối thiểu (mm)</summary>
+        public double MinHook90Length { get; set; } = 150;
 
         /// <summary>Hệ số móc 135° cho đai (6d)</summary>
         public double Hook135Factor { get; set; } = 6;
@@ -452,37 +479,65 @@ namespace DTS_Engine.Core.Data
         /// <summary>Hệ số móc 180° (4d)</summary>
         public double Hook180Factor { get; set; } = 4;
 
-        /// <summary>Chiều dài móc tối thiểu (mm)</summary>
+        /// <summary>Chiều dài móc tối thiểu chung (mm)</summary>
         public double MinHookLength { get; set; } = 75;
 
-        // --- Manual Table (Advanced Mode) ---
-        /// <summary>Bảng tra chiều dài neo theo đường kính (Key: diameter, Value: mm)</summary>
-        public Dictionary<int, double> ManualDevelopmentLengths { get; set; } = new Dictionary<int, double>();
+        // ===== GIÁ TRỊ MẶC ĐỊNH (Fallback) =====
+        /// <summary>Hệ số mặc định nếu không tìm thấy trong bảng</summary>
+        public double DefaultAnchorageFactor { get; set; } = 40;
 
-        /// <summary>Bảng tra chiều dài nối theo đường kính (Key: diameter, Value: mm)</summary>
-        public Dictionary<int, double> ManualSpliceLengths { get; set; } = new Dictionary<int, double>();
+        /// <summary>Hệ số nối mặc định nếu không tìm thấy trong bảng</summary>
+        public double DefaultSpliceFactor { get; set; } = 52; // 40 * 1.3
+
+        // ===== PHƯƠNG THỨC TRA CỨU =====
+        /// <summary>
+        /// Lấy hệ số neo theo cặp vật liệu
+        /// </summary>
+        public double GetAnchorageFactor(string concreteGrade, string steelGrade)
+        {
+            string key = $"{concreteGrade}_{steelGrade}";
+            if (AnchorageFactors.ContainsKey(key))
+                return AnchorageFactors[key];
+            return DefaultAnchorageFactor;
+        }
 
         /// <summary>
-        /// Tính chiều dài nối thép (Lap Splice Length) theo đường kính
+        /// Lấy hệ số nối theo cặp vật liệu
         /// </summary>
-        public double GetSpliceLength(int diameter, bool isTensionZone = true)
+        public double GetSpliceFactor(string concreteGrade, string steelGrade)
         {
-            if (!UseSimplifiedRules && ManualSpliceLengths.ContainsKey(diameter))
-                return ManualSpliceLengths[diameter];
+            string key = $"{concreteGrade}_{steelGrade}";
+            if (SpliceFactors.ContainsKey(key))
+                return SpliceFactors[key];
+            return DefaultSpliceFactor;
+        }
 
-            double factor = isTensionZone ? TensileSpliceFactor : CompressiveSpliceFactor;
+        /// <summary>
+        /// Tính chiều dài neo thép (mm)
+        /// </summary>
+        public double GetAnchorageLength(int diameter, string concreteGrade, string steelGrade)
+        {
+            double factor = GetAnchorageFactor(concreteGrade, steelGrade);
             return diameter * factor;
         }
 
         /// <summary>
-        /// Tính chiều dài neo thép (Anchorage Length) theo đường kính
+        /// Tính chiều dài nối thép (mm)
         /// </summary>
-        public double GetAnchorageLength(int diameter)
+        public double GetSpliceLength(int diameter, string concreteGrade, string steelGrade)
         {
-            if (!UseSimplifiedRules && ManualDevelopmentLengths.ContainsKey(diameter))
-                return ManualDevelopmentLengths[diameter];
+            double factor = GetSpliceFactor(concreteGrade, steelGrade);
+            return diameter * factor;
+        }
 
-            return diameter * AnchorageFactor;
+        /// <summary>
+        /// Tính chiều dài móc (mm)
+        /// </summary>
+        public double GetHookLength(int diameter, int hookAngle)
+        {
+            double factor = hookAngle == 90 ? Hook90Factor : (hookAngle == 135 ? Hook135Factor : Hook180Factor);
+            double minLen = hookAngle == 90 ? MinHook90Length : MinHookLength;
+            return Math.Max(diameter * factor, minLen);
         }
     }
 
