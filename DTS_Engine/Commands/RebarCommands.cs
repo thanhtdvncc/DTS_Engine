@@ -557,6 +557,53 @@ namespace DTS_Engine.Commands
         }
 
         /// <summary>
+        /// Sắp xếp dầm thông minh dựa trên Setting (Góc bắt đầu + Hướng quét)
+        /// Hỗ trợ Scanline (Row-Binning) linh hoạt cho cả 4 góc và 2 hướng.
+        /// </summary>
+        private List<(ObjectId Id, Point3d Mid, bool IsGirder, bool IsXDir, BeamResultData Data, double LevelZ)>
+            GetSmartSortedBeams(
+                List<(ObjectId Id, Point3d Mid, bool IsGirder, bool IsXDir, BeamResultData Data, double LevelZ)> inputList,
+                NamingConfig config)
+        {
+            if (inputList == null || inputList.Count == 0) return inputList;
+
+            // 1. Lấy Config (hoặc default)
+            int direction = config?.SortDirection ?? 0; // 0: Horiz (Row), 1: Vert (Col)
+            int corner = config?.SortCorner ?? 0;       // 0:TL, 1:TR, 2:BL, 3:BR
+            double tol = config?.RowTolerance ?? 500.0;
+
+            // 2. Xác định chiều Sort (Ascending hay Descending) dựa trên Corner
+            // Corner 0 (TL): X tăng, Y giảm
+            // Corner 1 (TR): X giảm, Y giảm
+            // Corner 2 (BL): X tăng, Y tăng
+            // Corner 3 (BR): X giảm, Y tăng
+
+            int xSign = (corner == 1 || corner == 3) ? -1 : 1; // 1: Tăng dần, -1: Giảm dần
+            int ySign = (corner == 0 || corner == 1) ? -1 : 1; // 1: Tăng dần, -1: Giảm dần
+
+            // Logic Scanline:
+            // - Primary Axis: Trục dùng để "Gom hàng" (Binning)
+            // - Secondary Axis: Trục dùng để sort các phần tử trong cùng 1 hàng
+
+            if (direction == 0) // HORIZONTAL (Quét theo hàng ngang - Ưu tiên Y)
+            {
+                // Primary: Y (chia bin), Secondary: X
+                return inputList
+                    .OrderBy(b => Math.Round(b.Mid.Y / tol) * ySign) // Sort các "Hàng" trước
+                    .ThenBy(b => b.Mid.X * xSign)                    // Sort các phần tử trong hàng
+                    .ToList();
+            }
+            else // VERTICAL (Quét theo cột dọc - Ưu tiên X)
+            {
+                // Primary: X (chia bin), Secondary: Y
+                return inputList
+                    .OrderBy(b => Math.Round(b.Mid.X / tol) * xSign) // Sort các "Cột" trước
+                    .ThenBy(b => b.Mid.Y * ySign)                    // Sort các phần tử trong cột
+                    .ToList();
+            }
+        }
+
+        /// <summary>
         /// [FIXED] Đặt tên dầm thông minh:
         /// 1. Phân tách theo tầng (Level Z).
         /// 2. Sort theo không gian tuyệt đối (Trên->Dưới, Trái->Phải) dùng Row-Binning.
@@ -565,12 +612,17 @@ namespace DTS_Engine.Commands
         [CommandMethod("DTS_REBAR_BEAM_NAME")]
         public void DTS_REBAR_BEAM_NAME()
         {
-            WriteMessage("=== SMART BEAM NAMING (SCANLINE SORT) ===");
+            WriteMessage("=== SMART BEAM NAMING (CONFIGURABLE) ===");
             WriteMessage("\nChọn các đường Dầm cần đặt tên: ");
             var selectedIds = AcadUtils.SelectObjectsOnScreen("LINE,LWPOLYLINE,POLYLINE");
             if (selectedIds.Count == 0) return;
 
-            var settings = RebarSettings.Instance;
+            // Load Settings (DtsSettings chứa NamingConfig)
+            var settings = DtsSettings.Instance;
+            var namingCfg = settings.Naming ?? new NamingConfig();
+
+            // Lấy GirderMinWidth từ config (default 300)
+            double girderThreshold = namingCfg.GirderMinWidth > 0 ? namingCfg.GirderMinWidth : 300.0;
 
             // 1. Thu thập dữ liệu dầm
             var allBeams = new List<(ObjectId Id, Point3d Mid, bool IsGirder, bool IsXDir, BeamResultData Data, double LevelZ)>();
@@ -588,15 +640,14 @@ namespace DTS_Engine.Commands
 
                     var xdata = XDataUtils.ReadElementData(curve) as BeamResultData;
 
-                    // Fix: Làm tròn Z để phân tầng
+                    // Fix: Làm tròn Z để phân tầng (Tolerance 100mm)
                     double levelZ = Math.Round(mid.Z / 100.0) * 100.0;
 
+                    // [CONFIGURABLE] Nhận diện Girder dựa trên GirderMinWidth setting
                     bool isGirder = false;
                     if (xdata != null)
                     {
-                        // Ưu tiên lấy từ XData nếu đã chạy detect
-                        // Nếu chưa, dùng heuristic đơn giản: Width >= 300 là Girder
-                        isGirder = xdata.Width >= 300;
+                        isGirder = xdata.Width >= girderThreshold;
                     }
 
                     allBeams.Add((id, mid, isGirder, isXDir, xdata, levelZ));
@@ -613,36 +664,28 @@ namespace DTS_Engine.Commands
                 foreach (var levelGroup in beamsByLevel)
                 {
                     double currentZ = levelGroup.Key;
-                    WriteMessage($"\n--- Đang xử lý Tầng Z={currentZ:F0} ---");
+                    WriteMessage($"\n--- Tầng Z={currentZ:F0} ---");
 
                     // Config naming cho tầng này
-                    var storyConfig = DtsSettings.Instance.GetStoryConfig(currentZ);
+                    var storyConfig = settings.GetStoryConfig(currentZ);
                     string beamPrefix = storyConfig?.BeamPrefix ?? "B";
                     string girderPrefix = storyConfig?.GirderPrefix ?? "G";
                     string suffix = storyConfig?.Suffix ?? "";
                     int startIndex = storyConfig?.StartIndex ?? 1;
 
-                    // Tách Dầm chính / Dầm phụ để đặt tên riêng
+                    // Tách Dầm chính / Dầm phụ
                     var girders = levelGroup.Where(b => b.IsGirder).ToList();
                     var beams = levelGroup.Where(b => !b.IsGirder).ToList();
 
-                    // Hàm xử lý đặt tên cho một danh sách dầm (Generic)
+                    // === PROCESS FUNCTION MỚI (Dùng GetSmartSortedBeams) ===
                     void ProcessList(List<(ObjectId Id, Point3d Mid, bool IsGirder, bool IsXDir, BeamResultData Data, double LevelZ)> list, string prefix)
                     {
                         if (list.Count == 0) return;
 
-                        // BƯỚC QUAN TRỌNG: SORT KHÔNG GIAN (Scanline Sort)
-                        // Để đơn giản và chuẩn xác, ta dùng thuật toán Row-Binning (gom hàng)
-                        // Binning: Các dầm có Y chênh lệch < 500mm coi như cùng 1 hàng.
+                        // [CONFIGURABLE] Gọi hàm sort thông minh với NamingConfig
+                        var sortedList = GetSmartSortedBeams(list, namingCfg);
 
-                        double binTolerance = 500.0;
-
-                        var sortedList = list.OrderByDescending(b => Math.Round(b.Mid.Y / binTolerance)) // Gom hàng Y trước (từ trên xuống)
-                                             .ThenBy(b => b.Mid.X) // Trong cùng hàng, sort X tăng dần (từ trái qua)
-                                             .ToList();
-
-                        // Danh sách Assigned Types để Filter Re-use (WxH + Steel)
-                        // Key: Identifier String -> Value: Assigned Number
+                        // Danh sách Assigned Types để gom nhóm (WxH + Steel)
                         var assignedTypes = new Dictionary<string, int>();
                         int nextNumber = startIndex;
 
@@ -652,54 +695,51 @@ namespace DTS_Engine.Commands
                             string w = item.Data?.Width.ToString("F0") ?? "0";
                             string h = item.Data?.SectionHeight.ToString("F0") ?? "0";
 
-                            // Lấy string thép (nếu null thì là "-")
+                            // Lấy string thép
                             string top = (item.Data?.TopRebarString != null && item.Data.TopRebarString.Length > 1) ? item.Data.TopRebarString[1] ?? "-" : "-";
                             string bot = (item.Data?.BotRebarString != null && item.Data.BotRebarString.Length > 1) ? item.Data.BotRebarString[1] ?? "-" : "-";
                             string stir = (item.Data?.StirrupString != null && item.Data.StirrupString.Length > 1) ? item.Data.StirrupString[1] ?? "-" : "-";
 
-                            // Key để gom nhóm: WxH_Top_Bot_Stir
+                            // Key để gom nhóm
                             string typeKey = $"{w}x{h}_{top.Trim()}_{bot.Trim()}_{stir.Trim()}";
 
                             int number;
                             if (assignedTypes.ContainsKey(typeKey))
                             {
-                                // Đã có dầm giống hệt -> Dùng lại số cũ
                                 number = assignedTypes[typeKey];
                             }
                             else
                             {
-                                // Chưa có -> Cấp số mới
                                 number = nextNumber++;
                                 assignedTypes[typeKey] = number;
                             }
 
                             string fullName = $"{prefix}{number}{suffix}";
 
-                            // Vẽ Label và Cập nhật XData
+                            // Update CAD & XData
                             var curve = tr.GetObject(item.Id, OpenMode.ForWrite) as Curve;
                             if (curve != null)
                             {
                                 if (item.Data != null)
                                 {
-                                    item.Data.SapElementName = fullName; // Update name in XData
+                                    item.Data.SapElementName = fullName;
                                     XDataUtils.UpdateElementData(curve, item.Data, tr);
                                 }
-
-                                Point3d pStart = curve.StartPoint;
-                                Point3d pEnd = curve.EndPoint;
-
-                                LabelPlotter.PlotLabel(btr, tr, pStart, pEnd, fullName, LabelPosition.MiddleBottom);
+                                LabelPlotter.PlotLabel(btr, tr, curve.StartPoint, curve.EndPoint, fullName, LabelPosition.MiddleBottom);
                             }
                         }
                     }
 
-                    // Chạy đặt tên cho Girder và Beam riêng
                     ProcessList(girders, girderPrefix);
                     ProcessList(beams, beamPrefix);
                 }
             });
 
-            WriteSuccess("✅ Đã đặt tên dầm theo thứ tự không gian và gom nhóm (Scanline Sort).");
+            // Log config info
+            WriteSuccess($"✅ Đã đặt tên theo Cấu hình Naming.");
+            WriteMessage($"   - Direction: {(namingCfg.SortDirection == 0 ? "Horizontal" : "Vertical")}");
+            WriteMessage($"   - Corner: {new[] { "TopLeft", "TopRight", "BottomLeft", "BottomRight" }[namingCfg.SortCorner % 4]}");
+            WriteMessage($"   - RowTolerance: {namingCfg.RowTolerance}mm, GirderMinWidth: {girderThreshold}mm");
         }
 
         [CommandMethod("DTS_REBAR_EXPORT_SAP")]

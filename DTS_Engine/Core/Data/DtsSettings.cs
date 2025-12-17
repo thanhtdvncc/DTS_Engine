@@ -588,6 +588,16 @@ namespace DTS_Engine.Core.Data
         /// Hướng quét: 0=Horizontal(X), 1=Vertical(Y)
         /// </summary>
         public int SortDirection { get; set; } = 0;
+
+        /// <summary>
+        /// Sai số để gom các dầm thẳng hàng (mm). Default 500mm.
+        /// </summary>
+        public double RowTolerance { get; set; } = 500.0;
+
+        /// <summary>
+        /// Chiều rộng tối thiểu để tự nhận diện là Dầm chính (Girder). Default 300mm.
+        /// </summary>
+        public double GirderMinWidth { get; set; } = 300.0;
     }
 
     #region Anchorage & Detailing Config
