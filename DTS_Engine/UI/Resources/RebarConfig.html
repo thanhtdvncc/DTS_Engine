@@ -67,7 +67,8 @@
 
         .content {
             padding: 15px;
-            height: 440px;
+            height: calc(100vh - 130px);
+            /* Fill available space: 100vh - header(~50px) - tabs(~40px) - footer(~40px) */
             overflow-y: auto;
         }
 
@@ -356,24 +357,49 @@
             </div>
 
             <div class="section">
-                <div class="section-header">Mác vật liệu (Material Grades)</div>
+                <div class="section-header">Mác vật liệu (Material Grades)
+                    <button class="btn-sm" onclick="syncMaterialsFromAnchorage()"
+                        style="font-size:10px;padding:1px 6px;margin-left:8px;"
+                        title="Lấy danh sách từ tab Neo & Nối">🔄 Sync</button>
+                </div>
                 <div class="section-body">
                     <div class="row">
-                        <div class="col"><label>Mác thép chủ</label><input type="text" id="SteelGradeName"
-                                placeholder="CB400-V"></div>
-                        <div class="col"><label>fy (MPa)</label><input type="number" id="SteelGradeMain" value="400"
-                                min="200" max="600"></div>
-                        <div class="col"><label>Thép đai fy (MPa)</label><input type="number" id="SteelGradeStirrup"
-                                value="300" min="200" max="500"></div>
+                        <div class="col">
+                            <label>Mác thép chủ</label>
+                            <select id="SteelGradeName"
+                                style="width:100%;padding:7px;border:1px solid #ced4da;border-radius:4px;font-size:12px;"
+                                onchange="onSteelGradeChange()">
+                                <option value="CB400-V">CB400-V (Mặc định)</option>
+                            </select>
+                        </div>
+                        <div class="col">
+                            <label>fy (MPa)</label>
+                            <input type="number" id="SteelGradeMain" value="400" min="200" max="600"
+                                style="background:#f5f5f5;">
+                        </div>
+                        <div class="col">
+                            <label>Thép đai fy (MPa)</label>
+                            <input type="number" id="SteelGradeStirrup" value="300" min="200" max="500">
+                        </div>
                     </div>
-                    <div class="row">
-                        <div class="col"><label>Mác bê tông</label><input type="text" id="ConcreteGradeName"
-                                placeholder="B25"></div>
-                        <div class="col"><label>f'c (MPa)</label><input type="number" id="ConcreteGrade" value="25"
-                                min="15" max="60"></div>
+                    <div class="row" style="margin-top:8px;">
+                        <div class="col">
+                            <label>Mác bê tông</label>
+                            <select id="ConcreteGradeName"
+                                style="width:100%;padding:7px;border:1px solid #ced4da;border-radius:4px;font-size:12px;"
+                                onchange="onConcreteGradeChange()">
+                                <option value="B25">B25 (Mặc định)</option>
+                            </select>
+                        </div>
+                        <div class="col">
+                            <label>f'c (MPa)</label>
+                            <input type="number" id="ConcreteGrade" value="25" min="15" max="60"
+                                style="background:#f5f5f5;">
+                        </div>
                         <div class="col"></div>
                     </div>
-                    <div class="hint">Nhập trực tiếp mác vật liệu theo dự án. VD: CB400-V (fy=400), B25 (f'c=25)
+                    <div class="hint">Click 🔄 Sync để lấy danh sách vật liệu đã chọn từ tab "Neo & Nối". Hoặc nhập trực
+                        tiếp.
                     </div>
                 </div>
             </div>
@@ -555,25 +581,22 @@
                 <div class="section-header" style="background:#3b82f6;color:white;">📍 Cấu hình Tầng (Story
                     Configuration)</div>
                 <div class="section-body">
-                    <div class="row" style="align-items:center;">
-                        <div class="col">
-                            <label>Dung sai cao độ (mm)</label>
-                            <input type="number" id="StoryTolerance" value="500" min="100" max="5000">
+                    <!-- Controls row - all aligned inline -->
+                    <div style="display:flex;align-items:center;gap:12px;flex-wrap:wrap;">
+                        <div style="display:flex;align-items:center;gap:6px;">
+                            <label style="margin:0;white-space:nowrap;">Dung sai (mm)</label>
+                            <input type="number" id="StoryTolerance" value="500" min="100" max="5000"
+                                style="width:70px;">
                         </div>
-                        <div class="col">
-                            <button class="btn-primary" id="btnGetStories" onclick="getStoriesFromSAP()">
-                                <span id="btnGetStoriesText">📥 Get Stories from SAP</span>
-                            </button>
+                        <button class="btn-primary" id="btnGetStories" onclick="getStoriesFromSAP()">
+                            <span id="btnGetStoriesText">📥 Get Stories</span>
+                        </button>
+                        <button class="btn-secondary btn-sm" onclick="addStoryRow()">➕ Thêm tầng</button>
+                        <div style="display:flex;align-items:center;gap:4px;margin-left:auto;">
+                            <input type="checkbox" id="AutoFillStory" checked style="margin:0;">
+                            <label for="AutoFillStory" style="margin:0;font-size:11px;white-space:nowrap;">🔄 Auto
+                                Fill</label>
                         </div>
-                        <div class="col">
-                            <button class="btn-secondary btn-sm" onclick="addStoryRow()">➕ Thêm tầng</button>
-                        </div>
-                    </div>
-                    <!-- AutoFill Toggle -->
-                    <div class="check-row" style="margin-top:8px;">
-                        <input type="checkbox" id="AutoFillStory" checked>
-                        <label for="AutoFillStory"><b>🔄 Auto Fill:</b> Sửa ô nào → các hàng bên dưới tự cập nhật
-                            theo</label>
                     </div>
 
                     <!-- Story Config Table -->
@@ -581,11 +604,13 @@
                         <table id="storyConfigTable" style="width:100%;border-collapse:collapse;font-size:11px;">
                             <thead style="background:#f0f0f0;position:sticky;top:0;">
                                 <tr>
-                                    <th style="padding:5px;border:1px solid #ddd;width:15%;background:#e0e0e0;">Story
-                                        Name</th>
-                                    <th style="padding:5px;border:1px solid #ddd;width:12%;background:#e0e0e0;">Level
-                                        (mm)</th>
                                     <th style="padding:5px;border:1px solid #ddd;width:10%;">Start Index</th>
+                                    <th
+                                        style="padding:5px;border:1px solid #ddd;width:15%;background:#f5f5f5;color:#666;">
+                                        Story Name</th>
+                                    <th
+                                        style="padding:5px;border:1px solid #ddd;width:12%;background:#f5f5f5;color:#666;">
+                                        Level (mm)</th>
                                     <th style="padding:5px;border:1px solid #ddd;width:12%;">Beam</th>
                                     <th style="padding:5px;border:1px solid #ddd;width:12%;">Girder</th>
                                     <th style="padding:5px;border:1px solid #ddd;width:12%;">Column</th>
@@ -1561,6 +1586,98 @@
             };
         }
 
+        // === MATERIAL SYNC FROM ANCHORAGE TAB ===
+        // Grade lookup tables (common Vietnamese/International standards)
+        const steelGradeLookup = {
+            'CB240-T': 240, 'CB300-V': 300, 'CB300-T': 300,
+            'CB400-V': 400, 'CB400-T': 400, 'CB500-V': 500, 'CB500-T': 500,
+            'SD295': 295, 'SD345': 345, 'SD420': 420, 'SD500': 500,
+            'Fy500': 500, 'Fy420': 420, 'Fy300': 300
+        };
+        const concreteGradeLookup = {
+            'B15': 11, 'B20': 14, 'B22.5': 16, 'B25': 18, 'B30': 22,
+            'B35': 25, 'B40': 29, 'B45': 32, 'B50': 36, 'B55': 40, 'B60': 43,
+            'C20': 20, 'C25': 25, 'C30': 30, 'C35': 35, 'C40': 40, 'C50': 50
+        };
+
+        function syncMaterialsFromAnchorage() {
+            // Get selected items from Anchorage tab (shuttle lists)
+            const selectedSteelSel = document.getElementById('selectedSteel');
+            const selectedConcreteSel = document.getElementById('selectedConcrete');
+
+            if (!selectedSteelSel || !selectedConcreteSel) {
+                alert('Chưa có dữ liệu. Vui lòng vào tab "Neo & Nối" và chọn vật liệu trước.');
+                return;
+            }
+
+            // Update Steel dropdown
+            const steelDropdown = document.getElementById('SteelGradeName');
+            const steelOptions = Array.from(selectedSteelSel.options);
+            if (steelOptions.length > 0) {
+                const currentVal = steelDropdown.value;
+                steelDropdown.innerHTML = '';
+                steelOptions.forEach(opt => {
+                    const newOpt = document.createElement('option');
+                    newOpt.value = opt.value;
+                    newOpt.textContent = opt.textContent;
+                    steelDropdown.appendChild(newOpt);
+                });
+                // Try to keep current selection, else select first
+                if (steelOptions.some(o => o.value === currentVal)) {
+                    steelDropdown.value = currentVal;
+                } else {
+                    steelDropdown.selectedIndex = 0;
+                }
+                onSteelGradeChange();
+            }
+
+            // Update Concrete dropdown
+            const concreteDropdown = document.getElementById('ConcreteGradeName');
+            const concreteOptions = Array.from(selectedConcreteSel.options);
+            if (concreteOptions.length > 0) {
+                const currentVal = concreteDropdown.value;
+                concreteDropdown.innerHTML = '';
+                concreteOptions.forEach(opt => {
+                    const newOpt = document.createElement('option');
+                    newOpt.value = opt.value;
+                    newOpt.textContent = opt.textContent;
+                    concreteDropdown.appendChild(newOpt);
+                });
+                if (concreteOptions.some(o => o.value === currentVal)) {
+                    concreteDropdown.value = currentVal;
+                } else {
+                    concreteDropdown.selectedIndex = 0;
+                }
+                onConcreteGradeChange();
+            }
+
+            alert('✅ Đã đồng bộ vật liệu từ tab Neo & Nối!');
+        }
+
+        function onSteelGradeChange() {
+            const sel = document.getElementById('SteelGradeName');
+            const fyInput = document.getElementById('SteelGradeMain');
+            if (!sel || !fyInput) return;
+
+            const gradeName = sel.value;
+            // Lookup fy, fallback to current value
+            if (steelGradeLookup[gradeName]) {
+                fyInput.value = steelGradeLookup[gradeName];
+            }
+        }
+
+        function onConcreteGradeChange() {
+            const sel = document.getElementById('ConcreteGradeName');
+            const fcInput = document.getElementById('ConcreteGrade');
+            if (!sel || !fcInput) return;
+
+            const gradeName = sel.value;
+            // Lookup f'c, fallback to current value
+            if (concreteGradeLookup[gradeName]) {
+                fcInput.value = concreteGradeLookup[gradeName];
+            }
+        }
+
         function loadForm() {
             const setId = (id, val) => { const el = document.getElementById(id); if (el) el.value = val ?? ''; };
             const setChk = (id, val) => { const el = document.getElementById(id); if (el) el.checked = val || false; };
@@ -1734,19 +1851,19 @@
             const tr = document.createElement('tr');
             tr.dataset.rowIndex = rowIdx;
 
-            // Story Name (readonly) | Level (readonly) | Start Index | Beam | Girder | Column | Suffix | Delete
+            // Start Index | Story Name (readonly) | Level (readonly) | Beam | Girder | Column | Suffix | Delete
             tr.innerHTML = `
-                <td style="padding:4px;border:1px solid #ddd;background:#f5f5f5;">
-                    <span class="storyName" style="font-weight:600;color:#333;">${cfg.StoryName || ''}</span>
-                </td>
-                <td style="padding:4px;border:1px solid #ddd;background:#f5f5f5;text-align:right;">
-                    <span class="storyElev" style="color:#666;">${cfg.Elevation || 0}</span>
-                    <input type="hidden" class="storyElevHidden" value="${cfg.Elevation || 0}">
-                </td>
                 <td style="padding:4px;border:1px solid #ddd;">
                     <input type="number" class="storyStartIdx" value="${cfg.StartIndex || 1}" 
                            style="width:100%;padding:3px;border:1px solid #ccc;border-radius:3px;text-align:center;"
                            onchange="onSmartFillChange(this, 'startIndex')">
+                </td>
+                <td style="padding:4px;border:1px solid #ddd;background:#fafafa;">
+                    <span class="storyName" style="font-weight:500;color:#555;">${cfg.StoryName || ''}</span>
+                </td>
+                <td style="padding:4px;border:1px solid #ddd;background:#fafafa;text-align:right;">
+                    <span class="storyElev" style="color:#777;">${cfg.Elevation || 0}</span>
+                    <input type="hidden" class="storyElevHidden" value="${cfg.Elevation || 0}">
                 </td>
                 <td style="padding:4px;border:1px solid #ddd;">
                     <input type="text" class="storyBeamPrefix" value="${cfg.BeamPrefix || 'B'}" 

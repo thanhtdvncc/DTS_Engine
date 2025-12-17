@@ -60,19 +60,21 @@ namespace DTS_Engine.Core.Algorithms
                     System.Diagnostics.Debug.WriteLine($"[NamingEngine] WARNING: Story '{storyName}' not in StoryConfigs. Using fallback: {storyConfig?.StoryName}");
                 }
 
-                // Lấy prefix/suffix từ config (KHÔNG HARDCODE)
-                string prefix = storyConfig?.BeamPrefix ?? "";
+                // Get suffix from config (shared for all types)
                 string suffix = storyConfig?.Suffix ?? "";
-                int counter = storyConfig?.StartIndex ?? 1;
+                int startIndex = storyConfig?.StartIndex ?? 1;
+
+                // Separate counters and signature maps for Beam vs Girder
+                int beamCounter = startIndex;
+                int girderCounter = startIndex;
+                var beamSignatureMap = new Dictionary<string, string>();
+                var girderSignatureMap = new Dictionary<string, string>();
 
                 // 2. Spatial Sort: Y desc, X asc
                 var sortedGroups = bucket
                     .OrderByDescending(g => GetCenterY(g))
                     .ThenBy(g => GetCenterX(g))
                     .ToList();
-
-                // 3. Signature Map: Key=Signature, Value=Name
-                var signatureMap = new Dictionary<string, string>();
 
                 foreach (var group in sortedGroups)
                 {
@@ -84,7 +86,18 @@ namespace DTS_Engine.Core.Algorithms
                     group.UpdateSignature();
                     string sig = group.Signature ?? "";
 
-                    // Check map
+                    // Determine prefix and counter based on GroupType (Beam vs Girder)
+                    bool isGirder = (group.GroupType ?? "").Equals("Girder", StringComparison.OrdinalIgnoreCase)
+                                    || group.Width >= 300; // Fallback: Width >= 300mm = Girder
+
+                    string prefix = isGirder
+                        ? (storyConfig?.GirderPrefix ?? "G")
+                        : (storyConfig?.BeamPrefix ?? "B");
+
+                    var signatureMap = isGirder ? girderSignatureMap : beamSignatureMap;
+                    ref int counter = ref (isGirder ? ref girderCounter : ref beamCounter);
+
+                    // Check map for reusing names
                     if (signatureMap.TryGetValue(sig, out string existingName))
                     {
                         // Reuse existing name (same structure)
