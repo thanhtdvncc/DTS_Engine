@@ -285,8 +285,9 @@ namespace DTS_Engine.UI.Forms
                         return result;
 
                     // Filter Z items (stories) and convert to StoryNamingConfig
+                    // Pattern: Match DTS_TEST_SAP - use Trim().StartsWith()
                     var zItems = gridItems
-                        .Where(g => !string.IsNullOrEmpty(g.AxisDir) && g.AxisDir.StartsWith("Z", StringComparison.OrdinalIgnoreCase))
+                        .Where(g => !string.IsNullOrEmpty(g.AxisDir) && g.AxisDir.Trim().StartsWith("Z", StringComparison.OrdinalIgnoreCase))
                         .OrderBy(g => g.Coordinate)
                         .ToList();
 

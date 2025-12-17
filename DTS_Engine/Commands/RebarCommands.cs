@@ -1878,6 +1878,14 @@ namespace DTS_Engine.Commands
                     // Keep group if it still has members
                     if (validHandles.Count > 0)
                     {
+                        // === BACKWARD COMPATIBILITY ===
+                        // Bản vẽ cũ chưa có trường Name → gán từ GroupName hoặc "UNNAMED"
+                        if (string.IsNullOrEmpty(group.Name))
+                        {
+                            group.Name = !string.IsNullOrEmpty(group.GroupName) ? group.GroupName : "UNNAMED";
+                            needsUpdate = true;
+                        }
+
                         validGroups.Add(group);
                     }
                 }
