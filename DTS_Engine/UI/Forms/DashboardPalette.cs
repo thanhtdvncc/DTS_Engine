@@ -64,9 +64,16 @@ namespace DTS_Engine.UI.Forms
             _dashboardForm.ShowInTaskbar = false;
             _dashboardForm.StartPosition = FormStartPosition.Manual;
             _dashboardForm.TopMost = true;
+            _dashboardForm.AutoScaleMode = AutoScaleMode.None; // Prevent DPI scaling
+            _dashboardForm.MinimumSize = Size.Empty; // Allow small size
 
-            // Size: 9 buttons * 20px + 1 separator * 3px = 183px width, 20px height
-            _dashboardForm.Size = new Size(185, 20);
+            // Size: drag(20) + 10 buttons(200) + separator(10) = 230px width, 20px height
+            int dWidth = 230;
+            int dHeight = 20;
+            _dashboardForm.Size = new Size(dWidth, dHeight);
+
+            // FORCE SHAPE: Use Region to clip any OS-enforced minimum HEIGHT
+            _dashboardForm.Region = new Region(new Rectangle(0, 0, dWidth, dHeight));
 
             // Transparent background
             _dashboardForm.BackColor = Color.White;

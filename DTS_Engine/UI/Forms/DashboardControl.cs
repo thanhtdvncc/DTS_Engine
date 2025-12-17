@@ -41,7 +41,7 @@ namespace DTS_Engine.UI.Forms
 
             // Configure WebView2 to fill control
             this._webView.CreationProperties = null;
-            this._webView.DefaultBackgroundColor = Color.FromArgb(43, 43, 43); // Match HTML background
+            this._webView.DefaultBackgroundColor = Color.White; // Match HTML white background
             this._webView.Dock = DockStyle.Fill;
             this._webView.Name = "_webView";
             this._webView.TabIndex = 0;
@@ -49,7 +49,7 @@ namespace DTS_Engine.UI.Forms
 
             this.Controls.Add(this._webView);
             this.Name = "DashboardControl";
-            this.Size = new Size(400, 45);
+            this.Size = new Size(230, 20); // Match form size exactly
             this.ResumeLayout(false);
 
             InitializeAsync();
