@@ -381,6 +381,27 @@ namespace DTS_Engine.Core.Data
         /// Mô tả ngắn gọn: "2D22 suốt + gia cường D22 tại gối"
         /// </summary>
         public string Description { get; set; }
+
+        // ===== VALIDATION (So sánh với nội lực mới) =====
+        /// <summary>
+        /// Phương án còn đủ khả năng chịu lực không?
+        /// True = As_provided >= As_required (mới)
+        /// False = Thiếu thép cần cảnh báo
+        /// </summary>
+        public bool IsValid { get; set; } = true;
+
+        /// <summary>
+        /// Thông báo lỗi nếu không valid
+        /// VD: "As_top thiếu 2.5cm² tại gối trái S2"
+        /// </summary>
+        public string ValidationMessage { get; set; }
+
+        /// <summary>
+        /// As_required mới nhất (từ lần tính cuối cùng)
+        /// Dùng để so sánh khi nội lực SAP thay đổi
+        /// </summary>
+        public double As_Required_Top_Max { get; set; }
+        public double As_Required_Bot_Max { get; set; }
     }
 
     // ===== THÉP GIA CƯỜNG =====

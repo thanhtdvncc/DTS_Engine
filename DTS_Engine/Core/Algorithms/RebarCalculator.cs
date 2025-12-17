@@ -9,8 +9,10 @@ namespace DTS_Engine.Core.Algorithms
     public class RebarCalculator
     {
         /// <summary>
-        /// Tính toán chọn thép cho 1 tiết diện.
+        /// [DEPRECATED] Tính toán chọn thép cho 1 tiết diện.
+        /// ⚠️ Sử dụng Calculate(areaReq, b, h, DtsSettings) thay thế!
         /// </summary>
+        [Obsolete("Use Calculate with DtsSettings parameter instead")]
         public static string Calculate(double areaReq, double b, double h, RebarSettings settings)
         {
             if (areaReq <= 0.01) return "-"; // Không cần thép
@@ -179,13 +181,16 @@ namespace DTS_Engine.Core.Algorithms
         }
 
         /// <summary>
-        /// Tính số thanh tối đa trong 1 lớp (phiên bản cơ bản với spacing cố định)
+        /// [DEPRECATED] Tính số thanh tối đa trong 1 lớp (phiên bản cơ bản với spacing cố định)
+        /// ⚠️ CẢNH BÁO: Phương thức này hardcode stirrupDia = 10. 
+        /// Sử dụng GetMaxBarsPerLayer(beamWidth, barDiameter, DtsSettings) thay thế!
         /// </summary>
+        [Obsolete("Use GetMaxBarsPerLayer with DtsSettings parameter instead")]
         private static int GetMaxBarsPerLayer(double b, double cover, int d, double minSpacing)
         {
             // b: width (mm), cover: (mm), d: bar diameter (mm), minSpacing: (mm)
-            // Valid width = b - 2*cover - 2*stirrup (assume 10mm stirrup) - 2*d (biên 2 thanh)
-            double stirrupDia = 10;
+            // LEGACY CODE: Hardcoded stirrup diameter - SỬ DỤNG BẢN MỚI VỚI DtsSettings!
+            double stirrupDia = 10; // ⚠️ HARDCODE - Đã có phiên bản mới dùng StirrupBarRange từ settings
             double workingWidth = b - 2 * cover - 2 * stirrupDia;
 
             // n * d + (n-1)*s <= workingWidth

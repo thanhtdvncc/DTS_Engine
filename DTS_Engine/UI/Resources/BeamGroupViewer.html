@@ -341,13 +341,27 @@
                 sel.innerHTML = '<option>No options</option>';
                 return;
             }
+
+            // Nếu có SelectedDesign, thêm vào đầu dropdown với ⭐
+            if (currentGroup.SelectedDesign) {
+                const lockedOpt = document.createElement('option');
+                lockedOpt.value = 'locked';
+                const isInvalid = currentGroup.SelectedDesign.IsValid === false;
+                lockedOpt.textContent = `⭐ Phương án CHỐT ${isInvalid ? '⚠️ THIẾU THÉP' : '(Đang dùng)'}`;
+                if (isInvalid) lockedOpt.style.color = '#ef4444';
+                sel.appendChild(lockedOpt);
+            }
+
+            // Thêm các phương án máy đề xuất
             currentGroup.BackboneOptions.forEach((opt, i) => {
                 const option = document.createElement('option');
                 option.value = i;
-                option.textContent = `${opt.OptionName || 'Option ' + (i + 1)}${i === 0 ? ' (Best)' : ''}`;
+                option.textContent = `${opt.OptionName || 'Option ' + (i + 1)} - D${opt.BackboneDiameter || '?'}${i === 0 ? ' (Best)' : ''}`;
                 sel.appendChild(option);
             });
-            sel.value = currentGroup.SelectedBackboneIndex || 0;
+
+            // Chọn SelectedDesign nếu có, không thì chọn theo index
+            sel.value = currentGroup.SelectedDesign ? 'locked' : (currentGroup.SelectedBackboneIndex || 0);
         }
 
         function selectOption(index) {
@@ -424,13 +438,24 @@
             if (!lockBtn || !lockStatus) return;
 
             const isLocked = currentGroup?.SelectedDesign != null;
+            const isInvalid = currentGroup?.SelectedDesign?.IsValid === false;
 
             if (isLocked) {
                 lockBtn.innerHTML = '<i class="fa-solid fa-unlock"></i> Hủy chốt';
                 lockBtn.classList.remove('bg-amber-600', 'hover:bg-amber-500');
                 lockBtn.classList.add('bg-slate-600', 'hover:bg-slate-500');
                 lockBtn.onclick = unlockDesign;
-                lockStatus.classList.remove('hidden');
+
+                // Show status with warning if invalid
+                if (isInvalid) {
+                    lockStatus.innerHTML = '<i class="fa-solid fa-exclamation-triangle"></i> THIẾU THÉP!';
+                    lockStatus.classList.remove('hidden', 'text-green-400');
+                    lockStatus.classList.add('text-red-500', 'font-bold');
+                } else {
+                    lockStatus.innerHTML = '<i class="fa-solid fa-check-circle"></i> Đã chốt';
+                    lockStatus.classList.remove('hidden', 'text-red-500', 'font-bold');
+                    lockStatus.classList.add('text-green-400');
+                }
             } else {
                 lockBtn.innerHTML = '<i class="fa-solid fa-lock"></i> Chốt';
                 lockBtn.classList.add('bg-amber-600', 'hover:bg-amber-500');
@@ -438,6 +463,33 @@
                 lockBtn.onclick = lockDesign;
                 lockStatus.classList.add('hidden');
             }
+        }
+
+        // ===== AUTO-LOCK ON MANUAL EDIT =====
+        // Gọi hàm này khi User chỉnh sửa thủ công (diameter, count, cut, etc.)
+        function autoLockOnEdit() {
+            if (!currentGroup) return;
+
+            // Nếu chưa có SelectedDesign, auto-lock ngay
+            if (!currentGroup.SelectedDesign) {
+                lockDesign();
+                showToast('🔒 Auto-lock: Phương án đã được chốt tự động khi sửa tay!', 'info');
+            }
+            // Đánh dấu đã sửa thủ công
+            currentGroup.IsManuallyEdited = true;
+        }
+
+        // Wrapper để gọi khi bất kỳ edit nào xảy ra
+        function onManualEdit(spanIndex, field, value) {
+            // Thực hiện edit...
+            console.log(`Manual edit: span ${spanIndex}, ${field} = ${value}`);
+
+            // Auto-lock
+            autoLockOnEdit();
+
+            // Update UI
+            renderCanvas();
+            renderTable();
         }
 
         function updateGroupInfo() {
@@ -705,6 +757,9 @@
             if (!span[arr][0]) span[arr][0] = [];
             span[arr][0][pos] = value;
 
+            // ===== AUTO-LOCK: Tự động chốt khi sửa tay =====
+            autoLockOnEdit();
+
             // Auto apply
             if (document.getElementById('autoApply').checked) {
                 for (let i = spanIndex + 1; i < currentGroup.Spans.length; i++) {
@@ -723,10 +778,16 @@
             const span = currentGroup.Spans[spanIndex];
             if (!span.Stirrup) span.Stirrup = [];
             span.Stirrup[pos] = value;
+
+            // ===== AUTO-LOCK: Tự động chốt khi sửa tay =====
+            autoLockOnEdit();
         }
 
         function updateSideBar(spanIndex, value) {
             currentGroup.Spans[spanIndex].SideBar = value;
+
+            // ===== AUTO-LOCK: Tự động chốt khi sửa tay =====
+            autoLockOnEdit();
         }
 
         function selectAllSpans() {
