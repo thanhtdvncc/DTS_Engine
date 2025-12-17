@@ -254,7 +254,10 @@ namespace DTS_Engine.Core.Algorithms
         public static void DetectSupports(BeamGroup group, List<BeamGeometry> chain, List<SupportGeometry> allSupports)
         {
             const double NODE_HIT_TOLERANCE = 50; // mm - Vùng hit test tại node
-            const double STORY_Z_TOLERANCE = 2000; // mm - Max Z difference for same-story support
+
+            // Use configurable StoryTolerance from DtsSettings (default 500mm)
+            // User can adjust for split-level houses via Settings UI
+            double storyZTolerance = DtsSettings.Instance.StoryTolerance;
 
             var foundSupports = new List<SupportData>();
             var processedPositions = new HashSet<double>();
@@ -263,9 +266,9 @@ namespace DTS_Engine.Core.Algorithms
             double beamZ = chain.Count > 0 ? chain.Average(b => b.StartZ) : 0;
 
             // === FILTER SUPPORTS BY Z-LEVEL ===
-            // Only consider supports within STORY_Z_TOLERANCE of beam Z
+            // Only consider supports within storyZTolerance of beam Z
             var filteredSupports = allSupports
-                .Where(s => Math.Abs(s.Elevation - beamZ) < STORY_Z_TOLERANCE)
+                .Where(s => Math.Abs(s.Elevation - beamZ) < storyZTolerance)
                 .ToList();
 
             // Điểm gốc của chain (để tính Position)
