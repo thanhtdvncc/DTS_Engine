@@ -424,1431 +424,1466 @@
                 <div class="section-header">Phạm vi thép (Rebar Selection)</div>
                 <div class="section-body">
                     <div class="row">
-                        <div class="col"><label>Thép chủ (Main)</label><input type="text" id="MainBarRange"
-                                placeholder="16-25"></div>
-                        <div class="col"><label>Thép đai (Stirrup)</label><input type="text" id="StirrupBarRange"
-                                placeholder="8-10"></div>
-                        <div class="col"><label>Thép hông (Side)</label><input type="text" id="SideBarRange"
-                                placeholder="12-14"></div>
-                    </div>
-                    <div class="hint">Nhập khoảng: "16-25" hoặc liệt kê: "18, 20, 22". Sẽ lọc theo Kho thép ở tab
-                        General.</div>
-                </div>
-            </div>
-
-            <div class="section">
-                <div class="section-header">Lớp bảo vệ (mm)</div>
-                <div class="section-body">
-                    <div class="row">
-                        <div class="col"><label>Cover Top</label><input type="number" id="CoverTop"></div>
-                        <div class="col"><label>Cover Bot</label><input type="number" id="CoverBot"></div>
-                        <div class="col"><label>Cover Side</label><input type="number" id="CoverSide"></div>
-                    </div>
-                </div>
-            </div>
-
-            <div class="section">
-                <div class="section-header">Khoảng hở cốt thép (Clear Spacing)</div>
-                <div class="section-body">
-                    <div class="check-row">
-                        <input type="checkbox" id="UseBarDiameterForSpacing">
-                        <label for="UseBarDiameterForSpacing">Khoảng hở tối thiểu theo đường kính thép</label>
-                    </div>
-                    <div class="row">
-                        <div class="col"><label>Hệ số x đường kính</label><input type="number"
-                                id="BarDiameterSpacingMultiplier" step="0.1" min="1" max="3"></div>
-                        <div class="col"><label>Min Spacing cố định (mm)</label><input type="number"
-                                id="MinClearSpacing"></div>
-                        <div class="col"><label>Max Spacing (mm)</label><input type="number" id="MaxClearSpacing"></div>
-                    </div>
-                    <div class="hint">Nếu bật: spacing ≥ N × d_max. Nếu tắt: dùng Min Spacing cố định. Theo ACI/TCVN
-                        thường ≥ 1.0d.</div>
-                </div>
-            </div>
-
-            <div class="section">
-                <div class="section-header">Hệ số phân bổ thép xoắn (Torsion Distribution)</div>
-                <div class="section-body">
-                    <div class="row">
-                        <div class="col"><label>Top Bar</label><input type="number" id="TorsionDist_TopBar" step="0.01">
+                        <div class="row">
+                            <div class="col"><label>Thép chủ (Main)</label><input type="text" id="MainBarRange"
+                                    placeholder="16-25"></div>
+                            <div class="col"><label>Thép đai (Stirrup)</label><input type="text" id="StirrupBarRange"
+                                    placeholder="8-10"></div>
+                            <div class="col"><label>Thép hông (Side)</label><input type="text" id="SideBarRange"
+                                    placeholder="12-14"></div>
                         </div>
-                        <div class="col"><label>Bot Bar</label><input type="number" id="TorsionDist_BotBar" step="0.01">
+                        <div class="row">
+                            <div class="col"><label>Bước đai (Spacings)</label><input type="text" id="StirrupSpacings"
+                                    placeholder="100,150,200,250"></div>
+                            <div class="col-2"></div>
                         </div>
-                        <div class="col"><label>Side Bar</label><input type="number" id="TorsionDist_SideBar"
-                                step="0.01"></div>
-                    </div>
-                    <div class="hint">Tổng = 1.0. VD: TopBar=0.16, BotBar=0.16, SideBar=0.68</div>
-                </div>
-            </div>
-
-            <div class="section">
-                <div class="section-header">Bố trí thép tự động (Auto Arrangement)</div>
-                <div class="section-body">
-                    <div class="row">
-                        <div class="col"><label>Số lớp tối đa</label><input type="number" id="MaxLayers" min="1"
-                                max="5"></div>
-                        <div class="col"><label>Min thanh/lớp</label><input type="number" id="MinBarsPerLayer" min="2"
-                                max="10"></div>
-                        <div class="col"><label>H min thép sườn (mm)</label><input type="number" id="WebBarMinHeight">
-                        </div>
-                    </div>
-                    <div class="check-row"><input type="checkbox" id="PreferSingleDiameter"><label
-                            for="PreferSingleDiameter">Ưu tiên cùng 1 đường kính (các lớp)</label></div>
-                    <div class="check-row"><input type="checkbox" id="PreferSymmetric"><label for="PreferSymmetric">Ưu
-                            tiên bố trí đối xứng</label></div>
-                    <div class="check-row"><input type="checkbox" id="PreferFewerBars"><label for="PreferFewerBars">Ưu
-                            tiên ít thanh hơn (đường kính lớn)</label></div>
-                    <div class="check-row"><input type="checkbox" id="PreferEvenDiameter"><label
-                            for="PreferEvenDiameter">Ưu tiên đường kính chẵn</label></div>
-                </div>
-            </div>
-
-            <div class="section">
-                <div class="section-header">Thép đai nâng cao</div>
-                <div class="section-body">
-                    <div class="row">
-                        <div class="col"><label>μ_min</label><input type="number" id="MinReinforcementRatio"
-                                step="0.001"></div>
-                        <div class="col-2"><label>Auto Legs Rules</label><input type="text" id="AutoLegsRules"
-                                placeholder="250-2 400-3 600-4"></div>
-                    </div>
-                    <div class="check-row"><input type="checkbox" id="AllowOddLegs"><label for="AllowOddLegs">Cho phép
-                            nhánh đai lẻ (3, 5...)</label></div>
-                    <div class="hint">Auto Legs: b≤250→2 nhánh, b≤400→3 nhánh...</div>
-                </div>
-            </div>
-
-            <div class="section">
-                <div class="section-header">Quy tắc dầm liên tục (Continuous Beam)</div>
-                <div class="section-body">
-                    <div class="check-row"><input type="checkbox" id="ForceContinuousDiameter" checked><label
-                            for="ForceContinuousDiameter">Đồng bộ đường kính chạy suốt (Layer 1)</label></div>
-                    <div class="check-row"><input type="checkbox" id="SingleDiameterPerSpan" checked><label
-                            for="SingleDiameterPerSpan">Một loại đường kính/mặt cắt</label></div>
-                    <div class="check-row"><input type="checkbox" id="AllowDiameterMixing"><label
-                            for="AllowDiameterMixing">Cho phép phối đường kính</label></div>
-                    <div class="row">
-                        <div class="col"><label>Max Diff (cấp)</label><input type="number" id="MaxDiameterDiff"
-                                value="1" min="1" max="3"></div>
-                        <div class="col"><label>Thép tiêu chuẩn (mm)</label><input type="number" id="StandardBarLength"
-                                value="11700"></div>
-                        <div class="col"><label>Nối chồng (xd)</label><input type="number" id="BeamLapSpliceMultiplier"
-                                value="40"></div>
-                    </div>
-                    <div class="check-row"><input type="checkbox" id="MatchTopLayerBars" checked><label
-                            for="MatchTopLayerBars">Khớp số thanh lớp trên (Match Top Layer)</label></div>
-                    <div class="hint">Quy tắc áp dụng khi tính thép dải dầm liên tục (Girder/Beam chạy qua nhiều cột).
-                    </div>
-                </div>
-            </div>
-        </div>
-
-        <!-- TAB 2: COLUMN -->
-        <div class="tab-panel" id="tab2">
-            <div class="section">
-                <div class="section-header">Phạm vi thép cột</div>
-                <div class="section-body">
-                    <div class="row">
-                        <div class="col"><label>Thép chủ (Main)</label><input type="text" id="ColMainBarRange"
-                                placeholder="16-28"></div>
-                        <div class="col"><label>Thép đai (Stirrup)</label><input type="text" id="ColStirrupBarRange"
-                                placeholder="8-10"></div>
-                    </div>
-                </div>
-            </div>
-
-            <div class="section">
-                <div class="section-header">Lớp bảo vệ & Quy tắc</div>
-                <div class="section-body">
-                    <div class="row">
-                        <div class="col"><label>Cover (mm)</label><input type="number" id="ColCover"></div>
-                        <div class="col"><label>Nối chồng (xd)</label><input type="number" id="LapSpliceMultiplier">
-                        </div>
-                    </div>
-                    <div class="row">
-                        <div class="col"><label>Min thanh/cạnh</label><input type="number" id="MinBarsPerSide"></div>
-                        <div class="col"><label>Max Stirrup Spacing</label><input type="number" id="MaxStirrupSpacing">
+                        <div class="hint">Nhập khoảng: "16-25" hoặc liệt kê: "18, 20, 22". Bước đai cách nhau dấu phẩy.
                         </div>
                     </div>
                 </div>
-            </div>
-        </div>
 
-        <!-- TAB 3: NAMING -->
-        <div class="tab-panel" id="tab3">
-            <!-- STORY CONFIGURATION (PRIMARY) -->
-            <div class="section" style="background:#e8f4fd;border:1px solid #3b82f6;">
-                <div class="section-header" style="background:#3b82f6;color:white;">📍 Cấu hình Tầng (Story
-                    Configuration)</div>
-                <div class="section-body">
-                    <!-- Controls row - all aligned inline -->
-                    <div style="display:flex;align-items:center;gap:12px;flex-wrap:wrap;">
-                        <div style="display:flex;align-items:center;gap:6px;">
-                            <label style="margin:0;white-space:nowrap;">Dung sai (mm)</label>
-                            <input type="number" id="StoryTolerance" value="500" min="100" max="5000"
-                                style="width:70px;">
-                        </div>
-                        <button class="btn-primary" id="btnGetStories" onclick="getStoriesFromSAP()">
-                            <span id="btnGetStoriesText">📥 Get Stories</span>
-                        </button>
-                        <button class="btn-secondary btn-sm" onclick="addStoryRow()">➕ Thêm tầng</button>
-                        <div style="display:flex;align-items:center;gap:4px;margin-left:auto;">
-                            <input type="checkbox" id="AutoFillStory" checked style="margin:0;">
-                            <label for="AutoFillStory" style="margin:0;font-size:11px;white-space:nowrap;">🔄 Auto
-                                Fill</label>
-                        </div>
-                    </div>
-
-                    <!-- Story Config Table -->
-                    <div style="margin-top:10px;max-height:220px;overflow-y:auto;">
-                        <table id="storyConfigTable" style="width:100%;border-collapse:collapse;font-size:11px;">
-                            <thead style="background:#f0f0f0;position:sticky;top:0;">
-                                <tr>
-                                    <th style="padding:5px;border:1px solid #ddd;width:10%;">Start Index</th>
-                                    <th
-                                        style="padding:5px;border:1px solid #ddd;width:15%;background:#f5f5f5;color:#666;">
-                                        Story Name</th>
-                                    <th
-                                        style="padding:5px;border:1px solid #ddd;width:12%;background:#f5f5f5;color:#666;">
-                                        Level (mm)</th>
-                                    <th style="padding:5px;border:1px solid #ddd;width:12%;">Beam</th>
-                                    <th style="padding:5px;border:1px solid #ddd;width:12%;">Girder</th>
-                                    <th style="padding:5px;border:1px solid #ddd;width:12%;">Column</th>
-                                    <th style="padding:5px;border:1px solid #ddd;width:17%;">Suffix</th>
-                                    <th style="padding:5px;border:1px solid #ddd;width:10%;">Xóa</th>
-                                </tr>
-                            </thead>
-                            <tbody id="storyConfigBody">
-                                <!-- Rows populated by JS -->
-                            </tbody>
-                        </table>
-                    </div>
-                </div>
-            </div>
-
-            <div class="section">
-                <div class="section-header">Quy tắc nhóm</div>
-                <div class="section-body">
-                    <div class="check-row"><input type="checkbox" id="GroupByAxis"><label for="GroupByAxis">Nhóm theo
-                            trục</label></div>
-                    <div class="check-row"><input type="checkbox" id="MergeSameSection"><label
-                            for="MergeSameSection">Gộp dầm cùng section & rebar (sử dụng Signature)</label></div>
-                    <div class="check-row"><input type="checkbox" id="AutoRenameOnSectionChange"><label
-                            for="AutoRenameOnSectionChange">Tự rename khi section đổi</label></div>
-                </div>
-            </div>
-
-            <div class="section">
-                <div class="section-header">Thứ tự quét (Sorting)</div>
-                <div class="section-body">
-                    <div class="row">
-                        <div class="col">
-                            <label style="margin-bottom: 8px;">Góc bắt đầu</label>
-                            <div class="corner-grid">
-                                <div class="corner-btn" data-corner="0">┏ TL</div>
-                                <div class="corner-btn" data-corner="1">TR ┓</div>
-                                <div class="corner-btn" data-corner="2">┗ BL</div>
-                                <div class="corner-btn" data-corner="3">BR ┛</div>
-                            </div>
-                            <input type="hidden" id="SortCorner" value="0">
-                        </div>
-                        <div class="col">
-                            <label style="margin-bottom: 8px;">Hướng ưu tiên</label>
-                            <div class="radio-group">
-                                <label class="radio-label"><input type="radio" name="sortDir" value="0" checked> Ngang
-                                    (X)</label>
-                                <label class="radio-label"><input type="radio" name="sortDir" value="1"> Dọc (Y)</label>
-                            </div>
-                            <input type="hidden" id="SortDirection" value="0">
+                <div class="section">
+                    <div class="section-header">Lớp bảo vệ (mm)</div>
+                    <div class="section-body">
+                        <div class="row">
+                            <div class="col"><label>Cover Top</label><input type="number" id="CoverTop"></div>
+                            <div class="col"><label>Cover Bot</label><input type="number" id="CoverBot"></div>
+                            <div class="col"><label>Cover Side</label><input type="number" id="CoverSide"></div>
                         </div>
                     </div>
                 </div>
-            </div>
-        </div>
 
-        <!-- TAB 4: ANCHORAGE (Neo & Nối) - COMPREHENSIVE -->
-        <div class="tab-panel" id="tab4">
-            <!-- QUICK PRESETS TOOLBAR -->
-            <div class="section" style="background:#e8f4fd;border:1px solid #3b82f6;">
-                <div class="section-header" style="background:#3b82f6;color:white;">⚡ Quick Presets</div>
-                <div class="section-body">
-                    <div style="display:flex;gap:16px;">
-                        <!-- LEFT: Preset Buttons with Flag Icons -->
-                        <div style="flex:1;">
-                            <div style="display:flex;gap:8px;flex-wrap:wrap;margin-bottom:8px;">
-                                <button id="presetTCVN" class="btn-primary" onclick="loadPreset('TCVN')"
-                                    title="TCVN 5574:2018" style="padding:4px 10px;">
-                                    <img src="https://flagcdn.com/w20/vn.png"
-                                        style="width:18px;height:12px;margin-right:4px;vertical-align:middle;">
-                                    TCVN</button>
-                                <button id="presetACI" class="btn-secondary" onclick="loadPreset('ACI')"
-                                    title="ACI 318-19" style="padding:4px 10px;">
-                                    <img src="https://flagcdn.com/w20/us.png"
-                                        style="width:18px;height:12px;margin-right:4px;vertical-align:middle;">
-                                    ACI</button>
-                                <button id="presetEUROCODE" class="btn-secondary" onclick="loadPreset('EUROCODE')"
-                                    title="Eurocode 2" style="padding:4px 10px;">
-                                    <img src="https://flagcdn.com/w20/eu.png"
-                                        style="width:18px;height:12px;margin-right:4px;vertical-align:middle;">
-                                    EC2</button>
-                                <button id="presetRC" class="btn-secondary" onclick="loadPreset('RC')"
-                                    title="Standard RC SD420" style="padding:4px 10px;">📋 RC</button>
-                            </div>
-                            <!-- Saved Presets -->
-                            <div id="savedPresetsContainer" style="display:flex;gap:6px;flex-wrap:wrap;"></div>
-                            <div class="hint" style="margin-top:8px;">
-                                Tiêu chuẩn: <b id="currentStandard">TCVN</b> | Chế độ: <b id="currentModeLabel">Hệ số
-                                    ×d</b>
+                <div class="section">
+                    <div class="section-header">Khoảng hở cốt thép (Clear Spacing)</div>
+                    <div class="section-body">
+                        <div class="check-row">
+                            <input type="checkbox" id="UseBarDiameterForSpacing">
+                            <label for="UseBarDiameterForSpacing">Khoảng hở tối thiểu theo đường kính thép</label>
+                        </div>
+                        <div class="row">
+                            <div class="col"><label>Hệ số x đường kính</label><input type="number"
+                                    id="BarDiameterSpacingMultiplier" step="0.1" min="1" max="3"></div>
+                            <div class="col"><label>Min Spacing cố định (mm)</label><input type="number"
+                                    id="MinClearSpacing"></div>
+                            <div class="col"><label>Max Spacing (mm)</label><input type="number" id="MaxClearSpacing">
                             </div>
                         </div>
-                        <!-- RIGHT: Action Buttons (Vertical Column) -->
-                        <div style="display:flex;flex-direction:column;gap:4px;min-width:70px;">
-                            <button class="btn-secondary btn-sm" onclick="createNewPreset()"
-                                title="Tạo preset mới từ cấu hình hiện tại">➕ Tạo</button>
-                            <button id="btnDeletePreset" class="btn-secondary btn-sm" onclick="deleteSavedPreset()"
-                                title="Chuột phải vào preset để chọn" disabled>🗑️ Xóa</button>
+                        <div class="row">
+                            <div class="col"><label>Ø đai ước tính (mm)</label><input type="number"
+                                    id="EstimatedStirrupDiameter" min="6" max="16" placeholder="10"></div>
+                            <div class="col"><label>Ø cốt liệu max (mm)</label><input type="number" id="AggregateSize"
+                                    min="10" max="40" placeholder="20"></div>
+                            <div class="col"></div>
+                        </div>
+                        <div class="hint">Nếu bật: spacing ≥ N × d_max. Nếu tắt: dùng Min Spacing cố định. Theo ACI/TCVN
+                            thường ≥ 1.0d hoặc 1.33×(Ø cốt liệu).</div>
+                    </div>
+                </div>
+
+                <div class="section">
+                    <div class="section-header">Hệ số phân bổ thép xoắn (Torsion Distribution)</div>
+                    <div class="section-body">
+                        <div class="row">
+                            <div class="col"><label>Top Bar</label><input type="number" id="TorsionDist_TopBar"
+                                    step="0.01">
+                            </div>
+                            <div class="col"><label>Bot Bar</label><input type="number" id="TorsionDist_BotBar"
+                                    step="0.01">
+                            </div>
+                            <div class="col"><label>Side Bar</label><input type="number" id="TorsionDist_SideBar"
+                                    step="0.01"></div>
+                        </div>
+                        <div class="hint">Tổng = 1.0. VD: TopBar=0.16, BotBar=0.16, SideBar=0.68</div>
+                    </div>
+                </div>
+
+                <div class="section">
+                    <div class="section-header">Bố trí thép tự động (Auto Arrangement)</div>
+                    <div class="section-body">
+                        <div class="row">
+                            <div class="col"><label>Số lớp tối đa</label><input type="number" id="MaxLayers" min="1"
+                                    max="5"></div>
+                            <div class="col"><label>Min thanh/lớp</label><input type="number" id="MinBarsPerLayer"
+                                    min="2" max="10"></div>
+                            <div class="col"><label>H min thép sườn (mm)</label><input type="number"
+                                    id="WebBarMinHeight">
+                            </div>
+                        </div>
+                        <div class="check-row"><input type="checkbox" id="PreferSingleDiameter"><label
+                                for="PreferSingleDiameter">Ưu tiên cùng 1 đường kính (các lớp)</label></div>
+                        <div class="check-row"><input type="checkbox" id="PreferSymmetric"><label
+                                for="PreferSymmetric">Ưu
+                                tiên bố trí đối xứng</label></div>
+                        <div class="check-row"><input type="checkbox" id="PreferFewerBars"><label
+                                for="PreferFewerBars">Ưu
+                                tiên ít thanh hơn (đường kính lớn)</label></div>
+                        <div class="check-row"><input type="checkbox" id="PreferEvenDiameter"><label
+                                for="PreferEvenDiameter">Ưu tiên đường kính chẵn</label></div>
+                    </div>
+                </div>
+
+                <div class="section">
+                    <div class="section-header">Thép đai nâng cao</div>
+                    <div class="section-body">
+                        <div class="row">
+                            <div class="col"><label>μ_min</label><input type="number" id="MinReinforcementRatio"
+                                    step="0.001"></div>
+                            <div class="col-2"><label>Auto Legs Rules</label><input type="text" id="AutoLegsRules"
+                                    placeholder="250-2 400-3 600-4"></div>
+                        </div>
+                        <div class="check-row"><input type="checkbox" id="AllowOddLegs"><label for="AllowOddLegs">Cho
+                                phép
+                                nhánh đai lẻ (3, 5...)</label></div>
+                        <div class="hint">Auto Legs: b≤250→2 nhánh, b≤400→3 nhánh...</div>
+                    </div>
+                </div>
+
+                <div class="section">
+                    <div class="section-header">Quy tắc dầm liên tục (Continuous Beam)</div>
+                    <div class="section-body">
+                        <div class="check-row"><input type="checkbox" id="ForceContinuousDiameter" checked><label
+                                for="ForceContinuousDiameter">Đồng bộ đường kính chạy suốt (Layer 1)</label></div>
+                        <div class="check-row"><input type="checkbox" id="SingleDiameterPerSpan" checked><label
+                                for="SingleDiameterPerSpan">Một loại đường kính/mặt cắt</label></div>
+                        <div class="check-row"><input type="checkbox" id="AllowDiameterMixing"><label
+                                for="AllowDiameterMixing">Cho phép phối đường kính</label></div>
+                        <div class="row">
+                            <div class="col"><label>Max Diff (cấp)</label><input type="number" id="MaxDiameterDiff"
+                                    value="1" min="1" max="3"></div>
+                            <div class="col"><label>Thép tiêu chuẩn (mm)</label><input type="number"
+                                    id="StandardBarLength" value="11700"></div>
+                            <div class="col"><label>Nối chồng (xd)</label><input type="number"
+                                    id="BeamLapSpliceMultiplier" value="40"></div>
+                        </div>
+                        <div class="check-row"><input type="checkbox" id="MatchTopLayerBars" checked><label
+                                for="MatchTopLayerBars">Khớp số thanh lớp trên (Match Top Layer)</label></div>
+                        <div class="hint">Quy tắc áp dụng khi tính thép dải dầm liên tục (Girder/Beam chạy qua nhiều
+                            cột).
                         </div>
                     </div>
                 </div>
             </div>
 
-            <!-- MODE TOGGLE -->
-            <div class="section">
-                <div class="section-header">1. Chế độ tính toán</div>
-                <div class="section-body">
-                    <div style="display:flex;align-items:center;gap:16px;">
-                        <label style="display:flex;align-items:center;gap:6px;cursor:pointer;">
-                            <input type="radio" name="calcMode" value="ByFactor" checked
-                                onchange="switchMode('ByFactor')">
-                            <b>🔢 Hệ số ×d</b>
-                        </label>
-                        <label style="display:flex;align-items:center;gap:6px;cursor:pointer;">
-                            <input type="radio" name="calcMode" value="ByLength" onchange="switchMode('ByLength')">
-                            <b>📏 Chiều dài mm</b>
-                        </label>
-                        <span style="color:#666;font-size:11px;">(Chuyển đổi sẽ tự động quy đổi giá trị)</span>
+            <!-- TAB 2: COLUMN -->
+            <div class="tab-panel" id="tab2">
+                <div class="section">
+                    <div class="section-header">Phạm vi thép cột</div>
+                    <div class="section-body">
+                        <div class="row">
+                            <div class="col"><label>Thép chủ (Main)</label><input type="text" id="ColMainBarRange"
+                                    placeholder="16-28"></div>
+                            <div class="col"><label>Thép đai (Stirrup)</label><input type="text" id="ColStirrupBarRange"
+                                    placeholder="8-10"></div>
+                        </div>
+                    </div>
+                </div>
+
+                <div class="section">
+                    <div class="section-header">Lớp bảo vệ & Quy tắc</div>
+                    <div class="section-body">
+                        <div class="row">
+                            <div class="col"><label>Cover (mm)</label><input type="number" id="ColCover"></div>
+                            <div class="col"><label>Nối chồng (xd)</label><input type="number" id="LapSpliceMultiplier">
+                            </div>
+                        </div>
+                        <div class="row">
+                            <div class="col"><label>Min thanh/cạnh</label><input type="number" id="MinBarsPerSide">
+                            </div>
+                            <div class="col"><label>Max Stirrup Spacing</label><input type="number"
+                                    id="MaxStirrupSpacing">
+                            </div>
+                        </div>
                     </div>
                 </div>
             </div>
 
-            <!-- SHUTTLE SELECTOR -->
-            <div class="section">
-                <div class="section-header">2. Chọn Vật liệu Dự án</div>
-                <div class="section-body">
-                    <div style="display:flex;gap:16px;">
-                        <!-- CONCRETE SELECTOR -->
-                        <div style="flex:1;">
-                            <label style="font-weight:600;margin-bottom:4px;display:block;">
-                                Mác Bê tông
-                                <button class="btn-sm" onclick="editMaterialList('concrete')" title="Thêm/Xóa mác"
-                                    style="font-size:10px;padding:1px 4px;">✏️</button>
-                            </label>
-                            <div style="display:flex;gap:4px;">
-                                <select id="availableConcrete" multiple size="5" style="flex:1;min-width:70px;"
-                                    ondblclick="editMaterialList('concrete')"></select>
-                                <div style="display:flex;flex-direction:column;gap:2px;justify-content:center;">
-                                    <button class="btn-sm" onclick="shuttleConcrete('add')" title="Thêm">▶</button>
-                                    <button class="btn-sm" onclick="shuttleConcrete('remove')" title="Bỏ">◀</button>
+            <!-- TAB 3: NAMING -->
+            <div class="tab-panel" id="tab3">
+                <!-- STORY CONFIGURATION (PRIMARY) -->
+                <div class="section" style="background:#e8f4fd;border:1px solid #3b82f6;">
+                    <div class="section-header" style="background:#3b82f6;color:white;">📍 Cấu hình Tầng (Story
+                        Configuration)</div>
+                    <div class="section-body">
+                        <!-- Controls row - all aligned inline -->
+                        <div style="display:flex;align-items:center;gap:12px;flex-wrap:wrap;">
+                            <div style="display:flex;align-items:center;gap:6px;">
+                                <label style="margin:0;white-space:nowrap;">Dung sai (mm)</label>
+                                <input type="number" id="StoryTolerance" value="500" min="100" max="5000"
+                                    style="width:70px;">
+                            </div>
+                            <button class="btn-primary" id="btnGetStories" onclick="getStoriesFromSAP()">
+                                <span id="btnGetStoriesText">📥 Get Stories</span>
+                            </button>
+                            <button class="btn-secondary btn-sm" onclick="addStoryRow()">➕ Thêm tầng</button>
+                            <div style="display:flex;align-items:center;gap:4px;margin-left:auto;">
+                                <input type="checkbox" id="AutoFillStory" checked style="margin:0;">
+                                <label for="AutoFillStory" style="margin:0;font-size:11px;white-space:nowrap;">🔄 Auto
+                                    Fill</label>
+                            </div>
+                        </div>
+
+                        <!-- Story Config Table -->
+                        <div style="margin-top:10px;max-height:220px;overflow-y:auto;">
+                            <table id="storyConfigTable" style="width:100%;border-collapse:collapse;font-size:11px;">
+                                <thead style="background:#f0f0f0;position:sticky;top:0;">
+                                    <tr>
+                                        <th style="padding:5px;border:1px solid #ddd;width:10%;">Start Index</th>
+                                        <th
+                                            style="padding:5px;border:1px solid #ddd;width:15%;background:#f5f5f5;color:#666;">
+                                            Story Name</th>
+                                        <th
+                                            style="padding:5px;border:1px solid #ddd;width:12%;background:#f5f5f5;color:#666;">
+                                            Level (mm)</th>
+                                        <th style="padding:5px;border:1px solid #ddd;width:12%;">Beam</th>
+                                        <th style="padding:5px;border:1px solid #ddd;width:12%;">Girder</th>
+                                        <th style="padding:5px;border:1px solid #ddd;width:12%;">Column</th>
+                                        <th style="padding:5px;border:1px solid #ddd;width:17%;">Suffix</th>
+                                        <th style="padding:5px;border:1px solid #ddd;width:10%;">Xóa</th>
+                                    </tr>
+                                </thead>
+                                <tbody id="storyConfigBody">
+                                    <!-- Rows populated by JS -->
+                                </tbody>
+                            </table>
+                        </div>
+                    </div>
+                </div>
+
+                <div class="section">
+                    <div class="section-header">Quy tắc nhóm</div>
+                    <div class="section-body">
+                        <div class="check-row"><input type="checkbox" id="GroupByAxis"><label for="GroupByAxis">Nhóm
+                                theo
+                                trục</label></div>
+                        <div class="check-row"><input type="checkbox" id="MergeSameSection"><label
+                                for="MergeSameSection">Gộp dầm cùng section & rebar (sử dụng Signature)</label></div>
+                        <div class="check-row"><input type="checkbox" id="AutoRenameOnSectionChange"><label
+                                for="AutoRenameOnSectionChange">Tự rename khi section đổi</label></div>
+                    </div>
+                </div>
+
+                <div class="section">
+                    <div class="section-header">Thứ tự quét (Sorting)</div>
+                    <div class="section-body">
+                        <div class="row">
+                            <div class="col">
+                                <label style="margin-bottom: 8px;">Góc bắt đầu</label>
+                                <div class="corner-grid">
+                                    <div class="corner-btn" data-corner="0">┏ TL</div>
+                                    <div class="corner-btn" data-corner="1">TR ┓</div>
+                                    <div class="corner-btn" data-corner="2">┗ BL</div>
+                                    <div class="corner-btn" data-corner="3">BR ┛</div>
                                 </div>
-                                <select id="selectedConcrete" multiple size="5"
-                                    style="flex:1;min-width:70px;font-weight:600;background:#e8f5e9;"></select>
+                                <input type="hidden" id="SortCorner" value="0">
                             </div>
-                        </div>
-
-                        <!-- STEEL SELECTOR -->
-                        <div style="flex:1;">
-                            <label style="font-weight:600;margin-bottom:4px;display:block;">
-                                Mác Thép
-                                <button class="btn-sm" onclick="editMaterialList('steel')" title="Thêm/Xóa mác"
-                                    style="font-size:10px;padding:1px 4px;">✏️</button>
-                            </label>
-                            <div style="display:flex;gap:4px;">
-                                <select id="availableSteel" multiple size="5" style="flex:1;min-width:70px;"
-                                    ondblclick="editMaterialList('steel')"></select>
-                                <div style="display:flex;flex-direction:column;gap:2px;justify-content:center;">
-                                    <button class="btn-sm" onclick="shuttleSteel('add')" title="Thêm">▶</button>
-                                    <button class="btn-sm" onclick="shuttleSteel('remove')" title="Bỏ">◀</button>
+                            <div class="col">
+                                <label style="margin-bottom: 8px;">Hướng ưu tiên</label>
+                                <div class="radio-group">
+                                    <label class="radio-label"><input type="radio" name="sortDir" value="0" checked>
+                                        Ngang
+                                        (X)</label>
+                                    <label class="radio-label"><input type="radio" name="sortDir" value="1"> Dọc
+                                        (Y)</label>
                                 </div>
-                                <select id="selectedSteel" multiple size="5"
-                                    style="flex:1;min-width:70px;font-weight:600;background:#e8f5e9;"></select>
+                                <input type="hidden" id="SortDirection" value="0">
                             </div>
                         </div>
                     </div>
-                    <div class="hint">Click đúp vào danh sách để thêm/xóa mác vật liệu. Ctrl+Click để chọn nhiều.</div>
                 </div>
             </div>
 
-            <!-- ANCHORAGE MATRIX -->
-            <div class="section">
-                <div class="section-header">3. Bảng tra Neo (Development Length)</div>
-                <div class="section-body" style="overflow-x:auto;">
-                    <div id="anchorageMatrixWrapper"></div>
-                    <div class="hint" id="anchorageHint">Hàng = Đường kính, Cột = Cặp vật liệu. Nhập hệ số ×d.</div>
-                </div>
-            </div>
-
-            <!-- SPLICE MATRIX -->
-            <div class="section">
-                <div class="section-header">4. Bảng tra Nối (Lap Splice Length)</div>
-                <div class="section-body" style="overflow-x:auto;">
-                    <div id="spliceMatrixWrapper"></div>
-                    <div class="hint">Thường = Neo × 1.3. Nhập trực tiếp nếu khác tiêu chuẩn.</div>
-                </div>
-            </div>
-
-            <!-- HOOK CONFIG -->
-            <div class="section">
-                <div class="section-header">5. Quy cách Móc (Standard Hooks)</div>
-                <div class="section-body">
-                    <div class="row">
-                        <div class="col"><label>Móc 90° (×d)</label><input type="number" id="Hook90Factor" value="12">
-                        </div>
-                        <div class="col"><label>Min 90° (mm)</label><input type="number" id="MinHook90Length"
-                                value="150"></div>
-                        <div class="col"><label>Móc 135° (×d)</label><input type="number" id="Hook135Factor" value="6">
-                        </div>
-                        <div class="col"><label>Móc 180° (×d)</label><input type="number" id="Hook180Factor" value="4">
+            <!-- TAB 4: ANCHORAGE (Neo & Nối) - COMPREHENSIVE -->
+            <div class="tab-panel" id="tab4">
+                <!-- QUICK PRESETS TOOLBAR -->
+                <div class="section" style="background:#e8f4fd;border:1px solid #3b82f6;">
+                    <div class="section-header" style="background:#3b82f6;color:white;">⚡ Quick Presets</div>
+                    <div class="section-body">
+                        <div style="display:flex;gap:16px;">
+                            <!-- LEFT: Preset Buttons with Flag Icons -->
+                            <div style="flex:1;">
+                                <div style="display:flex;gap:8px;flex-wrap:wrap;margin-bottom:8px;">
+                                    <button id="presetTCVN" class="btn-primary" onclick="loadPreset('TCVN')"
+                                        title="TCVN 5574:2018" style="padding:4px 10px;">
+                                        <img src="https://flagcdn.com/w20/vn.png"
+                                            style="width:18px;height:12px;margin-right:4px;vertical-align:middle;">
+                                        TCVN</button>
+                                    <button id="presetACI" class="btn-secondary" onclick="loadPreset('ACI')"
+                                        title="ACI 318-19" style="padding:4px 10px;">
+                                        <img src="https://flagcdn.com/w20/us.png"
+                                            style="width:18px;height:12px;margin-right:4px;vertical-align:middle;">
+                                        ACI</button>
+                                    <button id="presetEUROCODE" class="btn-secondary" onclick="loadPreset('EUROCODE')"
+                                        title="Eurocode 2" style="padding:4px 10px;">
+                                        <img src="https://flagcdn.com/w20/eu.png"
+                                            style="width:18px;height:12px;margin-right:4px;vertical-align:middle;">
+                                        EC2</button>
+                                    <button id="presetRC" class="btn-secondary" onclick="loadPreset('RC')"
+                                        title="Standard RC SD420" style="padding:4px 10px;">📋 RC</button>
+                                </div>
+                                <!-- Saved Presets -->
+                                <div id="savedPresetsContainer" style="display:flex;gap:6px;flex-wrap:wrap;"></div>
+                                <div class="hint" style="margin-top:8px;">
+                                    Tiêu chuẩn: <b id="currentStandard">TCVN</b> | Chế độ: <b id="currentModeLabel">Hệ
+                                        số
+                                        ×d</b>
+                                </div>
+                            </div>
+                            <!-- RIGHT: Action Buttons (Vertical Column) -->
+                            <div style="display:flex;flex-direction:column;gap:4px;min-width:70px;">
+                                <button class="btn-secondary btn-sm" onclick="createNewPreset()"
+                                    title="Tạo preset mới từ cấu hình hiện tại">➕ Tạo</button>
+                                <button id="btnDeletePreset" class="btn-secondary btn-sm" onclick="deleteSavedPreset()"
+                                    title="Chuột phải vào preset để chọn" disabled>🗑️ Xóa</button>
+                            </div>
                         </div>
                     </div>
-                    <div class="row">
-                        <div class="col"><label>Chiều dài móc min (mm)</label><input type="number" id="MinHookLength"
-                                value="75"></div>
-                        <div class="col"><label>Neo mặc định (×d)</label><input type="number"
-                                id="DefaultAnchorageFactor" value="40"></div>
-                        <div class="col"><label>Nối mặc định (×d)</label><input type="number" id="DefaultSpliceFactor"
-                                value="52"></div>
+                </div>
+
+                <!-- MODE TOGGLE -->
+                <div class="section">
+                    <div class="section-header">1. Chế độ tính toán</div>
+                    <div class="section-body">
+                        <div style="display:flex;align-items:center;gap:16px;">
+                            <label style="display:flex;align-items:center;gap:6px;cursor:pointer;">
+                                <input type="radio" name="calcMode" value="ByFactor" checked
+                                    onchange="switchMode('ByFactor')">
+                                <b>🔢 Hệ số ×d</b>
+                            </label>
+                            <label style="display:flex;align-items:center;gap:6px;cursor:pointer;">
+                                <input type="radio" name="calcMode" value="ByLength" onchange="switchMode('ByLength')">
+                                <b>📏 Chiều dài mm</b>
+                            </label>
+                            <span style="color:#666;font-size:11px;">(Chuyển đổi sẽ tự động quy đổi giá trị)</span>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- SHUTTLE SELECTOR -->
+                <div class="section">
+                    <div class="section-header">2. Chọn Vật liệu Dự án</div>
+                    <div class="section-body">
+                        <div style="display:flex;gap:16px;">
+                            <!-- CONCRETE SELECTOR -->
+                            <div style="flex:1;">
+                                <label style="font-weight:600;margin-bottom:4px;display:block;">
+                                    Mác Bê tông
+                                    <button class="btn-sm" onclick="editMaterialList('concrete')" title="Thêm/Xóa mác"
+                                        style="font-size:10px;padding:1px 4px;">✏️</button>
+                                </label>
+                                <div style="display:flex;gap:4px;">
+                                    <select id="availableConcrete" multiple size="5" style="flex:1;min-width:70px;"
+                                        ondblclick="editMaterialList('concrete')"></select>
+                                    <div style="display:flex;flex-direction:column;gap:2px;justify-content:center;">
+                                        <button class="btn-sm" onclick="shuttleConcrete('add')" title="Thêm">▶</button>
+                                        <button class="btn-sm" onclick="shuttleConcrete('remove')" title="Bỏ">◀</button>
+                                    </div>
+                                    <select id="selectedConcrete" multiple size="5"
+                                        style="flex:1;min-width:70px;font-weight:600;background:#e8f5e9;"></select>
+                                </div>
+                            </div>
+
+                            <!-- STEEL SELECTOR -->
+                            <div style="flex:1;">
+                                <label style="font-weight:600;margin-bottom:4px;display:block;">
+                                    Mác Thép
+                                    <button class="btn-sm" onclick="editMaterialList('steel')" title="Thêm/Xóa mác"
+                                        style="font-size:10px;padding:1px 4px;">✏️</button>
+                                </label>
+                                <div style="display:flex;gap:4px;">
+                                    <select id="availableSteel" multiple size="5" style="flex:1;min-width:70px;"
+                                        ondblclick="editMaterialList('steel')"></select>
+                                    <div style="display:flex;flex-direction:column;gap:2px;justify-content:center;">
+                                        <button class="btn-sm" onclick="shuttleSteel('add')" title="Thêm">▶</button>
+                                        <button class="btn-sm" onclick="shuttleSteel('remove')" title="Bỏ">◀</button>
+                                    </div>
+                                    <select id="selectedSteel" multiple size="5"
+                                        style="flex:1;min-width:70px;font-weight:600;background:#e8f5e9;"></select>
+                                </div>
+                            </div>
+                        </div>
+                        <div class="hint">Click đúp vào danh sách để thêm/xóa mác vật liệu. Ctrl+Click để chọn nhiều.
+                        </div>
+                    </div>
+                </div>
+
+                <!-- ANCHORAGE MATRIX -->
+                <div class="section">
+                    <div class="section-header">3. Bảng tra Neo (Development Length)</div>
+                    <div class="section-body" style="overflow-x:auto;">
+                        <div id="anchorageMatrixWrapper"></div>
+                        <div class="hint" id="anchorageHint">Hàng = Đường kính, Cột = Cặp vật liệu. Nhập hệ số ×d.</div>
+                    </div>
+                </div>
+
+                <!-- SPLICE MATRIX -->
+                <div class="section">
+                    <div class="section-header">4. Bảng tra Nối (Lap Splice Length)</div>
+                    <div class="section-body" style="overflow-x:auto;">
+                        <div id="spliceMatrixWrapper"></div>
+                        <div class="hint">Thường = Neo × 1.3. Nhập trực tiếp nếu khác tiêu chuẩn.</div>
+                    </div>
+                </div>
+
+                <!-- HOOK CONFIG -->
+                <div class="section">
+                    <div class="section-header">5. Quy cách Móc (Standard Hooks)</div>
+                    <div class="section-body">
+                        <div class="row">
+                            <div class="col"><label>Móc 90° (×d)</label><input type="number" id="Hook90Factor"
+                                    value="12">
+                            </div>
+                            <div class="col"><label>Min 90° (mm)</label><input type="number" id="MinHook90Length"
+                                    value="150"></div>
+                            <div class="col"><label>Móc 135° (×d)</label><input type="number" id="Hook135Factor"
+                                    value="6">
+                            </div>
+                            <div class="col"><label>Móc 180° (×d)</label><input type="number" id="Hook180Factor"
+                                    value="4">
+                            </div>
+                        </div>
+                        <div class="row">
+                            <div class="col"><label>Chiều dài móc min (mm)</label><input type="number"
+                                    id="MinHookLength" value="75"></div>
+                            <div class="col"><label>Neo mặc định (×d)</label><input type="number"
+                                    id="DefaultAnchorageFactor" value="40"></div>
+                            <div class="col"><label>Nối mặc định (×d)</label><input type="number"
+                                    id="DefaultSpliceFactor" value="52"></div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- TAB 5: DETAILING (Bố trí) -->
+            <div class="tab-panel" id="tab5">
+                <div class="section">
+                    <div class="section-header">Giới hạn thanh thép</div>
+                    <div class="section-body">
+                        <div class="row">
+                            <div class="col"><label>Chiều dài max (mm)</label><input type="number" id="MaxBarLength"
+                                    value="11700"></div>
+                            <div class="col"><label>Chiều dài min (mm)</label><input type="number" id="MinBarLength"
+                                    value="2000"></div>
+                        </div>
+                        <div class="row">
+                            <div class="col"><label>Khoảng so le nối (mm)</label><input type="number"
+                                    id="MinStaggerDistance" value="600"></div>
+                            <div class="col"><label>Hệ số so le (×Ld)</label><input type="number" id="StaggerFactorLd"
+                                    value="1.3" step="0.1"></div>
+                        </div>
+                        <div class="check-row">
+                            <input type="checkbox" id="SkipSplice">
+                            <label for="SkipSplice"><strong>Bỏ qua nối thép</strong> (nhà cung cấp cắt theo yêu
+                                cầu)</label>
+                        </div>
+                        <div class="hint">Khi bật: thép được vẽ liền mạch, không hiển thị điểm nối.</div>
+                    </div>
+                </div>
+
+                <div class="section">
+                    <div class="section-header">Vùng nối thép - Dầm phụ (Beam)</div>
+                    <div class="section-body">
+                        <div class="row">
+                            <div class="col">
+                                <label>Thép trên nối tại</label>
+                                <select id="BeamTopSpliceZone">
+                                    <option value="0">Tại gối (Support)</option>
+                                    <option value="1">L/4</option>
+                                    <option value="2" selected>Giữa nhịp (Mid)</option>
+                                </select>
+                            </div>
+                            <div class="col">
+                                <label>Thép dưới nối tại</label>
+                                <select id="BeamBotSpliceZone">
+                                    <option value="0" selected>Tại gối (Support)</option>
+                                    <option value="1">L/4</option>
+                                    <option value="2">Giữa nhịp (Mid)</option>
+                                </select>
+                            </div>
+                        </div>
+                        <div class="check-row">
+                            <input type="checkbox" id="BeamAllowLapInJoint">
+                            <label for="BeamAllowLapInJoint">Cho phép nối trong nút khung</label>
+                        </div>
+                    </div>
+                </div>
+
+                <div class="section">
+                    <div class="section-header">Vùng nối thép - Dầm chính (Girder)</div>
+                    <div class="section-body">
+                        <div class="row">
+                            <div class="col">
+                                <label>Thép trên nối tại</label>
+                                <select id="GirderTopSpliceZone">
+                                    <option value="0">Tại gối (Support)</option>
+                                    <option value="1" selected>L/4</option>
+                                    <option value="2">Giữa nhịp (Mid)</option>
+                                </select>
+                            </div>
+                            <div class="col">
+                                <label>Thép dưới nối tại</label>
+                                <select id="GirderBotSpliceZone">
+                                    <option value="0" selected>Tại gối (Support)</option>
+                                    <option value="1">L/4</option>
+                                    <option value="2">Giữa nhịp (Mid)</option>
+                                </select>
+                            </div>
+                        </div>
+                        <div class="check-row">
+                            <input type="checkbox" id="GirderAllowLapInJoint" checked>
+                            <label for="GirderAllowLapInJoint">Cho phép nối trong nút khung (Neo xuyên cột)</label>
+                        </div>
                     </div>
                 </div>
             </div>
         </div>
 
-        <!-- TAB 5: DETAILING (Bố trí) -->
-        <div class="tab-panel" id="tab5">
-            <div class="section">
-                <div class="section-header">Giới hạn thanh thép</div>
-                <div class="section-body">
-                    <div class="row">
-                        <div class="col"><label>Chiều dài max (mm)</label><input type="number" id="MaxBarLength"
-                                value="11700"></div>
-                        <div class="col"><label>Chiều dài min (mm)</label><input type="number" id="MinBarLength"
-                                value="2000"></div>
-                    </div>
-                    <div class="row">
-                        <div class="col"><label>Khoảng so le nối (mm)</label><input type="number"
-                                id="MinStaggerDistance" value="600"></div>
-                        <div class="col"><label>Hệ số so le (×Ld)</label><input type="number" id="StaggerFactorLd"
-                                value="1.3" step="0.1"></div>
-                    </div>
-                    <div class="check-row">
-                        <input type="checkbox" id="SkipSplice">
-                        <label for="SkipSplice"><strong>Bỏ qua nối thép</strong> (nhà cung cấp cắt theo yêu cầu)</label>
-                    </div>
-                    <div class="hint">Khi bật: thép được vẽ liền mạch, không hiển thị điểm nối.</div>
-                </div>
+        <div class="footer">
+            <div class="footer-left">
+                <!-- Import/Export moved to General tab -->
             </div>
-
-            <div class="section">
-                <div class="section-header">Vùng nối thép - Dầm phụ (Beam)</div>
-                <div class="section-body">
-                    <div class="row">
-                        <div class="col">
-                            <label>Thép trên nối tại</label>
-                            <select id="BeamTopSpliceZone">
-                                <option value="0">Tại gối (Support)</option>
-                                <option value="1">L/4</option>
-                                <option value="2" selected>Giữa nhịp (Mid)</option>
-                            </select>
-                        </div>
-                        <div class="col">
-                            <label>Thép dưới nối tại</label>
-                            <select id="BeamBotSpliceZone">
-                                <option value="0" selected>Tại gối (Support)</option>
-                                <option value="1">L/4</option>
-                                <option value="2">Giữa nhịp (Mid)</option>
-                            </select>
-                        </div>
-                    </div>
-                    <div class="check-row">
-                        <input type="checkbox" id="BeamAllowLapInJoint">
-                        <label for="BeamAllowLapInJoint">Cho phép nối trong nút khung</label>
-                    </div>
-                </div>
-            </div>
-
-            <div class="section">
-                <div class="section-header">Vùng nối thép - Dầm chính (Girder)</div>
-                <div class="section-body">
-                    <div class="row">
-                        <div class="col">
-                            <label>Thép trên nối tại</label>
-                            <select id="GirderTopSpliceZone">
-                                <option value="0">Tại gối (Support)</option>
-                                <option value="1" selected>L/4</option>
-                                <option value="2">Giữa nhịp (Mid)</option>
-                            </select>
-                        </div>
-                        <div class="col">
-                            <label>Thép dưới nối tại</label>
-                            <select id="GirderBotSpliceZone">
-                                <option value="0" selected>Tại gối (Support)</option>
-                                <option value="1">L/4</option>
-                                <option value="2">Giữa nhịp (Mid)</option>
-                            </select>
-                        </div>
-                    </div>
-                    <div class="check-row">
-                        <input type="checkbox" id="GirderAllowLapInJoint" checked>
-                        <label for="GirderAllowLapInJoint">Cho phép nối trong nút khung (Neo xuyên cột)</label>
-                    </div>
-                </div>
+            <div class="footer-right">
+                <button class="btn-secondary" onclick="doCancel()">Hủy bỏ</button>
+                <button class="btn-primary" onclick="doSave()">Lưu cấu hình</button>
             </div>
         </div>
-    </div>
 
-    <div class="footer">
-        <div class="footer-left">
-            <!-- Import/Export moved to General tab -->
-        </div>
-        <div class="footer-right">
-            <button class="btn-secondary" onclick="doCancel()">Hủy bỏ</button>
-            <button class="btn-primary" onclick="doSave()">Lưu cấu hình</button>
-        </div>
-    </div>
+        <script>
+            const data = __SETTINGS_JSON__;
+            const ALL_DIAMETERS = [6, 8, 10, 12, 13, 14, 16, 18, 19, 20, 22, 25, 28, 29, 32, 36, 40];
 
-    <script>
-        const data = __SETTINGS_JSON__;
-        const ALL_DIAMETERS = [6, 8, 10, 12, 13, 14, 16, 18, 19, 20, 22, 25, 28, 29, 32, 36, 40];
+            function showTab(idx) {
+                document.querySelectorAll('.tab').forEach((t, i) => t.classList.toggle('active', i === idx));
+                document.querySelectorAll('.tab-panel').forEach((p, i) => p.classList.toggle('active', i === idx));
+            }
 
-        function showTab(idx) {
-            document.querySelectorAll('.tab').forEach((t, i) => t.classList.toggle('active', i === idx));
-            document.querySelectorAll('.tab-panel').forEach((p, i) => p.classList.toggle('active', i === idx));
-        }
+            function buildInventoryGrid() {
+                const grid = document.getElementById('inventoryGrid');
+                const available = data.General?.AvailableDiameters || [];
+                grid.innerHTML = '';
+                ALL_DIAMETERS.forEach(d => {
+                    const chip = document.createElement('div');
+                    chip.className = 'diameter-chip' + (available.includes(d) ? ' active' : '');
+                    chip.textContent = 'Ø' + d;
+                    chip.dataset.diameter = d;
+                    chip.onclick = () => {
+                        chip.classList.toggle('active');
+                        // Sync with Tab 4 anchorage matrix (re-render to update row visibility)
+                        if (typeof renderDiameterMatrices === 'function') {
+                            renderDiameterMatrices();
+                        }
+                    };
+                    grid.appendChild(chip);
+                });
+            }
 
-        function buildInventoryGrid() {
-            const grid = document.getElementById('inventoryGrid');
-            const available = data.General?.AvailableDiameters || [];
-            grid.innerHTML = '';
-            ALL_DIAMETERS.forEach(d => {
-                const chip = document.createElement('div');
-                chip.className = 'diameter-chip' + (available.includes(d) ? ' active' : '');
-                chip.textContent = 'Ø' + d;
-                chip.dataset.diameter = d;
-                chip.onclick = () => {
-                    chip.classList.toggle('active');
-                    // Sync with Tab 4 anchorage matrix (re-render to update row visibility)
-                    if (typeof renderDiameterMatrices === 'function') {
-                        renderDiameterMatrices();
-                    }
-                };
-                grid.appendChild(chip);
-            });
-        }
+            function getSelectedDiameters() {
+                const chips = document.querySelectorAll('#inventoryGrid .diameter-chip.active');
+                return Array.from(chips).map(c => parseInt(c.dataset.diameter)).sort((a, b) => a - b);
+            }
 
-        function getSelectedDiameters() {
-            const chips = document.querySelectorAll('#inventoryGrid .diameter-chip.active');
-            return Array.from(chips).map(c => parseInt(c.dataset.diameter)).sort((a, b) => a - b);
-        }
+            // ============ ANCHORAGE COMPREHENSIVE FUNCTIONS ============
+            const DIAMETERS = [10, 12, 13, 14, 16, 18, 19, 20, 22, 25, 28, 29, 32, 36];
 
-        // ============ ANCHORAGE COMPREHENSIVE FUNCTIONS ============
-        const DIAMETERS = [10, 12, 13, 14, 16, 18, 19, 20, 22, 25, 28, 29, 32, 36];
-
-        let anchorageState = {
-            mode: 'ByFactor', // or 'ByLength'
-            standardName: 'TCVN',
-            availableConcrete: ['B15', 'B20', 'B25', 'B30', 'B35', 'B40'],
-            availableSteel: ['CB240', 'CB300', 'CB400', 'CB500'],
-            selectedConcrete: ['B20', 'B25', 'B30'],
-            selectedSteel: ['CB300', 'CB400'],
-            anchorageValues: {}, // key: "B25_CB400", subkey: diameter, value: factor/length
-            spliceValues: {}
-        };
-
-        // ===== PRESETS =====
-        const PRESETS = {
-            TCVN: {
-                name: 'TCVN 5574:2018',
-                mode: 'ByFactor',
+            let anchorageState = {
+                mode: 'ByFactor', // or 'ByLength'
+                standardName: 'TCVN',
                 availableConcrete: ['B15', 'B20', 'B25', 'B30', 'B35', 'B40'],
                 availableSteel: ['CB240', 'CB300', 'CB400', 'CB500'],
                 selectedConcrete: ['B20', 'B25', 'B30'],
                 selectedSteel: ['CB300', 'CB400'],
-                generateData: () => {
-                    const anc = {}, spl = {};
-                    ['B20', 'B25', 'B30'].forEach(c => {
-                        ['CB300', 'CB400'].forEach(s => {
-                            const key = `${c}_${s}`;
-                            let base = c === 'B20' ? 45 : c === 'B25' ? 40 : 35;
-                            if (s === 'CB400') base += 5;
-                            anc[key] = {}; spl[key] = {};
-                            DIAMETERS.forEach(d => { anc[key][d] = base; spl[key][d] = Math.round(base * 1.3); });
+                anchorageValues: {}, // key: "B25_CB400", subkey: diameter, value: factor/length
+                spliceValues: {}
+            };
+
+            // ===== PRESETS =====
+            const PRESETS = {
+                TCVN: {
+                    name: 'TCVN 5574:2018',
+                    mode: 'ByFactor',
+                    availableConcrete: ['B15', 'B20', 'B25', 'B30', 'B35', 'B40'],
+                    availableSteel: ['CB240', 'CB300', 'CB400', 'CB500'],
+                    selectedConcrete: ['B20', 'B25', 'B30'],
+                    selectedSteel: ['CB300', 'CB400'],
+                    generateData: () => {
+                        const anc = {}, spl = {};
+                        ['B20', 'B25', 'B30'].forEach(c => {
+                            ['CB300', 'CB400'].forEach(s => {
+                                const key = `${c}_${s}`;
+                                let base = c === 'B20' ? 45 : c === 'B25' ? 40 : 35;
+                                if (s === 'CB400') base += 5;
+                                anc[key] = {}; spl[key] = {};
+                                DIAMETERS.forEach(d => { anc[key][d] = base; spl[key][d] = Math.round(base * 1.3); });
+                            });
                         });
-                    });
-                    return { anchorageValues: anc, spliceValues: spl };
-                }
-            },
-            RC: {
-                name: 'Standard RC (SD420)',
-                mode: 'ByLength',
-                availableConcrete: ['210', '280', '350'],
-                availableSteel: ['SD420'],
-                selectedConcrete: ['210', '280', '350'],
-                selectedSteel: ['SD420'],
-                generateData: () => {
-                    const anc = {}, spl = {};
-                    // 210
-                    anc['210_SD420'] = { 10: 420, 13: 560, 16: 700, 19: 840, 22: 1100, 25: 1420, 29: 1870, 32: 2370, 36: 2890 };
-                    spl['210_SD420'] = { 10: 550, 13: 730, 16: 910, 19: 1100, 22: 1430, 25: 1850, 29: 2440, 32: 3090, 36: 3760 };
-                    // 280
-                    anc['280_SD420'] = { 10: 360, 13: 490, 16: 600, 19: 730, 22: 950, 25: 1230, 29: 1620, 32: 2050, 36: 2500 };
-                    spl['280_SD420'] = { 10: 470, 13: 640, 16: 790, 19: 950, 22: 1240, 25: 1600, 29: 2110, 32: 2670, 36: 3250 };
-                    // 350
-                    anc['350_SD420'] = { 10: 340, 13: 450, 16: 550, 19: 670, 22: 870, 25: 1130, 29: 1490, 32: 1890, 36: 2310 };
-                    spl['350_SD420'] = { 10: 440, 13: 590, 16: 720, 19: 870, 22: 1140, 25: 1470, 29: 1940, 32: 2460, 36: 3010 };
-                    return { anchorageValues: anc, spliceValues: spl };
-                }
-            },
-            ACI: {
-                name: 'ACI 318-19',
-                mode: 'ByFactor',
-                availableConcrete: ['3000', '4000', '5000', '6000'],
-                availableSteel: ['Grade40', 'Grade60'],
-                selectedConcrete: ['4000', '5000'],
-                selectedSteel: ['Grade60'],
-                generateData: () => {
-                    const anc = {}, spl = {};
-                    ['4000', '5000'].forEach(c => {
-                        ['Grade60'].forEach(s => {
-                            const key = `${c}_${s}`;
-                            let base = c === '4000' ? 48 : 42;
-                            anc[key] = {}; spl[key] = {};
-                            DIAMETERS.forEach(d => { anc[key][d] = base; spl[key][d] = Math.round(base * 1.3); });
+                        return { anchorageValues: anc, spliceValues: spl };
+                    }
+                },
+                RC: {
+                    name: 'Standard RC (SD420)',
+                    mode: 'ByLength',
+                    availableConcrete: ['210', '280', '350'],
+                    availableSteel: ['SD420'],
+                    selectedConcrete: ['210', '280', '350'],
+                    selectedSteel: ['SD420'],
+                    generateData: () => {
+                        const anc = {}, spl = {};
+                        // 210
+                        anc['210_SD420'] = { 10: 420, 13: 560, 16: 700, 19: 840, 22: 1100, 25: 1420, 29: 1870, 32: 2370, 36: 2890 };
+                        spl['210_SD420'] = { 10: 550, 13: 730, 16: 910, 19: 1100, 22: 1430, 25: 1850, 29: 2440, 32: 3090, 36: 3760 };
+                        // 280
+                        anc['280_SD420'] = { 10: 360, 13: 490, 16: 600, 19: 730, 22: 950, 25: 1230, 29: 1620, 32: 2050, 36: 2500 };
+                        spl['280_SD420'] = { 10: 470, 13: 640, 16: 790, 19: 950, 22: 1240, 25: 1600, 29: 2110, 32: 2670, 36: 3250 };
+                        // 350
+                        anc['350_SD420'] = { 10: 340, 13: 450, 16: 550, 19: 670, 22: 870, 25: 1130, 29: 1490, 32: 1890, 36: 2310 };
+                        spl['350_SD420'] = { 10: 440, 13: 590, 16: 720, 19: 870, 22: 1140, 25: 1470, 29: 1940, 32: 2460, 36: 3010 };
+                        return { anchorageValues: anc, spliceValues: spl };
+                    }
+                },
+                ACI: {
+                    name: 'ACI 318-19',
+                    mode: 'ByFactor',
+                    availableConcrete: ['3000', '4000', '5000', '6000'],
+                    availableSteel: ['Grade40', 'Grade60'],
+                    selectedConcrete: ['4000', '5000'],
+                    selectedSteel: ['Grade60'],
+                    generateData: () => {
+                        const anc = {}, spl = {};
+                        ['4000', '5000'].forEach(c => {
+                            ['Grade60'].forEach(s => {
+                                const key = `${c}_${s}`;
+                                let base = c === '4000' ? 48 : 42;
+                                anc[key] = {}; spl[key] = {};
+                                DIAMETERS.forEach(d => { anc[key][d] = base; spl[key][d] = Math.round(base * 1.3); });
+                            });
                         });
-                    });
-                    return { anchorageValues: anc, spliceValues: spl };
-                }
-            },
-            EUROCODE: {
-                name: 'Eurocode 2',
-                mode: 'ByFactor',
-                availableConcrete: ['C20/25', 'C25/30', 'C30/37', 'C35/45'],
-                availableSteel: ['B500A', 'B500B', 'B500C'],
-                selectedConcrete: ['C25/30', 'C30/37'],
-                selectedSteel: ['B500B'],
-                generateData: () => {
-                    const anc = {}, spl = {};
-                    ['C25/30', 'C30/37'].forEach(c => {
-                        ['B500B'].forEach(s => {
-                            const key = `${c}_${s}`;
-                            let base = c === 'C25/30' ? 44 : 38;
-                            anc[key] = {}; spl[key] = {};
-                            DIAMETERS.forEach(d => { anc[key][d] = base; spl[key][d] = Math.round(base * 1.5); });
+                        return { anchorageValues: anc, spliceValues: spl };
+                    }
+                },
+                EUROCODE: {
+                    name: 'Eurocode 2',
+                    mode: 'ByFactor',
+                    availableConcrete: ['C20/25', 'C25/30', 'C30/37', 'C35/45'],
+                    availableSteel: ['B500A', 'B500B', 'B500C'],
+                    selectedConcrete: ['C25/30', 'C30/37'],
+                    selectedSteel: ['B500B'],
+                    generateData: () => {
+                        const anc = {}, spl = {};
+                        ['C25/30', 'C30/37'].forEach(c => {
+                            ['B500B'].forEach(s => {
+                                const key = `${c}_${s}`;
+                                let base = c === 'C25/30' ? 44 : 38;
+                                anc[key] = {}; spl[key] = {};
+                                DIAMETERS.forEach(d => { anc[key][d] = base; spl[key][d] = Math.round(base * 1.5); });
+                            });
                         });
-                    });
-                    return { anchorageValues: anc, spliceValues: spl };
-                }
-            }
-        };
-
-        function loadPreset(presetName) {
-            const preset = PRESETS[presetName];
-            if (!preset) return;
-
-            anchorageState.standardName = preset.name;
-            anchorageState.mode = preset.mode;
-            anchorageState.availableConcrete = [...preset.availableConcrete];
-            anchorageState.availableSteel = [...preset.availableSteel];
-            anchorageState.selectedConcrete = [...preset.selectedConcrete];
-            anchorageState.selectedSteel = [...preset.selectedSteel];
-
-            const data = preset.generateData();
-            anchorageState.anchorageValues = data.anchorageValues;
-            anchorageState.spliceValues = data.spliceValues;
-
-            // Update UI
-            document.getElementById('currentStandard').textContent = preset.name;
-            document.querySelector(`input[name="calcMode"][value="${preset.mode}"]`).checked = true;
-            highlightPresetButton(presetName);
-            updateModeLabel();
-            updateAnchorageHint();
-            renderShuttleSelectors();
-            renderDiameterMatrices();
-        }
-
-        function highlightPresetButton(activePreset) {
-            ['TCVN', 'ACI', 'EUROCODE', 'RC'].forEach(p => {
-                const btn = document.getElementById('preset' + p);
-                if (btn) {
-                    if (p === activePreset) {
-                        btn.classList.remove('btn-secondary');
-                        btn.classList.add('btn-primary');
-                    } else {
-                        btn.classList.remove('btn-primary');
-                        btn.classList.add('btn-secondary');
+                        return { anchorageValues: anc, spliceValues: spl };
                     }
                 }
-            });
-        }
+            };
 
-        // ===== MODE SWITCH WITH AUTO-CONVERT =====
-        function switchMode(newMode) {
-            const oldMode = anchorageState.mode;
-            if (oldMode === newMode) return;
+            function loadPreset(presetName) {
+                const preset = PRESETS[presetName];
+                if (!preset) return;
 
-            // Auto-convert values without confirm
-            [anchorageState.anchorageValues, anchorageState.spliceValues].forEach(valueMap => {
-                for (const key in valueMap) {
-                    for (const d in valueMap[key]) {
-                        const diameter = parseInt(d);
-                        let val = valueMap[key][d];
-                        if (newMode === 'ByLength' && oldMode === 'ByFactor') {
-                            valueMap[key][d] = Math.round(val * diameter);
-                        } else if (newMode === 'ByFactor' && oldMode === 'ByLength') {
-                            valueMap[key][d] = Math.round(val / diameter);
+                anchorageState.standardName = preset.name;
+                anchorageState.mode = preset.mode;
+                anchorageState.availableConcrete = [...preset.availableConcrete];
+                anchorageState.availableSteel = [...preset.availableSteel];
+                anchorageState.selectedConcrete = [...preset.selectedConcrete];
+                anchorageState.selectedSteel = [...preset.selectedSteel];
+
+                const data = preset.generateData();
+                anchorageState.anchorageValues = data.anchorageValues;
+                anchorageState.spliceValues = data.spliceValues;
+
+                // Update UI
+                document.getElementById('currentStandard').textContent = preset.name;
+                document.querySelector(`input[name="calcMode"][value="${preset.mode}"]`).checked = true;
+                highlightPresetButton(presetName);
+                updateModeLabel();
+                updateAnchorageHint();
+                renderShuttleSelectors();
+                renderDiameterMatrices();
+            }
+
+            function highlightPresetButton(activePreset) {
+                ['TCVN', 'ACI', 'EUROCODE', 'RC'].forEach(p => {
+                    const btn = document.getElementById('preset' + p);
+                    if (btn) {
+                        if (p === activePreset) {
+                            btn.classList.remove('btn-secondary');
+                            btn.classList.add('btn-primary');
+                        } else {
+                            btn.classList.remove('btn-primary');
+                            btn.classList.add('btn-secondary');
                         }
                     }
+                });
+            }
+
+            // ===== MODE SWITCH WITH AUTO-CONVERT =====
+            function switchMode(newMode) {
+                const oldMode = anchorageState.mode;
+                if (oldMode === newMode) return;
+
+                // Auto-convert values without confirm
+                [anchorageState.anchorageValues, anchorageState.spliceValues].forEach(valueMap => {
+                    for (const key in valueMap) {
+                        for (const d in valueMap[key]) {
+                            const diameter = parseInt(d);
+                            let val = valueMap[key][d];
+                            if (newMode === 'ByLength' && oldMode === 'ByFactor') {
+                                valueMap[key][d] = Math.round(val * diameter);
+                            } else if (newMode === 'ByFactor' && oldMode === 'ByLength') {
+                                valueMap[key][d] = Math.round(val / diameter);
+                            }
+                        }
+                    }
+                });
+
+                anchorageState.mode = newMode;
+                updateModeLabel();
+                updateAnchorageHint();
+                renderDiameterMatrices();
+            }
+
+            function updateModeLabel() {
+                const label = document.getElementById('currentModeLabel');
+                if (label) {
+                    label.textContent = anchorageState.mode === 'ByLength' ? 'Chiều dài mm' : 'Hệ số ×d';
                 }
-            });
-
-            anchorageState.mode = newMode;
-            updateModeLabel();
-            updateAnchorageHint();
-            renderDiameterMatrices();
-        }
-
-        function updateModeLabel() {
-            const label = document.getElementById('currentModeLabel');
-            if (label) {
-                label.textContent = anchorageState.mode === 'ByLength' ? 'Chiều dài mm' : 'Hệ số ×d';
             }
-        }
 
-        function updateAnchorageHint() {
-            const hint = document.getElementById('anchorageHint');
-            if (anchorageState.mode === 'ByLength') {
-                hint.textContent = 'Nhập chiều dài tuyệt đối (mm). VD: 800 = 800mm';
-            } else {
-                hint.textContent = 'Nhập hệ số ×d. VD: 40 = 40×d = 40×20mm = 800mm';
-            }
-        }
-
-        // ===== SHUTTLE SELECTOR =====
-        function renderShuttleSelectors() {
-            // Concrete
-            const availC = document.getElementById('availableConcrete');
-            const selC = document.getElementById('selectedConcrete');
-            availC.innerHTML = anchorageState.availableConcrete
-                .filter(g => !anchorageState.selectedConcrete.includes(g))
-                .map(g => `<option value="${g}">${g}</option>`).join('');
-            selC.innerHTML = sortGrades(anchorageState.selectedConcrete)
-                .map(g => `<option value="${g}">${g}</option>`).join('');
-
-            // Steel
-            const availS = document.getElementById('availableSteel');
-            const selS = document.getElementById('selectedSteel');
-            availS.innerHTML = anchorageState.availableSteel
-                .filter(g => !anchorageState.selectedSteel.includes(g))
-                .map(g => `<option value="${g}">${g}</option>`).join('');
-            selS.innerHTML = sortGrades(anchorageState.selectedSteel)
-                .map(g => `<option value="${g}">${g}</option>`).join('');
-        }
-
-        function sortGrades(grades) {
-            return grades.slice().sort((a, b) => {
-                const numA = parseFloat(a.replace(/[^0-9.]/g, '')) || 0;
-                const numB = parseFloat(b.replace(/[^0-9.]/g, '')) || 0;
-                return numA - numB;
-            });
-        }
-
-        function shuttleConcrete(action) {
-            const avail = document.getElementById('availableConcrete');
-            const sel = document.getElementById('selectedConcrete');
-            if (action === 'add') {
-                Array.from(avail.selectedOptions).forEach(opt => {
-                    anchorageState.selectedConcrete.push(opt.value);
-                });
-            } else {
-                const toRemove = Array.from(sel.selectedOptions).map(o => o.value);
-                anchorageState.selectedConcrete = anchorageState.selectedConcrete.filter(g => !toRemove.includes(g));
-            }
-            renderShuttleSelectors();
-            renderDiameterMatrices();
-        }
-
-        function shuttleSteel(action) {
-            const avail = document.getElementById('availableSteel');
-            const sel = document.getElementById('selectedSteel');
-            if (action === 'add') {
-                Array.from(avail.selectedOptions).forEach(opt => {
-                    anchorageState.selectedSteel.push(opt.value);
-                });
-            } else {
-                const toRemove = Array.from(sel.selectedOptions).map(o => o.value);
-                anchorageState.selectedSteel = anchorageState.selectedSteel.filter(g => !toRemove.includes(g));
-            }
-            renderShuttleSelectors();
-            renderDiameterMatrices();
-        }
-
-        // ===== EDIT MATERIAL LIST POPUP =====
-        function editMaterialList(type) {
-            const isConc = type === 'concrete';
-            const list = isConc ? anchorageState.availableConcrete : anchorageState.availableSteel;
-            const label = isConc ? 'Mác Bê tông' : 'Mác Thép';
-
-            const current = list.join(', ');
-            const input = prompt(
-                `Chỉnh sửa danh sách ${label}:\n\n` +
-                `Nhập các mác cách nhau bởi dấu phẩy (,)\n` +
-                `VD: B20, B25, B30\n\n` +
-                `Danh sách hiện tại:`,
-                current
-            );
-
-            if (input !== null) {
-                const newList = input.split(',').map(s => s.trim().toUpperCase()).filter(s => s);
-                if (isConc) {
-                    anchorageState.availableConcrete = newList;
-                    // Keep only selected items that still exist in available
-                    anchorageState.selectedConcrete = anchorageState.selectedConcrete.filter(g => newList.includes(g));
+            function updateAnchorageHint() {
+                const hint = document.getElementById('anchorageHint');
+                if (anchorageState.mode === 'ByLength') {
+                    hint.textContent = 'Nhập chiều dài tuyệt đối (mm). VD: 800 = 800mm';
                 } else {
-                    anchorageState.availableSteel = newList;
-                    anchorageState.selectedSteel = anchorageState.selectedSteel.filter(g => newList.includes(g));
+                    hint.textContent = 'Nhập hệ số ×d. VD: 40 = 40×d = 40×20mm = 800mm';
+                }
+            }
+
+            // ===== SHUTTLE SELECTOR =====
+            function renderShuttleSelectors() {
+                // Concrete
+                const availC = document.getElementById('availableConcrete');
+                const selC = document.getElementById('selectedConcrete');
+                availC.innerHTML = anchorageState.availableConcrete
+                    .filter(g => !anchorageState.selectedConcrete.includes(g))
+                    .map(g => `<option value="${g}">${g}</option>`).join('');
+                selC.innerHTML = sortGrades(anchorageState.selectedConcrete)
+                    .map(g => `<option value="${g}">${g}</option>`).join('');
+
+                // Steel
+                const availS = document.getElementById('availableSteel');
+                const selS = document.getElementById('selectedSteel');
+                availS.innerHTML = anchorageState.availableSteel
+                    .filter(g => !anchorageState.selectedSteel.includes(g))
+                    .map(g => `<option value="${g}">${g}</option>`).join('');
+                selS.innerHTML = sortGrades(anchorageState.selectedSteel)
+                    .map(g => `<option value="${g}">${g}</option>`).join('');
+            }
+
+            function sortGrades(grades) {
+                return grades.slice().sort((a, b) => {
+                    const numA = parseFloat(a.replace(/[^0-9.]/g, '')) || 0;
+                    const numB = parseFloat(b.replace(/[^0-9.]/g, '')) || 0;
+                    return numA - numB;
+                });
+            }
+
+            function shuttleConcrete(action) {
+                const avail = document.getElementById('availableConcrete');
+                const sel = document.getElementById('selectedConcrete');
+                if (action === 'add') {
+                    Array.from(avail.selectedOptions).forEach(opt => {
+                        anchorageState.selectedConcrete.push(opt.value);
+                    });
+                } else {
+                    const toRemove = Array.from(sel.selectedOptions).map(o => o.value);
+                    anchorageState.selectedConcrete = anchorageState.selectedConcrete.filter(g => !toRemove.includes(g));
                 }
                 renderShuttleSelectors();
                 renderDiameterMatrices();
             }
-        }
 
-        // ===== PRESET MANAGEMENT (Using data.UserPresets) =====
-        // Selected preset for deletion
-        let selectedPresetForDelete = null;
-
-        function renderSavedPresets() {
-            const container = document.getElementById('savedPresetsContainer');
-            if (!container) return;
-
-            const userPresets = data.UserPresets || {};
-            const presetNames = Object.keys(userPresets);
-
-            if (presetNames.length === 0) {
-                container.innerHTML = '<span style="color:#999;font-size:11px;">Chưa có preset</span>';
-                return;
+            function shuttleSteel(action) {
+                const avail = document.getElementById('availableSteel');
+                const sel = document.getElementById('selectedSteel');
+                if (action === 'add') {
+                    Array.from(avail.selectedOptions).forEach(opt => {
+                        anchorageState.selectedSteel.push(opt.value);
+                    });
+                } else {
+                    const toRemove = Array.from(sel.selectedOptions).map(o => o.value);
+                    anchorageState.selectedSteel = anchorageState.selectedSteel.filter(g => !toRemove.includes(g));
+                }
+                renderShuttleSelectors();
+                renderDiameterMatrices();
             }
 
-            // Larger buttons matching sample presets style, with click-to-select for delete
-            container.innerHTML = presetNames.map(name =>
-                `<button class="btn-secondary preset-user-btn" data-preset="${name}"
+            // ===== EDIT MATERIAL LIST POPUP =====
+            function editMaterialList(type) {
+                const isConc = type === 'concrete';
+                const list = isConc ? anchorageState.availableConcrete : anchorageState.availableSteel;
+                const label = isConc ? 'Mác Bê tông' : 'Mác Thép';
+
+                const current = list.join(', ');
+                const input = prompt(
+                    `Chỉnh sửa danh sách ${label}:\n\n` +
+                    `Nhập các mác cách nhau bởi dấu phẩy (,)\n` +
+                    `VD: B20, B25, B30\n\n` +
+                    `Danh sách hiện tại:`,
+                    current
+                );
+
+                if (input !== null) {
+                    const newList = input.split(',').map(s => s.trim().toUpperCase()).filter(s => s);
+                    if (isConc) {
+                        anchorageState.availableConcrete = newList;
+                        // Keep only selected items that still exist in available
+                        anchorageState.selectedConcrete = anchorageState.selectedConcrete.filter(g => newList.includes(g));
+                    } else {
+                        anchorageState.availableSteel = newList;
+                        anchorageState.selectedSteel = anchorageState.selectedSteel.filter(g => newList.includes(g));
+                    }
+                    renderShuttleSelectors();
+                    renderDiameterMatrices();
+                }
+            }
+
+            // ===== PRESET MANAGEMENT (Using data.UserPresets) =====
+            // Selected preset for deletion
+            let selectedPresetForDelete = null;
+
+            function renderSavedPresets() {
+                const container = document.getElementById('savedPresetsContainer');
+                if (!container) return;
+
+                const userPresets = data.UserPresets || {};
+                const presetNames = Object.keys(userPresets);
+
+                if (presetNames.length === 0) {
+                    container.innerHTML = '<span style="color:#999;font-size:11px;">Chưa có preset</span>';
+                    return;
+                }
+
+                // Larger buttons matching sample presets style, with click-to-select for delete
+                container.innerHTML = presetNames.map(name =>
+                    `<button class="btn-secondary preset-user-btn" data-preset="${name}"
                     onclick="loadUserPreset('${name.replace(/'/g, "\\'")}')"
                     oncontextmenu="event.preventDefault(); selectPresetForDelete('${name.replace(/'/g, "\\'")}'); return false;"
                     style="padding:4px 10px;" title="Click để tải | Chuột phải để chọn xóa">📁 ${name}</button>`
-            ).join('');
-        }
-
-        function loadUserPreset(name) {
-            if (!data.UserPresets || !data.UserPresets[name]) return;
-
-            const preset = data.UserPresets[name];
-
-            anchorageState.standardName = preset.StandardName || name;
-            anchorageState.mode = preset.Mode || 'ByFactor';
-            anchorageState.availableConcrete = preset.AvailableConcreteGrades || [];
-            anchorageState.availableSteel = preset.AvailableSteelGrades || [];
-            anchorageState.selectedConcrete = preset.ConcreteGrades || [];
-            anchorageState.selectedSteel = preset.SteelGrades || [];
-            anchorageState.anchorageValues = preset.AnchorageValues || {};
-            anchorageState.spliceValues = preset.SpliceValues || {};
-
-            document.getElementById('currentStandard').textContent = anchorageState.standardName;
-            const modeRadio = document.querySelector(`input[name="calcMode"][value="${anchorageState.mode}"]`);
-            if (modeRadio) modeRadio.checked = true;
-
-            highlightPresetButton(null);
-            updateModeLabel();
-            updateAnchorageHint();
-            renderShuttleSelectors();
-            renderDiameterMatrices();
-
-            // Clear delete selection
-            selectedPresetForDelete = null;
-            updateDeleteButtonState();
-        }
-
-        function loadSavedPresetByName(name) {
-            loadUserPreset(name);
-        }
-
-        function createNewPreset() {
-            const name = prompt('Nhập tên preset mới:');
-            if (!name) return;
-
-            // Keep current state instead of resetting
-            anchorageState.standardName = name;
-
-            // Save current state to data.UserPresets
-            const presetData = {
-                StandardName: name,
-                Mode: anchorageState.mode,
-                AvailableConcreteGrades: [...anchorageState.availableConcrete],
-                AvailableSteelGrades: [...anchorageState.availableSteel],
-                ConcreteGrades: [...anchorageState.selectedConcrete],
-                SteelGrades: [...anchorageState.selectedSteel],
-                AnchorageValues: JSON.parse(JSON.stringify(anchorageState.anchorageValues)),
-                SpliceValues: JSON.parse(JSON.stringify(anchorageState.spliceValues))
-            };
-            if (!data.UserPresets) data.UserPresets = {};
-            data.UserPresets[name] = presetData;
-
-            document.getElementById('currentStandard').textContent = name;
-            highlightPresetButton(null);
-            renderSavedPresets();
-            // No alert - will be saved when user clicks main Save button
-        }
-
-        function selectPresetForDelete(name) {
-            selectedPresetForDelete = name;
-            // Highlight selected preset
-            document.querySelectorAll('.preset-user-btn').forEach(btn => {
-                btn.classList.toggle('btn-danger', btn.dataset.preset === name);
-                btn.classList.toggle('btn-secondary', btn.dataset.preset !== name);
-            });
-            updateDeleteButtonState();
-        }
-
-        function updateDeleteButtonState() {
-            const deleteBtn = document.getElementById('btnDeletePreset');
-            if (deleteBtn) {
-                deleteBtn.disabled = !selectedPresetForDelete;
-                deleteBtn.title = selectedPresetForDelete
-                    ? `Xóa preset: ${selectedPresetForDelete}`
-                    : 'Chuột phải vào preset để chọn';
-            }
-        }
-
-        function deleteSavedPreset() {
-            if (!selectedPresetForDelete) {
-                // No selection - show hint
-                return;
+                ).join('');
             }
 
-            if (confirm(`Xóa preset "${selectedPresetForDelete}"?`)) {
-                delete data.UserPresets[selectedPresetForDelete];
+            function loadUserPreset(name) {
+                if (!data.UserPresets || !data.UserPresets[name]) return;
+
+                const preset = data.UserPresets[name];
+
+                anchorageState.standardName = preset.StandardName || name;
+                anchorageState.mode = preset.Mode || 'ByFactor';
+                anchorageState.availableConcrete = preset.AvailableConcreteGrades || [];
+                anchorageState.availableSteel = preset.AvailableSteelGrades || [];
+                anchorageState.selectedConcrete = preset.ConcreteGrades || [];
+                anchorageState.selectedSteel = preset.SteelGrades || [];
+                anchorageState.anchorageValues = preset.AnchorageValues || {};
+                anchorageState.spliceValues = preset.SpliceValues || {};
+
+                document.getElementById('currentStandard').textContent = anchorageState.standardName;
+                const modeRadio = document.querySelector(`input[name="calcMode"][value="${anchorageState.mode}"]`);
+                if (modeRadio) modeRadio.checked = true;
+
+                highlightPresetButton(null);
+                updateModeLabel();
+                updateAnchorageHint();
+                renderShuttleSelectors();
+                renderDiameterMatrices();
+
+                // Clear delete selection
                 selectedPresetForDelete = null;
-                renderSavedPresets();
                 updateDeleteButtonState();
             }
-        }
 
-        // ===== GET ACTIVE DIAMETERS FROM GENERAL TAB =====
-        function getActiveDiameters() {
-            const chips = document.querySelectorAll('#inventoryGrid .diameter-chip.active');
-            return Array.from(chips).map(c => parseInt(c.dataset.diameter)).sort((a, b) => a - b);
-        }
-
-        // ===== DIAMETER-BASED MATRIX WITH SYNC =====
-        function renderDiameterMatrices() {
-            renderDiameterMatrix('anchorageMatrixWrapper', anchorageState.anchorageValues, 'anc');
-            renderDiameterMatrix('spliceMatrixWrapper', anchorageState.spliceValues, 'spl');
-        }
-
-        function renderDiameterMatrix(wrapperId, valueMap, prefix) {
-            const wrapper = document.getElementById(wrapperId);
-            if (!wrapper) return;
-
-            const concretes = sortGrades(anchorageState.selectedConcrete);
-            const steels = sortGrades(anchorageState.selectedSteel);
-            const activeDiams = getActiveDiameters(); // Sync with General tab
-
-            if (concretes.length === 0 || steels.length === 0) {
-                wrapper.innerHTML = '<p style="color:#999;">Chọn vật liệu bên trên để hiển thị bảng.</p>';
-                return;
+            function loadSavedPresetByName(name) {
+                loadUserPreset(name);
             }
 
-            // Build material pairs as columns
-            const pairs = [];
-            concretes.forEach(c => steels.forEach(s => pairs.push({ c, s, key: `${c}_${s}` })));
+            function createNewPreset() {
+                const name = prompt('Nhập tên preset mới:');
+                if (!name) return;
 
-            let html = `<table id="${prefix}Table" class="matrix-table" style="width:100%;font-size:11px;border-collapse:collapse;">
+                // Keep current state instead of resetting
+                anchorageState.standardName = name;
+
+                // Save current state to data.UserPresets
+                const presetData = {
+                    StandardName: name,
+                    Mode: anchorageState.mode,
+                    AvailableConcreteGrades: [...anchorageState.availableConcrete],
+                    AvailableSteelGrades: [...anchorageState.availableSteel],
+                    ConcreteGrades: [...anchorageState.selectedConcrete],
+                    SteelGrades: [...anchorageState.selectedSteel],
+                    AnchorageValues: JSON.parse(JSON.stringify(anchorageState.anchorageValues)),
+                    SpliceValues: JSON.parse(JSON.stringify(anchorageState.spliceValues))
+                };
+                if (!data.UserPresets) data.UserPresets = {};
+                data.UserPresets[name] = presetData;
+
+                document.getElementById('currentStandard').textContent = name;
+                highlightPresetButton(null);
+                renderSavedPresets();
+                // No alert - will be saved when user clicks main Save button
+            }
+
+            function selectPresetForDelete(name) {
+                selectedPresetForDelete = name;
+                // Highlight selected preset
+                document.querySelectorAll('.preset-user-btn').forEach(btn => {
+                    btn.classList.toggle('btn-danger', btn.dataset.preset === name);
+                    btn.classList.toggle('btn-secondary', btn.dataset.preset !== name);
+                });
+                updateDeleteButtonState();
+            }
+
+            function updateDeleteButtonState() {
+                const deleteBtn = document.getElementById('btnDeletePreset');
+                if (deleteBtn) {
+                    deleteBtn.disabled = !selectedPresetForDelete;
+                    deleteBtn.title = selectedPresetForDelete
+                        ? `Xóa preset: ${selectedPresetForDelete}`
+                        : 'Chuột phải vào preset để chọn';
+                }
+            }
+
+            function deleteSavedPreset() {
+                if (!selectedPresetForDelete) {
+                    // No selection - show hint
+                    return;
+                }
+
+                if (confirm(`Xóa preset "${selectedPresetForDelete}"?`)) {
+                    delete data.UserPresets[selectedPresetForDelete];
+                    selectedPresetForDelete = null;
+                    renderSavedPresets();
+                    updateDeleteButtonState();
+                }
+            }
+
+            // ===== GET ACTIVE DIAMETERS FROM GENERAL TAB =====
+            function getActiveDiameters() {
+                const chips = document.querySelectorAll('#inventoryGrid .diameter-chip.active');
+                return Array.from(chips).map(c => parseInt(c.dataset.diameter)).sort((a, b) => a - b);
+            }
+
+            // ===== DIAMETER-BASED MATRIX WITH SYNC =====
+            function renderDiameterMatrices() {
+                renderDiameterMatrix('anchorageMatrixWrapper', anchorageState.anchorageValues, 'anc');
+                renderDiameterMatrix('spliceMatrixWrapper', anchorageState.spliceValues, 'spl');
+            }
+
+            function renderDiameterMatrix(wrapperId, valueMap, prefix) {
+                const wrapper = document.getElementById(wrapperId);
+                if (!wrapper) return;
+
+                const concretes = sortGrades(anchorageState.selectedConcrete);
+                const steels = sortGrades(anchorageState.selectedSteel);
+                const activeDiams = getActiveDiameters(); // Sync with General tab
+
+                if (concretes.length === 0 || steels.length === 0) {
+                    wrapper.innerHTML = '<p style="color:#999;">Chọn vật liệu bên trên để hiển thị bảng.</p>';
+                    return;
+                }
+
+                // Build material pairs as columns
+                const pairs = [];
+                concretes.forEach(c => steels.forEach(s => pairs.push({ c, s, key: `${c}_${s}` })));
+
+                let html = `<table id="${prefix}Table" class="matrix-table" style="width:100%;font-size:11px;border-collapse:collapse;">
                 <thead><tr>
                     <th style="border:1px solid #ccc;background:#e3f2fd;padding:4px;min-width:40px;">Ø</th>`;
-            pairs.forEach((p, colIdx) => {
-                html += `<th style="border:1px solid #ccc;background:#f0f0f0;padding:4px;text-align:center;min-width:55px;cursor:pointer;" onclick="selectMatrixCol('${prefix}', ${colIdx}, ${DIAMETERS.length})">${p.c}<br>${p.s}</th>`;
-            });
-            html += '</tr></thead><tbody>';
+                pairs.forEach((p, colIdx) => {
+                    html += `<th style="border:1px solid #ccc;background:#f0f0f0;padding:4px;text-align:center;min-width:55px;cursor:pointer;" onclick="selectMatrixCol('${prefix}', ${colIdx}, ${DIAMETERS.length})">${p.c}<br>${p.s}</th>`;
+                });
+                html += '</tr></thead><tbody>';
 
-            DIAMETERS.forEach((d, rowIdx) => {
-                const isActive = activeDiams.length === 0 || activeDiams.includes(d);
-                const rowStyle = isActive ? '' : 'opacity:0.4;background:#f9f9f9;';
-                html += `<tr style="${rowStyle}"><td style="border:1px solid #ccc;background:#f5f5f5;padding:4px;font-weight:600;cursor:pointer;" onclick="selectMatrixRow('${prefix}', ${rowIdx}, ${pairs.length})">D${d}</td>`;
-                pairs.forEach(p => {
-                    const val = valueMap[p.key]?.[d] ?? '';
-                    html += `<td style="border:1px solid #ccc;padding:0;"><input type="text" 
+                DIAMETERS.forEach((d, rowIdx) => {
+                    const isActive = activeDiams.length === 0 || activeDiams.includes(d);
+                    const rowStyle = isActive ? '' : 'opacity:0.4;background:#f9f9f9;';
+                    html += `<tr style="${rowStyle}"><td style="border:1px solid #ccc;background:#f5f5f5;padding:4px;font-weight:600;cursor:pointer;" onclick="selectMatrixRow('${prefix}', ${rowIdx}, ${pairs.length})">D${d}</td>`;
+                    pairs.forEach(p => {
+                        const val = valueMap[p.key]?.[d] ?? '';
+                        html += `<td style="border:1px solid #ccc;padding:0;"><input type="text" 
                         data-prefix="${prefix}" data-key="${p.key}" data-diameter="${d}"
                         value="${val}" style="width:100%;text-align:center;border:none;background:transparent;padding:3px;box-sizing:border-box;"
                         onchange="updateMatrixValue(this)" onfocus="this.select()"></td>`;
+                    });
+                    html += '</tr>';
                 });
-                html += '</tr>';
-            });
-            html += '</tbody></table>';
-            wrapper.innerHTML = html;
+                html += '</tbody></table>';
+                wrapper.innerHTML = html;
 
-            // Add event listeners for Excel-like behavior
-            const allInputs = wrapper.querySelectorAll('input');
-            allInputs.forEach((input, idx) => {
-                input.addEventListener('paste', handleExcelPaste);
-                input.addEventListener('keydown', (e) => handleMatrixKeydown(e, allInputs, idx, pairs.length));
-            });
-        }
+                // Add event listeners for Excel-like behavior
+                const allInputs = wrapper.querySelectorAll('input');
+                allInputs.forEach((input, idx) => {
+                    input.addEventListener('paste', handleExcelPaste);
+                    input.addEventListener('keydown', (e) => handleMatrixKeydown(e, allInputs, idx, pairs.length));
+                });
+            }
 
-        // ===== EXCEL KEYBOARD NAVIGATION =====
-        function handleMatrixKeydown(e, allInputs, currentIdx, colCount) {
-            const key = e.key;
-            const ctrl = e.ctrlKey;
+            // ===== EXCEL KEYBOARD NAVIGATION =====
+            function handleMatrixKeydown(e, allInputs, currentIdx, colCount) {
+                const key = e.key;
+                const ctrl = e.ctrlKey;
 
-            // Ctrl+A = select ALL cells in the table
-            if (ctrl && key === 'a') {
-                e.preventDefault();
-                allInputs.forEach(inp => {
+                // Ctrl+A = select ALL cells in the table
+                if (ctrl && key === 'a') {
+                    e.preventDefault();
+                    allInputs.forEach(inp => {
+                        inp.classList.add('selected');
+                        inp.style.background = '#bbdefb';
+                    });
+                    return;
+                }
+
+                // Arrow key navigation
+                let newIdx = currentIdx;
+                if (key === 'ArrowRight' || key === 'Tab') {
+                    if (!e.shiftKey) {
+                        newIdx = currentIdx + 1;
+                        if (key === 'Tab') e.preventDefault();
+                    }
+                } else if (key === 'ArrowLeft' || (key === 'Tab' && e.shiftKey)) {
+                    newIdx = currentIdx - 1;
+                    if (key === 'Tab') e.preventDefault();
+                } else if (key === 'ArrowDown' || key === 'Enter') {
+                    newIdx = currentIdx + colCount;
+                    e.preventDefault();
+                } else if (key === 'ArrowUp') {
+                    newIdx = currentIdx - colCount;
+                    e.preventDefault();
+                }
+
+                // Ctrl + Arrow = jump to edge
+                if (ctrl) {
+                    if (key === 'ArrowRight') newIdx = Math.floor(currentIdx / colCount) * colCount + colCount - 1;
+                    else if (key === 'ArrowLeft') newIdx = Math.floor(currentIdx / colCount) * colCount;
+                    else if (key === 'ArrowDown') newIdx = (allInputs.length - colCount) + (currentIdx % colCount);
+                    else if (key === 'ArrowUp') newIdx = currentIdx % colCount;
+                }
+
+                // Focus new cell if valid
+                if (newIdx >= 0 && newIdx < allInputs.length && newIdx !== currentIdx) {
+                    allInputs[newIdx].focus();
+                    allInputs[newIdx].select();
+                }
+            }
+
+            // ===== MATRIX SELECTION HELPERS =====
+            function selectMatrixRow(prefix, rowIdx, colCount) {
+                clearMatrixSelection();
+                const table = document.getElementById(prefix + 'Table');
+                if (!table) return;
+                const inputs = table.querySelectorAll('tbody tr')[rowIdx]?.querySelectorAll('input');
+                inputs?.forEach(inp => {
                     inp.classList.add('selected');
                     inp.style.background = '#bbdefb';
                 });
-                return;
             }
 
-            // Arrow key navigation
-            let newIdx = currentIdx;
-            if (key === 'ArrowRight' || key === 'Tab') {
-                if (!e.shiftKey) {
-                    newIdx = currentIdx + 1;
-                    if (key === 'Tab') e.preventDefault();
-                }
-            } else if (key === 'ArrowLeft' || (key === 'Tab' && e.shiftKey)) {
-                newIdx = currentIdx - 1;
-                if (key === 'Tab') e.preventDefault();
-            } else if (key === 'ArrowDown' || key === 'Enter') {
-                newIdx = currentIdx + colCount;
-                e.preventDefault();
-            } else if (key === 'ArrowUp') {
-                newIdx = currentIdx - colCount;
-                e.preventDefault();
-            }
-
-            // Ctrl + Arrow = jump to edge
-            if (ctrl) {
-                if (key === 'ArrowRight') newIdx = Math.floor(currentIdx / colCount) * colCount + colCount - 1;
-                else if (key === 'ArrowLeft') newIdx = Math.floor(currentIdx / colCount) * colCount;
-                else if (key === 'ArrowDown') newIdx = (allInputs.length - colCount) + (currentIdx % colCount);
-                else if (key === 'ArrowUp') newIdx = currentIdx % colCount;
-            }
-
-            // Focus new cell if valid
-            if (newIdx >= 0 && newIdx < allInputs.length && newIdx !== currentIdx) {
-                allInputs[newIdx].focus();
-                allInputs[newIdx].select();
-            }
-        }
-
-        // ===== MATRIX SELECTION HELPERS =====
-        function selectMatrixRow(prefix, rowIdx, colCount) {
-            clearMatrixSelection();
-            const table = document.getElementById(prefix + 'Table');
-            if (!table) return;
-            const inputs = table.querySelectorAll('tbody tr')[rowIdx]?.querySelectorAll('input');
-            inputs?.forEach(inp => {
-                inp.classList.add('selected');
-                inp.style.background = '#bbdefb';
-            });
-        }
-
-        function selectMatrixCol(prefix, colIdx, rowCount) {
-            clearMatrixSelection();
-            const table = document.getElementById(prefix + 'Table');
-            if (!table) return;
-            const rows = table.querySelectorAll('tbody tr');
-            rows.forEach(row => {
-                const inputs = row.querySelectorAll('input');
-                if (inputs[colIdx]) {
-                    inputs[colIdx].classList.add('selected');
-                    inputs[colIdx].style.background = '#bbdefb';
-                }
-            });
-        }
-
-        function clearMatrixSelection() {
-            document.querySelectorAll('.matrix-table input.selected').forEach(inp => {
-                inp.classList.remove('selected');
-                inp.style.background = 'transparent';
-            });
-        }
-
-        // ===== EXCEL PASTE SUPPORT =====
-        function handleExcelPaste(e) {
-            const clipData = e.clipboardData.getData('text');
-            if (!clipData.includes('\t') && !clipData.includes('\n')) return; // Not tabular data
-
-            e.preventDefault();
-            const rows = clipData.trim().split('\n').map(r => r.split('\t'));
-            const startInput = e.target;
-            const table = startInput.closest('table');
-            const allInputs = Array.from(table.querySelectorAll('input'));
-            const startIdx = allInputs.indexOf(startInput);
-            const colCount = table.querySelectorAll('thead th').length - 1; // Minus diameter column
-
-            let idx = startIdx;
-            rows.forEach(row => {
-                row.forEach(val => {
-                    if (allInputs[idx]) {
-                        const numVal = parseFloat(val) || 0;
-                        allInputs[idx].value = numVal;
-                        updateMatrixValue(allInputs[idx]);
+            function selectMatrixCol(prefix, colIdx, rowCount) {
+                clearMatrixSelection();
+                const table = document.getElementById(prefix + 'Table');
+                if (!table) return;
+                const rows = table.querySelectorAll('tbody tr');
+                rows.forEach(row => {
+                    const inputs = row.querySelectorAll('input');
+                    if (inputs[colIdx]) {
+                        inputs[colIdx].classList.add('selected');
+                        inputs[colIdx].style.background = '#bbdefb';
                     }
-                    idx++;
                 });
-                // Move to next row
-                idx = startIdx + (Math.floor((idx - startIdx) / colCount) + 1) * colCount;
-            });
-        }
-
-        function updateMatrixValue(input) {
-            const prefix = input.dataset.prefix;
-            const key = input.dataset.key;
-            const diameter = parseInt(input.dataset.diameter);
-            const value = parseFloat(input.value) || 0;
-
-            const map = prefix === 'anc' ? anchorageState.anchorageValues : anchorageState.spliceValues;
-            if (!map[key]) map[key] = {};
-            map[key][diameter] = value;
-        }
-
-        // ===== LOAD/SAVE =====
-        function loadAnchorageTab() {
-            // Load from data - use spread operator to copy arrays (avoid reference issues)
-            if (data.Anchorage?.StandardName) {
-                anchorageState.standardName = data.Anchorage.StandardName;
-            }
-            if (data.Anchorage?.Mode) {
-                anchorageState.mode = data.Anchorage.Mode;
-            }
-            // Use spread to create new arrays (prevent duplicates from default init)
-            if (data.Anchorage?.AvailableConcreteGrades?.length > 0) {
-                anchorageState.availableConcrete = [...data.Anchorage.AvailableConcreteGrades];
-            }
-            if (data.Anchorage?.AvailableSteelGrades?.length > 0) {
-                anchorageState.availableSteel = [...data.Anchorage.AvailableSteelGrades];
-            }
-            if (data.Anchorage?.ConcreteGrades?.length > 0) {
-                anchorageState.selectedConcrete = [...data.Anchorage.ConcreteGrades];
-            }
-            if (data.Anchorage?.SteelGrades?.length > 0) {
-                anchorageState.selectedSteel = [...data.Anchorage.SteelGrades];
-            }
-            if (data.Anchorage?.AnchorageValues) {
-                anchorageState.anchorageValues = JSON.parse(JSON.stringify(data.Anchorage.AnchorageValues));
-            }
-            if (data.Anchorage?.SpliceValues) {
-                anchorageState.spliceValues = JSON.parse(JSON.stringify(data.Anchorage.SpliceValues));
             }
 
-            // Update UI
-            document.getElementById('currentStandard').textContent = anchorageState.standardName;
-            const modeRadio = document.querySelector(`input[name="calcMode"][value="${anchorageState.mode}"]`);
-            if (modeRadio) modeRadio.checked = true;
-            updateAnchorageHint();
-            renderShuttleSelectors();
-            renderDiameterMatrices();
-        }
-
-        function collectAnchorageData() {
-            const getVal = (id) => { const el = document.getElementById(id); return el ? parseFloat(el.value) || 0 : 0; };
-
-            return {
-                StandardName: anchorageState.standardName,
-                Mode: anchorageState.mode,
-                AvailableConcreteGrades: [...anchorageState.availableConcrete],
-                AvailableSteelGrades: [...anchorageState.availableSteel],
-                ConcreteGrades: [...anchorageState.selectedConcrete],
-                SteelGrades: [...anchorageState.selectedSteel],
-                AnchorageValues: JSON.parse(JSON.stringify(anchorageState.anchorageValues)),
-                SpliceValues: JSON.parse(JSON.stringify(anchorageState.spliceValues)),
-                Hook90Factor: getVal('Hook90Factor') || 12,
-                MinHook90Length: getVal('MinHook90Length') || 150,
-                Hook135Factor: getVal('Hook135Factor') || 6,
-                Hook180Factor: getVal('Hook180Factor') || 4,
-                MinHookLength: getVal('MinHookLength') || 75,
-                DefaultAnchorageFactor: getVal('DefaultAnchorageFactor') || 40,
-                DefaultSpliceFactor: getVal('DefaultSpliceFactor') || 52
-            };
-        }
-
-        // === MATERIAL SYNC FROM ANCHORAGE TAB ===
-        // Grade lookup tables (common Vietnamese/International standards)
-        const steelGradeLookup = {
-            'CB240-T': 240, 'CB300-V': 300, 'CB300-T': 300,
-            'CB400-V': 400, 'CB400-T': 400, 'CB500-V': 500, 'CB500-T': 500,
-            'SD295': 295, 'SD345': 345, 'SD420': 420, 'SD500': 500,
-            'Fy500': 500, 'Fy420': 420, 'Fy300': 300
-        };
-        const concreteGradeLookup = {
-            'B15': 11, 'B20': 14, 'B22.5': 16, 'B25': 18, 'B30': 22,
-            'B35': 25, 'B40': 29, 'B45': 32, 'B50': 36, 'B55': 40, 'B60': 43,
-            'C20': 20, 'C25': 25, 'C30': 30, 'C35': 35, 'C40': 40, 'C50': 50
-        };
-
-        function syncMaterialsFromAnchorage() {
-            // Get selected items from Anchorage tab (shuttle lists)
-            const selectedSteelSel = document.getElementById('selectedSteel');
-            const selectedConcreteSel = document.getElementById('selectedConcrete');
-
-            if (!selectedSteelSel || !selectedConcreteSel) {
-                alert('Chưa có dữ liệu. Vui lòng vào tab "Neo & Nối" và chọn vật liệu trước.');
-                return;
-            }
-
-            // Update Steel dropdown
-            const steelDropdown = document.getElementById('SteelGradeName');
-            const steelOptions = Array.from(selectedSteelSel.options);
-            if (steelOptions.length > 0) {
-                const currentVal = steelDropdown.value;
-                steelDropdown.innerHTML = '';
-                steelOptions.forEach(opt => {
-                    const newOpt = document.createElement('option');
-                    newOpt.value = opt.value;
-                    newOpt.textContent = opt.textContent;
-                    steelDropdown.appendChild(newOpt);
+            function clearMatrixSelection() {
+                document.querySelectorAll('.matrix-table input.selected').forEach(inp => {
+                    inp.classList.remove('selected');
+                    inp.style.background = 'transparent';
                 });
-                // Try to keep current selection, else select first
-                if (steelOptions.some(o => o.value === currentVal)) {
-                    steelDropdown.value = currentVal;
-                } else {
-                    steelDropdown.selectedIndex = 0;
+            }
+
+            // ===== EXCEL PASTE SUPPORT =====
+            function handleExcelPaste(e) {
+                const clipData = e.clipboardData.getData('text');
+                if (!clipData.includes('\t') && !clipData.includes('\n')) return; // Not tabular data
+
+                e.preventDefault();
+                const rows = clipData.trim().split('\n').map(r => r.split('\t'));
+                const startInput = e.target;
+                const table = startInput.closest('table');
+                const allInputs = Array.from(table.querySelectorAll('input'));
+                const startIdx = allInputs.indexOf(startInput);
+                const colCount = table.querySelectorAll('thead th').length - 1; // Minus diameter column
+
+                let idx = startIdx;
+                rows.forEach(row => {
+                    row.forEach(val => {
+                        if (allInputs[idx]) {
+                            const numVal = parseFloat(val) || 0;
+                            allInputs[idx].value = numVal;
+                            updateMatrixValue(allInputs[idx]);
+                        }
+                        idx++;
+                    });
+                    // Move to next row
+                    idx = startIdx + (Math.floor((idx - startIdx) / colCount) + 1) * colCount;
+                });
+            }
+
+            function updateMatrixValue(input) {
+                const prefix = input.dataset.prefix;
+                const key = input.dataset.key;
+                const diameter = parseInt(input.dataset.diameter);
+                const value = parseFloat(input.value) || 0;
+
+                const map = prefix === 'anc' ? anchorageState.anchorageValues : anchorageState.spliceValues;
+                if (!map[key]) map[key] = {};
+                map[key][diameter] = value;
+            }
+
+            // ===== LOAD/SAVE =====
+            function loadAnchorageTab() {
+                // Load from data - use spread operator to copy arrays (avoid reference issues)
+                if (data.Anchorage?.StandardName) {
+                    anchorageState.standardName = data.Anchorage.StandardName;
                 }
-                onSteelGradeChange();
-            }
-
-            // Update Concrete dropdown
-            const concreteDropdown = document.getElementById('ConcreteGradeName');
-            const concreteOptions = Array.from(selectedConcreteSel.options);
-            if (concreteOptions.length > 0) {
-                const currentVal = concreteDropdown.value;
-                concreteDropdown.innerHTML = '';
-                concreteOptions.forEach(opt => {
-                    const newOpt = document.createElement('option');
-                    newOpt.value = opt.value;
-                    newOpt.textContent = opt.textContent;
-                    concreteDropdown.appendChild(newOpt);
-                });
-                if (concreteOptions.some(o => o.value === currentVal)) {
-                    concreteDropdown.value = currentVal;
-                } else {
-                    concreteDropdown.selectedIndex = 0;
+                if (data.Anchorage?.Mode) {
+                    anchorageState.mode = data.Anchorage.Mode;
                 }
-                onConcreteGradeChange();
+                // Use spread to create new arrays (prevent duplicates from default init)
+                if (data.Anchorage?.AvailableConcreteGrades?.length > 0) {
+                    anchorageState.availableConcrete = [...data.Anchorage.AvailableConcreteGrades];
+                }
+                if (data.Anchorage?.AvailableSteelGrades?.length > 0) {
+                    anchorageState.availableSteel = [...data.Anchorage.AvailableSteelGrades];
+                }
+                if (data.Anchorage?.ConcreteGrades?.length > 0) {
+                    anchorageState.selectedConcrete = [...data.Anchorage.ConcreteGrades];
+                }
+                if (data.Anchorage?.SteelGrades?.length > 0) {
+                    anchorageState.selectedSteel = [...data.Anchorage.SteelGrades];
+                }
+                if (data.Anchorage?.AnchorageValues) {
+                    anchorageState.anchorageValues = JSON.parse(JSON.stringify(data.Anchorage.AnchorageValues));
+                }
+                if (data.Anchorage?.SpliceValues) {
+                    anchorageState.spliceValues = JSON.parse(JSON.stringify(data.Anchorage.SpliceValues));
+                }
+
+                // Update UI
+                document.getElementById('currentStandard').textContent = anchorageState.standardName;
+                const modeRadio = document.querySelector(`input[name="calcMode"][value="${anchorageState.mode}"]`);
+                if (modeRadio) modeRadio.checked = true;
+                updateAnchorageHint();
+                renderShuttleSelectors();
+                renderDiameterMatrices();
             }
 
-            alert('✅ Đã đồng bộ vật liệu từ tab Neo & Nối!');
-        }
+            function collectAnchorageData() {
+                const getVal = (id) => { const el = document.getElementById(id); return el ? parseFloat(el.value) || 0 : 0; };
 
-        function onSteelGradeChange() {
-            const sel = document.getElementById('SteelGradeName');
-            const fyInput = document.getElementById('SteelGradeMain');
-            if (!sel || !fyInput) return;
-
-            const gradeName = sel.value;
-            // Lookup fy, fallback to current value
-            if (steelGradeLookup[gradeName]) {
-                fyInput.value = steelGradeLookup[gradeName];
-            }
-        }
-
-        function onConcreteGradeChange() {
-            const sel = document.getElementById('ConcreteGradeName');
-            const fcInput = document.getElementById('ConcreteGrade');
-            if (!sel || !fcInput) return;
-
-            const gradeName = sel.value;
-            // Lookup f'c, fallback to current value
-            if (concreteGradeLookup[gradeName]) {
-                fcInput.value = concreteGradeLookup[gradeName];
-            }
-        }
-
-        function loadForm() {
-            const setId = (id, val) => { const el = document.getElementById(id); if (el) el.value = val ?? ''; };
-            const setChk = (id, val) => { const el = document.getElementById(id); if (el) el.checked = val || false; };
-
-            // Build inventory grid
-            buildInventoryGrid();
-
-            // Tab 0: General
-            setId('ZoneL1_Ratio', data.General?.ZoneL1_Ratio);
-            setId('ZoneL2_Ratio', data.General?.ZoneL2_Ratio);
-            if (data.General?.Unit) document.getElementById('Unit').value = data.General.Unit;
-            setId('TextHeight', data.General?.TextHeight ?? 1);
-            // Material Grades
-            setId('SteelGradeName', data.General?.SteelGradeName ?? 'CB400-V');
-            setId('SteelGradeMain', data.General?.SteelGradeMain ?? 400);
-            setId('SteelGradeStirrup', data.General?.SteelGradeStirrup ?? 300);
-            setId('ConcreteGradeName', data.General?.ConcreteGradeName ?? 'B25');
-            setId('ConcreteGrade', data.General?.ConcreteGrade ?? 25);
-
-            // Tab 1: Beam
-            setId('MainBarRange', data.Beam?.MainBarRange);
-            setId('StirrupBarRange', data.Beam?.StirrupBarRange);
-            setId('SideBarRange', data.Beam?.SideBarRange);
-            setId('CoverTop', data.Beam?.CoverTop);
-            setId('CoverBot', data.Beam?.CoverBot);
-            setId('CoverSide', data.Beam?.CoverSide);
-            // Clear Spacing
-            setChk('UseBarDiameterForSpacing', data.Beam?.UseBarDiameterForSpacing ?? true);
-            setId('BarDiameterSpacingMultiplier', data.Beam?.BarDiameterSpacingMultiplier ?? 1.0);
-            setId('MinClearSpacing', data.Beam?.MinClearSpacing);
-            setId('MaxClearSpacing', data.Beam?.MaxClearSpacing);
-            // Torsion (new names)
-            setId('TorsionDist_TopBar', data.Beam?.TorsionDist_TopBar ?? data.Beam?.TorsionDist_Top);
-            setId('TorsionDist_BotBar', data.Beam?.TorsionDist_BotBar ?? data.Beam?.TorsionDist_Bot);
-            setId('TorsionDist_SideBar', data.Beam?.TorsionDist_SideBar ?? data.Beam?.TorsionDist_Side);
-            // Auto Arrangement
-            setId('MaxLayers', data.Beam?.MaxLayers ?? 2);
-            setId('MinBarsPerLayer', data.Beam?.MinBarsPerLayer ?? 2);
-            setId('WebBarMinHeight', data.Beam?.WebBarMinHeight);
-            setChk('PreferSingleDiameter', data.Beam?.PreferSingleDiameter ?? true);
-            setChk('PreferSymmetric', data.Beam?.PreferSymmetric);
-            setChk('PreferFewerBars', data.Beam?.PreferFewerBars ?? true);
-            setChk('PreferEvenDiameter', data.Beam?.PreferEvenDiameter);
-            // Stirrup Advanced
-            setId('MinReinforcementRatio', data.Beam?.MinReinforcementRatio);
-            setId('AutoLegsRules', data.Beam?.AutoLegsRules);
-            setChk('AllowOddLegs', data.Beam?.AllowOddLegs);
-            // Continuous Beam Rules
-            setChk('ForceContinuousDiameter', data.Beam?.ForceContinuousDiameter ?? true);
-            setChk('SingleDiameterPerSpan', data.Beam?.SingleDiameterPerSpan ?? true);
-            setChk('AllowDiameterMixing', data.Beam?.AllowDiameterMixing ?? false);
-            setId('MaxDiameterDiff', data.Beam?.MaxDiameterDiff ?? 1);
-            setId('StandardBarLength', data.Beam?.StandardBarLength ?? 11700);
-            setId('BeamLapSpliceMultiplier', data.Beam?.LapSpliceMultiplier ?? 40);
-            setChk('MatchTopLayerBars', data.Beam?.MatchTopLayerBars ?? true);
-
-            // Tab 2: Column
-            setId('ColMainBarRange', data.Column?.MainBarRange);
-            setId('ColStirrupBarRange', data.Column?.StirrupBarRange);
-            setId('ColCover', data.Column?.Cover);
-            setId('LapSpliceMultiplier', data.Column?.LapSpliceMultiplier);
-            setId('MinBarsPerSide', data.Column?.MinBarsPerSide);
-            setId('MaxStirrupSpacing', data.Column?.MaxStirrupSpacing);
-
-            // Tab 3: Naming
-            setId('BeamPrefix', data.Naming?.BeamPrefix);
-            setId('GirderPrefix', data.Naming?.GirderPrefix);
-            setId('ColumnPrefix', data.Naming?.ColumnPrefix);
-            setId('BeamSuffix', data.Naming?.BeamSuffix);
-            setChk('GroupByAxis', data.Naming?.GroupByAxis);
-            setChk('MergeSameSection', data.Naming?.MergeSameSection);
-            setChk('AutoRenameOnSectionChange', data.Naming?.AutoRenameOnSectionChange);
-
-            // Sort Corner
-            const corner = data.Naming?.SortCorner || 0;
-            setId('SortCorner', corner);
-            document.querySelectorAll('.corner-btn').forEach(btn => {
-                btn.classList.toggle('active', parseInt(btn.dataset.corner) === corner);
-                btn.onclick = () => {
-                    document.querySelectorAll('.corner-btn').forEach(b => b.classList.remove('active'));
-                    btn.classList.add('active');
-                    document.getElementById('SortCorner').value = btn.dataset.corner;
+                return {
+                    StandardName: anchorageState.standardName,
+                    Mode: anchorageState.mode,
+                    AvailableConcreteGrades: [...anchorageState.availableConcrete],
+                    AvailableSteelGrades: [...anchorageState.availableSteel],
+                    ConcreteGrades: [...anchorageState.selectedConcrete],
+                    SteelGrades: [...anchorageState.selectedSteel],
+                    AnchorageValues: JSON.parse(JSON.stringify(anchorageState.anchorageValues)),
+                    SpliceValues: JSON.parse(JSON.stringify(anchorageState.spliceValues)),
+                    Hook90Factor: getVal('Hook90Factor') || 12,
+                    MinHook90Length: getVal('MinHook90Length') || 150,
+                    Hook135Factor: getVal('Hook135Factor') || 6,
+                    Hook180Factor: getVal('Hook180Factor') || 4,
+                    MinHookLength: getVal('MinHookLength') || 75,
+                    DefaultAnchorageFactor: getVal('DefaultAnchorageFactor') || 40,
+                    DefaultSpliceFactor: getVal('DefaultSpliceFactor') || 52
                 };
-            });
-
-            // Sort Direction
-            const dir = data.Naming?.SortDirection || 0;
-            setId('SortDirection', dir);
-            document.querySelectorAll("input[name='sortDir']").forEach(radio => {
-                radio.checked = parseInt(radio.value) === dir;
-                radio.onchange = () => document.getElementById('SortDirection').value = radio.value;
-            });
-
-            // Tab 4: Anchorage - Matrix based
-            loadAnchorageTab();
-
-            // Hook settings
-            setId('Hook90Factor', data.Anchorage?.Hook90Factor ?? 12);
-            setId('MinHook90Length', data.Anchorage?.MinHook90Length ?? 150);
-            setId('Hook135Factor', data.Anchorage?.Hook135Factor ?? 6);
-            setId('Hook180Factor', data.Anchorage?.Hook180Factor ?? 4);
-            setId('MinHookLength', data.Anchorage?.MinHookLength ?? 75);
-            setId('DefaultAnchorageFactor', data.Anchorage?.DefaultAnchorageFactor ?? 40);
-            setId('DefaultSpliceFactor', data.Anchorage?.DefaultSpliceFactor ?? 52);
-
-            // Tab 5: Detailing
-            if (document.getElementById('MaxBarLength')) {
-                setId('MaxBarLength', data.Detailing?.MaxBarLength ?? 11700);
-                setId('MinBarLength', data.Detailing?.MinBarLength ?? 2000);
-                setId('MinStaggerDistance', data.Detailing?.MinStaggerDistance ?? 600);
-                setId('StaggerFactorLd', data.Detailing?.StaggerFactorLd ?? 1.3);
-                setChk('SkipSplice', data.Detailing?.SkipSplice ?? false);
-
-                // Beam Rule
-                document.getElementById('BeamTopSpliceZone').value = data.Detailing?.BeamRule?.TopSpliceZone ?? 2;
-                document.getElementById('BeamBotSpliceZone').value = data.Detailing?.BeamRule?.BotSpliceZone ?? 0;
-                setChk('BeamAllowLapInJoint', data.Detailing?.BeamRule?.AllowLapSpliceInJoint ?? false);
-
-                // Girder Rule
-                document.getElementById('GirderTopSpliceZone').value = data.Detailing?.GirderRule?.TopSpliceZone ?? 1;
-                document.getElementById('GirderBotSpliceZone').value = data.Detailing?.GirderRule?.BotSpliceZone ?? 0;
-                setChk('GirderAllowLapInJoint', data.Detailing?.GirderRule?.AllowLapSpliceInJoint ?? true);
             }
 
-            // Tab 4: Anchorage - Initialize saved presets and matrix
-            renderSavedPresets();
-            renderShuttleSelectors();
-            renderDiameterMatrices();
+            // === MATERIAL SYNC FROM ANCHORAGE TAB ===
+            // Grade lookup tables (common Vietnamese/International standards)
+            const steelGradeLookup = {
+                'CB240-T': 240, 'CB300-V': 300, 'CB300-T': 300,
+                'CB400-V': 400, 'CB400-T': 400, 'CB500-V': 500, 'CB500-T': 500,
+                'SD295': 295, 'SD345': 345, 'SD420': 420, 'SD500': 500,
+                'Fy500': 500, 'Fy420': 420, 'Fy300': 300
+            };
+            const concreteGradeLookup = {
+                'B15': 11, 'B20': 14, 'B22.5': 16, 'B25': 18, 'B30': 22,
+                'B35': 25, 'B40': 29, 'B45': 32, 'B50': 36, 'B55': 40, 'B60': 43,
+                'C20': 20, 'C25': 25, 'C30': 30, 'C35': 35, 'C40': 40, 'C50': 50
+            };
 
-            // Tab 3: Naming - Load Story Configs (NEW)
-            console.log('[loadForm] data.StoryConfigs:', data.StoryConfigs);
-            console.log('[loadForm] StoryConfigs length:', data.StoryConfigs?.length || 0);
-            loadStoryTable(data.StoryConfigs || []);
-            setId('StoryTolerance', data.StoryTolerance ?? 500);
-        }
+            function syncMaterialsFromAnchorage() {
+                // Get selected items from Anchorage tab (shuttle lists)
+                const selectedSteelSel = document.getElementById('selectedSteel');
+                const selectedConcreteSel = document.getElementById('selectedConcrete');
 
-        // ===== STORY CONFIGURATION FUNCTIONS (NEW) =====
-        function loadStoryTable(configs) {
-            const tbody = document.getElementById('storyConfigBody');
-            if (!tbody) return;
-            tbody.innerHTML = '';
-            if (!configs || configs.length === 0) return;
-            configs.forEach((cfg, idx) => addStoryRowData(cfg));
-        }
+                if (!selectedSteelSel || !selectedConcreteSel) {
+                    alert('Chưa có dữ liệu. Vui lòng vào tab "Neo & Nối" và chọn vật liệu trước.');
+                    return;
+                }
 
-        function addStoryRow() {
-            const tbody = document.getElementById('storyConfigBody');
-            const rowCount = tbody.querySelectorAll('tr').length;
-            // Get previous row's prefixes to cascade
-            let prevBeam = 'B', prevGirder = 'G', prevColumn = 'C', prevSuffix = '';
-            if (rowCount > 0) {
-                const lastRow = tbody.querySelector('tr:last-child');
-                prevBeam = lastRow.querySelector('.storyBeamPrefix')?.value || 'B';
-                prevGirder = lastRow.querySelector('.storyGirderPrefix')?.value || 'G';
-                prevColumn = lastRow.querySelector('.storyColumnPrefix')?.value || 'C';
-                prevSuffix = lastRow.querySelector('.storySuffix')?.value || '';
+                // Update Steel dropdown
+                const steelDropdown = document.getElementById('SteelGradeName');
+                const steelOptions = Array.from(selectedSteelSel.options);
+                if (steelOptions.length > 0) {
+                    const currentVal = steelDropdown.value;
+                    steelDropdown.innerHTML = '';
+                    steelOptions.forEach(opt => {
+                        const newOpt = document.createElement('option');
+                        newOpt.value = opt.value;
+                        newOpt.textContent = opt.textContent;
+                        steelDropdown.appendChild(newOpt);
+                    });
+                    // Try to keep current selection, else select first
+                    if (steelOptions.some(o => o.value === currentVal)) {
+                        steelDropdown.value = currentVal;
+                    } else {
+                        steelDropdown.selectedIndex = 0;
+                    }
+                    onSteelGradeChange();
+                }
+
+                // Update Concrete dropdown
+                const concreteDropdown = document.getElementById('ConcreteGradeName');
+                const concreteOptions = Array.from(selectedConcreteSel.options);
+                if (concreteOptions.length > 0) {
+                    const currentVal = concreteDropdown.value;
+                    concreteDropdown.innerHTML = '';
+                    concreteOptions.forEach(opt => {
+                        const newOpt = document.createElement('option');
+                        newOpt.value = opt.value;
+                        newOpt.textContent = opt.textContent;
+                        concreteDropdown.appendChild(newOpt);
+                    });
+                    if (concreteOptions.some(o => o.value === currentVal)) {
+                        concreteDropdown.value = currentVal;
+                    } else {
+                        concreteDropdown.selectedIndex = 0;
+                    }
+                    onConcreteGradeChange();
+                }
+
+                alert('✅ Đã đồng bộ vật liệu từ tab Neo & Nối!');
             }
-            addStoryRowData({
-                StoryName: `L${rowCount + 1}`,
-                Elevation: (rowCount + 1) * 3500,
-                StartIndex: rowCount + 1,
-                BeamPrefix: prevBeam,
-                GirderPrefix: prevGirder,
-                ColumnPrefix: prevColumn,
-                Suffix: prevSuffix
-            });
-        }
 
-        function addStoryRowData(cfg) {
-            const tbody = document.getElementById('storyConfigBody');
-            if (!tbody) return;
-            const rowIdx = tbody.querySelectorAll('tr').length;
-            const tr = document.createElement('tr');
-            tr.dataset.rowIndex = rowIdx;
+            function onSteelGradeChange() {
+                const sel = document.getElementById('SteelGradeName');
+                const fyInput = document.getElementById('SteelGradeMain');
+                if (!sel || !fyInput) return;
 
-            // Start Index | Story Name (readonly) | Level (readonly) | Beam | Girder | Column | Suffix | Delete
-            tr.innerHTML = `
+                const gradeName = sel.value;
+                // Lookup fy, fallback to current value
+                if (steelGradeLookup[gradeName]) {
+                    fyInput.value = steelGradeLookup[gradeName];
+                }
+            }
+
+            function onConcreteGradeChange() {
+                const sel = document.getElementById('ConcreteGradeName');
+                const fcInput = document.getElementById('ConcreteGrade');
+                if (!sel || !fcInput) return;
+
+                const gradeName = sel.value;
+                // Lookup f'c, fallback to current value
+                if (concreteGradeLookup[gradeName]) {
+                    fcInput.value = concreteGradeLookup[gradeName];
+                }
+            }
+
+            function loadForm() {
+                const setId = (id, val) => { const el = document.getElementById(id); if (el) el.value = val ?? ''; };
+                const setChk = (id, val) => { const el = document.getElementById(id); if (el) el.checked = val || false; };
+
+                // Build inventory grid
+                buildInventoryGrid();
+
+                // Tab 0: General
+                setId('ZoneL1_Ratio', data.General?.ZoneL1_Ratio);
+                setId('ZoneL2_Ratio', data.General?.ZoneL2_Ratio);
+                if (data.General?.Unit) document.getElementById('Unit').value = data.General.Unit;
+                setId('TextHeight', data.General?.TextHeight ?? 1);
+                // Material Grades
+                setId('SteelGradeName', data.General?.SteelGradeName ?? 'CB400-V');
+                setId('SteelGradeMain', data.General?.SteelGradeMain ?? 400);
+                setId('SteelGradeStirrup', data.General?.SteelGradeStirrup ?? 300);
+                setId('ConcreteGradeName', data.General?.ConcreteGradeName ?? 'B25');
+                setId('ConcreteGrade', data.General?.ConcreteGrade ?? 25);
+
+                // Tab 1: Beam
+                setId('MainBarRange', data.Beam?.MainBarRange);
+                setId('StirrupBarRange', data.Beam?.StirrupBarRange);
+                setId('SideBarRange', data.Beam?.SideBarRange);
+                setId('StirrupSpacings', data.Beam?.StirrupSpacings?.join(',') ?? '100,150,200,250');
+                setId('CoverTop', data.Beam?.CoverTop);
+                setId('CoverBot', data.Beam?.CoverBot);
+                setId('CoverSide', data.Beam?.CoverSide);
+                // Clear Spacing
+                setChk('UseBarDiameterForSpacing', data.Beam?.UseBarDiameterForSpacing ?? true);
+                setId('BarDiameterSpacingMultiplier', data.Beam?.BarDiameterSpacingMultiplier ?? 1.0);
+                setId('MinClearSpacing', data.Beam?.MinClearSpacing);
+                setId('MaxClearSpacing', data.Beam?.MaxClearSpacing);
+                setId('EstimatedStirrupDiameter', data.Beam?.EstimatedStirrupDiameter ?? 10);
+                setId('AggregateSize', data.Beam?.AggregateSize ?? 20);
+                // Torsion (new names)
+                setId('TorsionDist_TopBar', data.Beam?.TorsionDist_TopBar ?? data.Beam?.TorsionDist_Top);
+                setId('TorsionDist_BotBar', data.Beam?.TorsionDist_BotBar ?? data.Beam?.TorsionDist_Bot);
+                setId('TorsionDist_SideBar', data.Beam?.TorsionDist_SideBar ?? data.Beam?.TorsionDist_Side);
+                // Auto Arrangement
+                setId('MaxLayers', data.Beam?.MaxLayers ?? 2);
+                setId('MinBarsPerLayer', data.Beam?.MinBarsPerLayer ?? 2);
+                setId('WebBarMinHeight', data.Beam?.WebBarMinHeight);
+                setChk('PreferSingleDiameter', data.Beam?.PreferSingleDiameter ?? true);
+                setChk('PreferSymmetric', data.Beam?.PreferSymmetric);
+                setChk('PreferFewerBars', data.Beam?.PreferFewerBars ?? true);
+                setChk('PreferEvenDiameter', data.Beam?.PreferEvenDiameter);
+                // Stirrup Advanced
+                setId('MinReinforcementRatio', data.Beam?.MinReinforcementRatio);
+                setId('AutoLegsRules', data.Beam?.AutoLegsRules);
+                setChk('AllowOddLegs', data.Beam?.AllowOddLegs);
+                // Continuous Beam Rules
+                setChk('ForceContinuousDiameter', data.Beam?.ForceContinuousDiameter ?? true);
+                setChk('SingleDiameterPerSpan', data.Beam?.SingleDiameterPerSpan ?? true);
+                setChk('AllowDiameterMixing', data.Beam?.AllowDiameterMixing ?? false);
+                setId('MaxDiameterDiff', data.Beam?.MaxDiameterDiff ?? 1);
+                setId('StandardBarLength', data.Beam?.StandardBarLength ?? 11700);
+                setId('BeamLapSpliceMultiplier', data.Beam?.LapSpliceMultiplier ?? 40);
+                setChk('MatchTopLayerBars', data.Beam?.MatchTopLayerBars ?? true);
+
+                // Tab 2: Column
+                setId('ColMainBarRange', data.Column?.MainBarRange);
+                setId('ColStirrupBarRange', data.Column?.StirrupBarRange);
+                setId('ColCover', data.Column?.Cover);
+                setId('LapSpliceMultiplier', data.Column?.LapSpliceMultiplier);
+                setId('MinBarsPerSide', data.Column?.MinBarsPerSide);
+                setId('MaxStirrupSpacing', data.Column?.MaxStirrupSpacing);
+
+                // Tab 3: Naming
+                setId('BeamPrefix', data.Naming?.BeamPrefix);
+                setId('GirderPrefix', data.Naming?.GirderPrefix);
+                setId('ColumnPrefix', data.Naming?.ColumnPrefix);
+                setId('BeamSuffix', data.Naming?.BeamSuffix);
+                setChk('GroupByAxis', data.Naming?.GroupByAxis);
+                setChk('MergeSameSection', data.Naming?.MergeSameSection);
+                setChk('AutoRenameOnSectionChange', data.Naming?.AutoRenameOnSectionChange);
+
+                // Sort Corner
+                const corner = data.Naming?.SortCorner || 0;
+                setId('SortCorner', corner);
+                document.querySelectorAll('.corner-btn').forEach(btn => {
+                    btn.classList.toggle('active', parseInt(btn.dataset.corner) === corner);
+                    btn.onclick = () => {
+                        document.querySelectorAll('.corner-btn').forEach(b => b.classList.remove('active'));
+                        btn.classList.add('active');
+                        document.getElementById('SortCorner').value = btn.dataset.corner;
+                    };
+                });
+
+                // Sort Direction
+                const dir = data.Naming?.SortDirection || 0;
+                setId('SortDirection', dir);
+                document.querySelectorAll("input[name='sortDir']").forEach(radio => {
+                    radio.checked = parseInt(radio.value) === dir;
+                    radio.onchange = () => document.getElementById('SortDirection').value = radio.value;
+                });
+
+                // Tab 4: Anchorage - Matrix based
+                loadAnchorageTab();
+
+                // Hook settings
+                setId('Hook90Factor', data.Anchorage?.Hook90Factor ?? 12);
+                setId('MinHook90Length', data.Anchorage?.MinHook90Length ?? 150);
+                setId('Hook135Factor', data.Anchorage?.Hook135Factor ?? 6);
+                setId('Hook180Factor', data.Anchorage?.Hook180Factor ?? 4);
+                setId('MinHookLength', data.Anchorage?.MinHookLength ?? 75);
+                setId('DefaultAnchorageFactor', data.Anchorage?.DefaultAnchorageFactor ?? 40);
+                setId('DefaultSpliceFactor', data.Anchorage?.DefaultSpliceFactor ?? 52);
+
+                // Tab 5: Detailing
+                if (document.getElementById('MaxBarLength')) {
+                    setId('MaxBarLength', data.Detailing?.MaxBarLength ?? 11700);
+                    setId('MinBarLength', data.Detailing?.MinBarLength ?? 2000);
+                    setId('MinStaggerDistance', data.Detailing?.MinStaggerDistance ?? 600);
+                    setId('StaggerFactorLd', data.Detailing?.StaggerFactorLd ?? 1.3);
+                    setChk('SkipSplice', data.Detailing?.SkipSplice ?? false);
+
+                    // Beam Rule
+                    document.getElementById('BeamTopSpliceZone').value = data.Detailing?.BeamRule?.TopSpliceZone ?? 2;
+                    document.getElementById('BeamBotSpliceZone').value = data.Detailing?.BeamRule?.BotSpliceZone ?? 0;
+                    setChk('BeamAllowLapInJoint', data.Detailing?.BeamRule?.AllowLapSpliceInJoint ?? false);
+
+                    // Girder Rule
+                    document.getElementById('GirderTopSpliceZone').value = data.Detailing?.GirderRule?.TopSpliceZone ?? 1;
+                    document.getElementById('GirderBotSpliceZone').value = data.Detailing?.GirderRule?.BotSpliceZone ?? 0;
+                    setChk('GirderAllowLapInJoint', data.Detailing?.GirderRule?.AllowLapSpliceInJoint ?? true);
+                }
+
+                // Tab 4: Anchorage - Initialize saved presets and matrix
+                renderSavedPresets();
+                renderShuttleSelectors();
+                renderDiameterMatrices();
+
+                // Tab 3: Naming - Load Story Configs (NEW)
+                console.log('[loadForm] data.StoryConfigs:', data.StoryConfigs);
+                console.log('[loadForm] StoryConfigs length:', data.StoryConfigs?.length || 0);
+                loadStoryTable(data.StoryConfigs || []);
+                setId('StoryTolerance', data.StoryTolerance ?? 500);
+            }
+
+            // ===== STORY CONFIGURATION FUNCTIONS (NEW) =====
+            function loadStoryTable(configs) {
+                const tbody = document.getElementById('storyConfigBody');
+                if (!tbody) return;
+                tbody.innerHTML = '';
+                if (!configs || configs.length === 0) return;
+                configs.forEach((cfg, idx) => addStoryRowData(cfg));
+            }
+
+            function addStoryRow() {
+                const tbody = document.getElementById('storyConfigBody');
+                const rowCount = tbody.querySelectorAll('tr').length;
+                // Get previous row's prefixes to cascade
+                let prevBeam = 'B', prevGirder = 'G', prevColumn = 'C', prevSuffix = '';
+                if (rowCount > 0) {
+                    const lastRow = tbody.querySelector('tr:last-child');
+                    prevBeam = lastRow.querySelector('.storyBeamPrefix')?.value || 'B';
+                    prevGirder = lastRow.querySelector('.storyGirderPrefix')?.value || 'G';
+                    prevColumn = lastRow.querySelector('.storyColumnPrefix')?.value || 'C';
+                    prevSuffix = lastRow.querySelector('.storySuffix')?.value || '';
+                }
+                addStoryRowData({
+                    StoryName: `L${rowCount + 1}`,
+                    Elevation: (rowCount + 1) * 3500,
+                    StartIndex: rowCount + 1,
+                    BeamPrefix: prevBeam,
+                    GirderPrefix: prevGirder,
+                    ColumnPrefix: prevColumn,
+                    Suffix: prevSuffix
+                });
+            }
+
+            function addStoryRowData(cfg) {
+                const tbody = document.getElementById('storyConfigBody');
+                if (!tbody) return;
+                const rowIdx = tbody.querySelectorAll('tr').length;
+                const tr = document.createElement('tr');
+                tr.dataset.rowIndex = rowIdx;
+
+                // Start Index | Story Name (readonly) | Level (readonly) | Beam | Girder | Column | Suffix | Delete
+                tr.innerHTML = `
                 <td style="padding:4px;border:1px solid #ddd;">
                     <input type="number" class="storyStartIdx" value="${cfg.StartIndex || 1}" 
                            style="width:100%;padding:3px;border:1px solid #ccc;border-radius:3px;text-align:center;"
@@ -1885,253 +1920,256 @@
                     <button onclick="deleteStoryRow(this)" style="background:#dc3545;color:white;border:none;border-radius:3px;padding:2px 6px;cursor:pointer;">✕</button>
                 </td>
             `;
-            tbody.appendChild(tr);
-        }
-
-        // === SMART FILL CASCADE LOGIC ===
-        function onSmartFillChange(input, fieldType) {
-            // Check if AutoFill is enabled
-            const autoFillEnabled = document.getElementById('AutoFillStory')?.checked;
-            if (!autoFillEnabled) return;
-
-            const currentRow = input.closest('tr');
-            const tbody = document.getElementById('storyConfigBody');
-            const rows = Array.from(tbody.querySelectorAll('tr'));
-            const currentIndex = rows.indexOf(currentRow);
-            const newValue = input.value;
-
-            // Get field selector based on type
-            let selector = '';
-            switch (fieldType) {
-                case 'startIndex': selector = '.storyStartIdx'; break;
-                case 'beam': selector = '.storyBeamPrefix'; break;
-                case 'girder': selector = '.storyGirderPrefix'; break;
-                case 'column': selector = '.storyColumnPrefix'; break;
-                case 'suffix': selector = '.storySuffix'; break;
+                tbody.appendChild(tr);
             }
 
-            // Cascade to all rows BELOW current row
-            for (let i = currentIndex + 1; i < rows.length; i++) {
-                const field = rows[i].querySelector(selector);
-                if (field) {
-                    if (fieldType === 'startIndex') {
-                        // Start Index: Increment from current value
-                        const baseValue = parseInt(newValue) || 1;
-                        field.value = baseValue + (i - currentIndex);
+            // === SMART FILL CASCADE LOGIC ===
+            function onSmartFillChange(input, fieldType) {
+                // Check if AutoFill is enabled
+                const autoFillEnabled = document.getElementById('AutoFillStory')?.checked;
+                if (!autoFillEnabled) return;
+
+                const currentRow = input.closest('tr');
+                const tbody = document.getElementById('storyConfigBody');
+                const rows = Array.from(tbody.querySelectorAll('tr'));
+                const currentIndex = rows.indexOf(currentRow);
+                const newValue = input.value;
+
+                // Get field selector based on type
+                let selector = '';
+                switch (fieldType) {
+                    case 'startIndex': selector = '.storyStartIdx'; break;
+                    case 'beam': selector = '.storyBeamPrefix'; break;
+                    case 'girder': selector = '.storyGirderPrefix'; break;
+                    case 'column': selector = '.storyColumnPrefix'; break;
+                    case 'suffix': selector = '.storySuffix'; break;
+                }
+
+                // Cascade to all rows BELOW current row
+                for (let i = currentIndex + 1; i < rows.length; i++) {
+                    const field = rows[i].querySelector(selector);
+                    if (field) {
+                        if (fieldType === 'startIndex') {
+                            // Start Index: Increment from current value
+                            const baseValue = parseInt(newValue) || 1;
+                            field.value = baseValue + (i - currentIndex);
+                        } else {
+                            // Prefixes and Suffix: Copy same value
+                            field.value = newValue;
+                        }
+                    }
+                }
+            }
+
+            function deleteStoryRow(btn) {
+                const tr = btn.closest('tr');
+                if (tr) tr.remove();
+                // Renumber all STT after deletion
+                recalculateSTT();
+            }
+
+            function recalculateSTT() {
+                const rows = document.querySelectorAll('#storyConfigBody tr');
+                rows.forEach((row, idx) => {
+                    const sttInput = row.querySelector('.storyStartIdx');
+                    if (sttInput && idx === 0) {
+                        // Keep first row's value as base
+                    } else if (sttInput && idx > 0) {
+                        const prevStt = parseInt(rows[idx - 1].querySelector('.storyStartIdx')?.value) || idx;
+                        sttInput.value = prevStt + 1;
+                    }
+                });
+            }
+
+            function collectStoryConfigs() {
+                const configs = [];
+                const rows = document.querySelectorAll('#storyConfigBody tr');
+                rows.forEach(row => {
+                    const name = row.querySelector('.storyName')?.textContent || '';
+                    const elev = parseFloat(row.querySelector('.storyElevHidden')?.value) || 0;
+                    const startIdx = parseInt(row.querySelector('.storyStartIdx')?.value) || 1;
+                    const beamPrefix = row.querySelector('.storyBeamPrefix')?.value || 'B';
+                    const girderPrefix = row.querySelector('.storyGirderPrefix')?.value || 'G';
+                    const columnPrefix = row.querySelector('.storyColumnPrefix')?.value || 'C';
+                    const suffix = row.querySelector('.storySuffix')?.value || '';
+
+                    if (name) {
+                        configs.push({
+                            StoryName: name,
+                            Elevation: elev,
+                            StartIndex: startIdx,
+                            BeamPrefix: beamPrefix,
+                            GirderPrefix: girderPrefix,
+                            ColumnPrefix: columnPrefix,
+                            Suffix: suffix
+                        });
+                    }
+                });
+                return configs;
+            }
+
+            function getStoriesFromSAP() {
+                const btn = document.getElementById('btnGetStories');
+                const btnText = document.getElementById('btnGetStoriesText');
+
+                // Show loading state
+                btn.disabled = true;
+                btnText.textContent = '⏳ Loading...';
+
+                // Send message to C# to get stories
+                window.chrome.webview.postMessage('GET_STORIES');
+            }
+
+            // Called from C# after retrieving stories
+            function onStoriesReceived(storiesJson) {
+                const btn = document.getElementById('btnGetStories');
+                const btnText = document.getElementById('btnGetStoriesText');
+
+                // Reset button
+                btn.disabled = false;
+                btnText.textContent = '📥 Get Stories from SAP';
+
+                try {
+                    const stories = JSON.parse(storiesJson);
+                    if (stories && stories.length > 0) {
+                        loadStoryTable(stories);
                     } else {
-                        // Prefixes and Suffix: Copy same value
-                        field.value = newValue;
+                        alert('Không tìm thấy Story trong SAP2000. Vui lòng kiểm tra kết nối.');
                     }
+                } catch (e) {
+                    console.error('Parse stories error:', e);
+                    alert('Lỗi: ' + e.message);
                 }
             }
-        }
 
-        function deleteStoryRow(btn) {
-            const tr = btn.closest('tr');
-            if (tr) tr.remove();
-            // Renumber all STT after deletion
-            recalculateSTT();
-        }
+            function doSave() {
+                const getVal = (id) => {
+                    const el = document.getElementById(id);
+                    if (!el) return '';
+                    if (el.type === 'number') {
+                        const num = parseFloat(el.value);
+                        return isNaN(num) ? 0 : num;
+                    }
+                    return el.value || '';
+                };
+                const getChk = (id) => { const el = document.getElementById(id); return el ? el.checked : false; };
 
-        function recalculateSTT() {
-            const rows = document.querySelectorAll('#storyConfigBody tr');
-            rows.forEach((row, idx) => {
-                const sttInput = row.querySelector('.storyStartIdx');
-                if (sttInput && idx === 0) {
-                    // Keep first row's value as base
-                } else if (sttInput && idx > 0) {
-                    const prevStt = parseInt(rows[idx - 1].querySelector('.storyStartIdx')?.value) || idx;
-                    sttInput.value = prevStt + 1;
-                }
-            });
-        }
-
-        function collectStoryConfigs() {
-            const configs = [];
-            const rows = document.querySelectorAll('#storyConfigBody tr');
-            rows.forEach(row => {
-                const name = row.querySelector('.storyName')?.textContent || '';
-                const elev = parseFloat(row.querySelector('.storyElevHidden')?.value) || 0;
-                const startIdx = parseInt(row.querySelector('.storyStartIdx')?.value) || 1;
-                const beamPrefix = row.querySelector('.storyBeamPrefix')?.value || 'B';
-                const girderPrefix = row.querySelector('.storyGirderPrefix')?.value || 'G';
-                const columnPrefix = row.querySelector('.storyColumnPrefix')?.value || 'C';
-                const suffix = row.querySelector('.storySuffix')?.value || '';
-
-                if (name) {
-                    configs.push({
-                        StoryName: name,
-                        Elevation: elev,
-                        StartIndex: startIdx,
-                        BeamPrefix: beamPrefix,
-                        GirderPrefix: girderPrefix,
-                        ColumnPrefix: columnPrefix,
-                        Suffix: suffix
-                    });
-                }
-            });
-            return configs;
-        }
-
-        function getStoriesFromSAP() {
-            const btn = document.getElementById('btnGetStories');
-            const btnText = document.getElementById('btnGetStoriesText');
-
-            // Show loading state
-            btn.disabled = true;
-            btnText.textContent = '⏳ Loading...';
-
-            // Send message to C# to get stories
-            window.chrome.webview.postMessage('GET_STORIES');
-        }
-
-        // Called from C# after retrieving stories
-        function onStoriesReceived(storiesJson) {
-            const btn = document.getElementById('btnGetStories');
-            const btnText = document.getElementById('btnGetStoriesText');
-
-            // Reset button
-            btn.disabled = false;
-            btnText.textContent = '📥 Get Stories from SAP';
-
-            try {
-                const stories = JSON.parse(storiesJson);
-                if (stories && stories.length > 0) {
-                    loadStoryTable(stories);
-                } else {
-                    alert('Không tìm thấy Story trong SAP2000. Vui lòng kiểm tra kết nối.');
-                }
-            } catch (e) {
-                console.error('Parse stories error:', e);
-                alert('Lỗi: ' + e.message);
-            }
-        }
-
-        function doSave() {
-            const getVal = (id) => {
-                const el = document.getElementById(id);
-                if (!el) return '';
-                if (el.type === 'number') {
-                    const num = parseFloat(el.value);
-                    return isNaN(num) ? 0 : num;
-                }
-                return el.value || '';
-            };
-            const getChk = (id) => { const el = document.getElementById(id); return el ? el.checked : false; };
-
-            const result = {
-                General: {
-                    AvailableDiameters: getSelectedDiameters(),
-                    ZoneL1_Ratio: getVal('ZoneL1_Ratio'),
-                    ZoneL2_Ratio: getVal('ZoneL2_Ratio'),
-                    Unit: document.getElementById('Unit').value,
-                    DecimalPlaces: data.General?.DecimalPlaces || 2,
-                    TextHeight: getVal('TextHeight') || 1,
-                    // Material Grades
-                    SteelGradeName: getVal('SteelGradeName') || 'CB400-V',
-                    SteelGradeMain: getVal('SteelGradeMain') || 400,
-                    SteelGradeStirrup: getVal('SteelGradeStirrup') || 300,
-                    ConcreteGradeName: getVal('ConcreteGradeName') || 'B25',
-                    ConcreteGrade: getVal('ConcreteGrade') || 25
-                },
-                Beam: {
-                    MainBarRange: getVal('MainBarRange') || '16-25',
-                    StirrupBarRange: getVal('StirrupBarRange') || '8-10',
-                    SideBarRange: getVal('SideBarRange') || '12-14',
-                    CoverTop: getVal('CoverTop'),
-                    CoverBot: getVal('CoverBot'),
-                    CoverSide: getVal('CoverSide'),
-                    // Clear Spacing
-                    UseBarDiameterForSpacing: getChk('UseBarDiameterForSpacing'),
-                    BarDiameterSpacingMultiplier: getVal('BarDiameterSpacingMultiplier') || 1.0,
-                    MinClearSpacing: getVal('MinClearSpacing'),
-                    MaxClearSpacing: getVal('MaxClearSpacing'),
-                    // Torsion
-                    TorsionDist_TopBar: getVal('TorsionDist_TopBar'),
-                    TorsionDist_BotBar: getVal('TorsionDist_BotBar'),
-                    TorsionDist_SideBar: getVal('TorsionDist_SideBar'),
-                    // Auto Arrangement
-                    MaxLayers: getVal('MaxLayers') || 2,
-                    MinBarsPerLayer: getVal('MinBarsPerLayer') || 2,
-                    WebBarMinHeight: getVal('WebBarMinHeight'),
-                    PreferSingleDiameter: getChk('PreferSingleDiameter'),
-                    PreferSymmetric: getChk('PreferSymmetric'),
-                    PreferFewerBars: getChk('PreferFewerBars'),
-                    PreferEvenDiameter: getChk('PreferEvenDiameter'),
-                    // Stirrup
-                    MinReinforcementRatio: getVal('MinReinforcementRatio'),
-                    AutoLegsRules: getVal('AutoLegsRules') || '250-2 400-3 600-4',
-                    AllowOddLegs: getChk('AllowOddLegs'),
-                    // Continuous Beam Rules
-                    ForceContinuousDiameter: getChk('ForceContinuousDiameter'),
-                    SingleDiameterPerSpan: getChk('SingleDiameterPerSpan'),
-                    AllowDiameterMixing: getChk('AllowDiameterMixing'),
-                    MaxDiameterDiff: getVal('MaxDiameterDiff') || 1,
-                    StandardBarLength: getVal('StandardBarLength') || 11700,
-                    LapSpliceMultiplier: getVal('BeamLapSpliceMultiplier') || 40,
-                    MatchTopLayerBars: getChk('MatchTopLayerBars')
-                },
-                Column: {
-                    MainBarRange: getVal('ColMainBarRange') || '16-28',
-                    StirrupBarRange: getVal('ColStirrupBarRange') || '8-10',
-                    Cover: getVal('ColCover'),
-                    LapSpliceMultiplier: getVal('LapSpliceMultiplier'),
-                    MinBarsPerSide: getVal('MinBarsPerSide'),
-                    MaxStirrupSpacing: getVal('MaxStirrupSpacing')
-                },
-                Naming: {
-                    // Legacy prefix/suffix REMOVED - now use per-story config in StoryConfigs
-                    GroupByAxis: getChk('GroupByAxis'),
-                    MergeSameSection: getChk('MergeSameSection'),
-                    AutoRenameOnSectionChange: getChk('AutoRenameOnSectionChange'),
-                    SortCorner: parseInt(getVal('SortCorner')) || 0,
-                    SortDirection: parseInt(getVal('SortDirection')) || 0
-                },
-                // User Presets (from Anchorage tab)
-                UserPresets: data.UserPresets || {},
-                // Story Naming Config (PRIMARY)
-                StoryTolerance: getVal('StoryTolerance') || 500,
-                StoryConfigs: collectStoryConfigs(),
-                Anchorage: collectAnchorageData(),
-                Detailing: {
-                    MaxBarLength: getVal('MaxBarLength') || 11700,
-                    MinBarLength: getVal('MinBarLength') || 2000,
-                    MinStaggerDistance: getVal('MinStaggerDistance') || 600,
-                    StaggerFactorLd: getVal('StaggerFactorLd') || 1.3,
-                    SkipSplice: getChk('SkipSplice'),
-                    BeamRule: {
-                        TopSpliceZone: parseInt(document.getElementById('BeamTopSpliceZone')?.value) || 2,
-                        BotSpliceZone: parseInt(document.getElementById('BeamBotSpliceZone')?.value) || 0,
-                        AllowLapSpliceInJoint: getChk('BeamAllowLapInJoint'),
-                        SupportZoneRatio: 0.25
+                const result = {
+                    General: {
+                        AvailableDiameters: getSelectedDiameters(),
+                        ZoneL1_Ratio: getVal('ZoneL1_Ratio'),
+                        ZoneL2_Ratio: getVal('ZoneL2_Ratio'),
+                        Unit: document.getElementById('Unit').value,
+                        DecimalPlaces: data.General?.DecimalPlaces || 2,
+                        TextHeight: getVal('TextHeight') || 1,
+                        // Material Grades
+                        SteelGradeName: getVal('SteelGradeName') || 'CB400-V',
+                        SteelGradeMain: getVal('SteelGradeMain') || 400,
+                        SteelGradeStirrup: getVal('SteelGradeStirrup') || 300,
+                        ConcreteGradeName: getVal('ConcreteGradeName') || 'B25',
+                        ConcreteGrade: getVal('ConcreteGrade') || 25
                     },
-                    GirderRule: {
-                        TopSpliceZone: parseInt(document.getElementById('GirderTopSpliceZone')?.value) || 1,
-                        BotSpliceZone: parseInt(document.getElementById('GirderBotSpliceZone')?.value) || 0,
-                        AllowLapSpliceInJoint: getChk('GirderAllowLapInJoint'),
-                        SupportZoneRatio: 0.25
+                    Beam: {
+                        MainBarRange: getVal('MainBarRange') || '16-25',
+                        StirrupBarRange: getVal('StirrupBarRange') || '8-10',
+                        SideBarRange: getVal('SideBarRange') || '12-14',
+                        StirrupSpacings: (getVal('StirrupSpacings') || '100,150,200,250').toString().split(',').map(x => parseInt(x.trim())).filter(x => !isNaN(x) && x > 0),
+                        CoverTop: getVal('CoverTop'),
+                        CoverBot: getVal('CoverBot'),
+                        CoverSide: getVal('CoverSide'),
+                        // Clear Spacing
+                        UseBarDiameterForSpacing: getChk('UseBarDiameterForSpacing'),
+                        BarDiameterSpacingMultiplier: getVal('BarDiameterSpacingMultiplier') || 1.0,
+                        MinClearSpacing: getVal('MinClearSpacing'),
+                        MaxClearSpacing: getVal('MaxClearSpacing'),
+                        EstimatedStirrupDiameter: getVal('EstimatedStirrupDiameter') || 10,
+                        AggregateSize: getVal('AggregateSize') || 20,
+                        // Torsion
+                        TorsionDist_TopBar: getVal('TorsionDist_TopBar'),
+                        TorsionDist_BotBar: getVal('TorsionDist_BotBar'),
+                        TorsionDist_SideBar: getVal('TorsionDist_SideBar'),
+                        // Auto Arrangement
+                        MaxLayers: getVal('MaxLayers') || 2,
+                        MinBarsPerLayer: getVal('MinBarsPerLayer') || 2,
+                        WebBarMinHeight: getVal('WebBarMinHeight'),
+                        PreferSingleDiameter: getChk('PreferSingleDiameter'),
+                        PreferSymmetric: getChk('PreferSymmetric'),
+                        PreferFewerBars: getChk('PreferFewerBars'),
+                        PreferEvenDiameter: getChk('PreferEvenDiameter'),
+                        // Stirrup
+                        MinReinforcementRatio: getVal('MinReinforcementRatio'),
+                        AutoLegsRules: getVal('AutoLegsRules') || '250-2 400-3 600-4',
+                        AllowOddLegs: getChk('AllowOddLegs'),
+                        // Continuous Beam Rules
+                        ForceContinuousDiameter: getChk('ForceContinuousDiameter'),
+                        SingleDiameterPerSpan: getChk('SingleDiameterPerSpan'),
+                        AllowDiameterMixing: getChk('AllowDiameterMixing'),
+                        MaxDiameterDiff: getVal('MaxDiameterDiff') || 1,
+                        StandardBarLength: getVal('StandardBarLength') || 11700,
+                        LapSpliceMultiplier: getVal('BeamLapSpliceMultiplier') || 40,
+                        MatchTopLayerBars: getChk('MatchTopLayerBars')
+                    },
+                    Column: {
+                        MainBarRange: getVal('ColMainBarRange') || '16-28',
+                        StirrupBarRange: getVal('ColStirrupBarRange') || '8-10',
+                        Cover: getVal('ColCover'),
+                        LapSpliceMultiplier: getVal('LapSpliceMultiplier'),
+                        MinBarsPerSide: getVal('MinBarsPerSide'),
+                        MaxStirrupSpacing: getVal('MaxStirrupSpacing')
+                    },
+                    Naming: {
+                        // Legacy prefix/suffix REMOVED - now use per-story config in StoryConfigs
+                        GroupByAxis: getChk('GroupByAxis'),
+                        MergeSameSection: getChk('MergeSameSection'),
+                        AutoRenameOnSectionChange: getChk('AutoRenameOnSectionChange'),
+                        SortCorner: parseInt(getVal('SortCorner')) || 0,
+                        SortDirection: parseInt(getVal('SortDirection')) || 0
+                    },
+                    // User Presets (from Anchorage tab)
+                    UserPresets: data.UserPresets || {},
+                    // Story Naming Config (PRIMARY)
+                    StoryTolerance: getVal('StoryTolerance') || 500,
+                    StoryConfigs: collectStoryConfigs(),
+                    Anchorage: collectAnchorageData(),
+                    Detailing: {
+                        MaxBarLength: getVal('MaxBarLength') || 11700,
+                        MinBarLength: getVal('MinBarLength') || 2000,
+                        MinStaggerDistance: getVal('MinStaggerDistance') || 600,
+                        StaggerFactorLd: getVal('StaggerFactorLd') || 1.3,
+                        SkipSplice: getChk('SkipSplice'),
+                        BeamRule: {
+                            TopSpliceZone: parseInt(document.getElementById('BeamTopSpliceZone')?.value) || 2,
+                            BotSpliceZone: parseInt(document.getElementById('BeamBotSpliceZone')?.value) || 0,
+                            AllowLapSpliceInJoint: getChk('BeamAllowLapInJoint'),
+                            SupportZoneRatio: 0.25
+                        },
+                        GirderRule: {
+                            TopSpliceZone: parseInt(document.getElementById('GirderTopSpliceZone')?.value) || 1,
+                            BotSpliceZone: parseInt(document.getElementById('GirderBotSpliceZone')?.value) || 0,
+                            AllowLapSpliceInJoint: getChk('GirderAllowLapInJoint'),
+                            SupportZoneRatio: 0.25
+                        }
                     }
-                }
-            };
+                };
 
-            window.chrome.webview.postMessage(JSON.stringify(result));
-        }
+                window.chrome.webview.postMessage(JSON.stringify(result));
+            }
 
-        function doCancel() {
-            window.chrome.webview.postMessage('CANCEL');
-        }
+            function doCancel() {
+                window.chrome.webview.postMessage('CANCEL');
+            }
 
-        function doImport() {
-            window.chrome.webview.postMessage('IMPORT');
-        }
+            function doImport() {
+                window.chrome.webview.postMessage('IMPORT');
+            }
 
-        function doExport() {
-            window.chrome.webview.postMessage('EXPORT');
-        }
+            function doExport() {
+                window.chrome.webview.postMessage('EXPORT');
+            }
 
-        // Initialize form on load
-        loadForm();
-    </script>
+            // Initialize form on load
+            loadForm();
+        </script>
 </body>
 
 </html>

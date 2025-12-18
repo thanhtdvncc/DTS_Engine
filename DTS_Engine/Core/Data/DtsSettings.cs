@@ -339,6 +339,11 @@ namespace DTS_Engine.Core.Data
         public string StirrupBarRange { get; set; } = "8-10";
 
         /// <summary>
+        /// Danh sách bước đai khả dụng (VD: 100, 150, 200)
+        /// </summary>
+        public List<int> StirrupSpacings { get; set; } = new List<int> { 100, 150, 200, 250 };
+
+        /// <summary>
         /// Phạm vi thép hông/sườn
         /// </summary>
         public string SideBarRange { get; set; } = "12-14";
@@ -400,6 +405,25 @@ namespace DTS_Engine.Core.Data
         /// Hệ số phân bổ thép xoắn lên thép hông (Side Bar)
         /// </summary>
         public double TorsionDist_SideBar { get; set; } = 0.50;
+
+        // ===== NEW: CURTAILMENT SETTINGS (Cấu tạo cắt thép) =====
+        /// <summary>
+        /// Cấu hình cắt/nối thép cho Dầm Chính (Girder)
+        /// </summary>
+        public CurtailmentConfig GirderCurtailment { get; set; } = new CurtailmentConfig
+        {
+            TopSupportExtRatio = 0.33,  // L/3
+            BotSpanCutRatio = 0.15      // 0.15L
+        };
+
+        /// <summary>
+        /// Cấu hình cắt/nối thép cho Dầm Phụ (Beam)
+        /// </summary>
+        public CurtailmentConfig BeamCurtailment { get; set; } = new CurtailmentConfig
+        {
+            TopSupportExtRatio = 0.25,  // L/4
+            BotSpanCutRatio = 0.20      // 0.20L
+        };
 
         // ===== AUTO ARRANGEMENT (Bố trí thép tự động) =====
         /// <summary>
@@ -598,6 +622,24 @@ namespace DTS_Engine.Core.Data
         /// Chiều rộng tối thiểu để tự nhận diện là Dầm chính (Girder). Default 300mm.
         /// </summary>
         public double GirderMinWidth { get; set; } = 300.0;
+    }
+
+    /// <summary>
+    /// Cấu hình quy tắc cắt/nối thép (Curtailment Rules)
+    /// </summary>
+    public class CurtailmentConfig
+    {
+        /// <summary>
+        /// Hệ số vươn thép mũ gối ra nhịp (Tính từ mép gối)
+        /// VD: 0.25 = L/4, 0.33 = L/3
+        /// </summary>
+        public double TopSupportExtRatio { get; set; } = 0.25;
+
+        /// <summary>
+        /// Điểm cắt lý thuyết thép bụng (Tính từ mép gối)
+        /// VD: 0.15 = cắt bớt thép nhịp tại vị trí 0.15L
+        /// </summary>
+        public double BotSpanCutRatio { get; set; } = 0.15;
     }
 
     #region Anchorage & Detailing Config

@@ -445,7 +445,83 @@ namespace DTS_Engine.Core.Algorithms
 
                 if (isStepChange) group.HasStepChange = true;
                 prevHeight = spanHeight;
+
+                // Propagate ResultData from Segments to Span (A_req)
+                AggregateRebarAreas(span, segments, settings);
             }
+        }
+
+        /// <summary>
+        /// Tổng hợp diện tích cốt thép yêu cầu (A_req) từ các segments vào SpanData.
+        /// Mapping 3 vị trí chính: Left (0), Mid (2), Right (4).
+        /// </summary>
+        public static void AggregateRebarAreas(SpanData span, List<BeamGeometry> segments, DtsSettings settings)
+        {
+            if (segments == null || segments.Count == 0) return;
+
+            // Initialize arrays if null
+            if (span.As_Top == null || span.As_Top.Length < 5) span.As_Top = new double[6];
+            if (span.As_Bot == null || span.As_Bot.Length < 5) span.As_Bot = new double[6];
+
+            // Strategy:
+            // 1. Span Start (Index 0) -> First Segment Start (Index 0)
+            // 2. Span End (Index 4) -> Last Segment End (Index 2)
+            // 3. Span Mid (Index 2) -> Segment covering Midpoint (Index 1 or Max)
+
+            var firstSeg = segments.First();
+            var lastSeg = segments.Last();
+
+            // 1. LEFT SUPPORT (Start)
+            if (firstSeg.ResultData?.TopArea != null)
+            {
+                span.As_Top[0] = firstSeg.ResultData.TopArea[0];
+                span.As_Bot[0] = firstSeg.ResultData.BotArea[0];
+                // Torsion adjustment handled in UI or here?
+                // Let's store conversion raw + torsion here if needed, but currently UI calculates it.
+                // Storing RAW A_req from SAP.
+            }
+
+            // 2. RIGHT SUPPORT (End)
+            if (lastSeg.ResultData?.TopArea != null)
+            {
+                span.As_Top[4] = lastSeg.ResultData.TopArea[2];
+                span.As_Bot[4] = lastSeg.ResultData.BotArea[2];
+            }
+
+            // 3. MID SPAN
+            // Find segment covering the middle of the span
+            double spanLen = span.Length * 1000; // mm
+            double midPos = spanLen / 2;
+
+            double currentPos = 0;
+            BeamGeometry midSeg = null;
+
+            foreach (var seg in segments)
+            {
+                double segLen = seg.Length;
+                if (currentPos <= midPos && currentPos + segLen >= midPos)
+                {
+                    midSeg = seg;
+                    break;
+                }
+                currentPos += segLen;
+            }
+
+            if (midSeg == null) midSeg = segments[segments.Count / 2];
+
+            if (midSeg.ResultData?.TopArea != null)
+            {
+                span.As_Top[2] = midSeg.ResultData.TopArea[1];
+                span.As_Bot[2] = midSeg.ResultData.BotArea[1];
+            }
+            else
+            {
+                // Fallback: Average if mid segment is raw line without result
+                // Or just keep 0
+            }
+
+            // Also propagate Beam Type if consistent
+            // But Span doesn't have BeamType property? Uses Group.
         }
 
         /// <summary>
@@ -584,6 +660,9 @@ namespace DTS_Engine.Core.Algorithms
                     LeftSupportId = "S1",
                     RightSupportId = "S2"
                 });
+
+                // Propagate ResultData (A_req)
+                AggregateRebarAreas(group.Spans[0], new List<BeamGeometry> { beam }, settings);
 
                 groups.Add(group);
             }

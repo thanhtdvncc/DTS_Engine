@@ -79,7 +79,7 @@ namespace DTS_Engine.Core.Engines
                     if (ret == 0 && numberItems > 0)
                     {
                         var data = new BeamResultData();
-                        var zoneSetting = RebarSettings.Instance;
+                        var dtsSettings = DtsSettings.Instance;
 
                         // --- BLOCK QUAN TRỌNG: Lấy Width/Height chính xác ---
                         string propName = "";
@@ -108,9 +108,12 @@ namespace DTS_Engine.Core.Engines
                         // ----------------------------------------------------
 
                         // Helper lấy max trong vùng
+                        // [FIX] Dùng DtsSettings thay vì RebarSettings
                         double L = location[numberItems - 1];
-                        double limitStart = L * zoneSetting.ZoneRatioStart;
-                        double limitEnd = L * (1.0 - zoneSetting.ZoneRatioEnd);
+                        double zoneStartRatio = dtsSettings.General?.ZoneL1_Ratio ?? 0.25;
+                        double zoneEndRatio = dtsSettings.General?.ZoneL2_Ratio ?? 0.25;
+                        double limitStart = L * zoneStartRatio;
+                        double limitEnd = L * (1.0 - zoneEndRatio);
 
                         double GetMaxInZone(double[] values, double fromLoc, double toLoc)
                         {

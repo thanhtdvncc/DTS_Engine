@@ -214,8 +214,15 @@ namespace DTS_Engine.Core.Algorithms
             // 1. Cover từ Settings
             double cover = settings.Beam?.CoverSide ?? 25;
 
-            // 2. Đường kính đai: Dùng EstimatedStirrupDiameter từ Settings (không parse nữa)
-            double stirrupDia = settings.Beam?.EstimatedStirrupDiameter ?? 10;
+            // 2. Đường kính đai: Dùng EstimatedStirrupDiameter từ Settings
+            // Nếu = 0 (Auto), lấy Max trong StirrupBarRange (để an toàn cho tính toán hở)
+            double stirrupDia = settings.Beam?.EstimatedStirrupDiameter ?? 0;
+            if (stirrupDia <= 0)
+            {
+                var inventory = settings.General?.AvailableDiameters ?? new List<int> { 6, 8, 10 };
+                var stirrups = DiameterParser.ParseRange(settings.Beam?.StirrupBarRange ?? "8-10", inventory);
+                stirrupDia = stirrups.Any() ? stirrups.Max() : 10;
+            }
 
             // 3. UsableWidth = B - 2×Cover - 2×StirrupDia
             double usableWidth = beamWidth - (2 * cover) - (2 * stirrupDia);
@@ -406,6 +413,128 @@ namespace DTS_Engine.Core.Algorithms
             }
 
             // Fallback: dùng đường kính lớn nhất
+            int dMax = diameters.Max();
+            double asMax = Math.PI * dMax * dMax / 400.0;
+            int nMax = reqArea > 0.01 ? (int)Math.Ceiling(reqArea / asMax) : (needConstructive ? 2 : 0);
+            if (nMax % 2 != 0) nMax++;
+
+            if (nMax == 0) return "-";
+            return $"{nMax}d{dMax}";
+        }
+
+        // ====================================================================
+        // DtsSettings OVERLOADS - Use these instead of RebarSettings versions
+        // ====================================================================
+
+        /// <summary>
+        /// [DtsSettings] Tính số nhánh đai tự động dựa trên bề rộng và settings.
+        /// </summary>
+        public static int GetAutoLegs(double beamWidthMm, DtsSettings settings)
+        {
+            var beamCfg = settings.Beam;
+            if (beamCfg == null) return 2;
+
+            var rules = ParseAutoLegsRules(beamCfg.AutoLegsRules);
+            if (rules.Count == 0)
+            {
+                // Quy tắc mặc định
+                if (beamWidthMm <= 250) return 2;
+                if (beamWidthMm <= 400) return 3;
+                if (beamWidthMm <= 600) return 4;
+                return 5;
+            }
+
+            foreach (var rule in rules)
+            {
+                if (beamWidthMm <= rule.Item1)
+                    return rule.Item2;
+            }
+            return rules.Last().Item2;
+        }
+
+        /// <summary>
+        /// [DtsSettings] Tính toán bước đai từ diện tích cắt và xoắn yêu cầu.
+        /// </summary>
+        public static string CalculateStirrup(double shearArea, double ttArea, double beamWidthMm, DtsSettings settings)
+        {
+            double totalAreaPerLen = shearArea + 2 * ttArea;
+            if (totalAreaPerLen <= 0.001) return "-";
+
+            var beamCfg = settings.Beam;
+            var inventory = settings.General?.AvailableDiameters ?? new List<int> { 8, 10 };
+
+            // Parse StirrupBarRange từ settings
+            var diameters = DiameterParser.ParseRange(beamCfg?.StirrupBarRange ?? "8-10", inventory);
+            if (diameters.Count == 0) diameters = new List<int> { 8, 10 };
+
+            // Bước đai từ settings (với validation)
+            // Bước đai từ settings (với validation)
+            var spacings = beamCfg?.StirrupSpacings;
+            if (spacings == null || spacings.Count == 0)
+                spacings = new List<int> { 100, 150, 200, 250 };
+            int minSpacingAcceptable = 100;
+
+            int baseLegs = GetAutoLegs(beamWidthMm, settings);
+
+            var legOptions = new List<int> { baseLegs };
+            if (baseLegs - 1 >= 2) legOptions.Insert(0, baseLegs - 1);
+            legOptions.Add(baseLegs + 1);
+            legOptions.Add(baseLegs + 2);
+
+            if (beamCfg?.AllowOddLegs != true)
+                legOptions = legOptions.Where(l => l % 2 == 0).ToList();
+
+            if (legOptions.Count == 0)
+                legOptions = new List<int> { 2, 4 };
+
+            foreach (int d in diameters.OrderBy(x => x))
+            {
+                foreach (int legs in legOptions)
+                {
+                    string res = TryFindSpacing(totalAreaPerLen, d, legs, spacings, minSpacingAcceptable);
+                    if (res != null) return res;
+                }
+            }
+
+            int maxLegs = legOptions.Last();
+            int dMax = diameters.Max();
+            int sMin = spacings.Min();
+            return $"{maxLegs}-d{dMax}a{sMin}*";
+        }
+
+        /// <summary>
+        /// [DtsSettings] Tính toán cốt giá/sườn (Web bars).
+        /// </summary>
+        public static string CalculateWebBars(double torsionTotal, double torsionRatioSide, double heightMm, DtsSettings settings)
+        {
+            var beamCfg = settings.Beam;
+            var inventory = settings.General?.AvailableDiameters ?? new List<int> { 12, 14 };
+
+            var diameters = DiameterParser.ParseRange(beamCfg?.SideBarRange ?? "12-14", inventory);
+            if (diameters.Count == 0) diameters = new List<int> { 12, 14 };
+
+            double minHeight = beamCfg?.WebBarMinHeight ?? 700;
+
+            double reqArea = torsionTotal * torsionRatioSide;
+            bool needConstructive = heightMm >= minHeight;
+
+            foreach (int d in diameters.OrderBy(x => x))
+            {
+                double as1 = Math.PI * d * d / 400.0;
+
+                int nTorsion = 0;
+                if (reqArea > 0.01)
+                    nTorsion = (int)Math.Ceiling(reqArea / as1);
+
+                int nConstructive = needConstructive ? 2 : 0;
+
+                int nFinal = Math.Max(nTorsion, nConstructive);
+                if (nFinal > 0 && nFinal % 2 != 0) nFinal++;
+
+                if (nFinal > 0 && nFinal <= 6)
+                    return $"{nFinal}d{d}";
+            }
+
             int dMax = diameters.Max();
             double asMax = Math.PI * dMax * dMax / 400.0;
             int nMax = reqArea > 0.01 ? (int)Math.Ceiling(reqArea / asMax) : (needConstructive ? 2 : 0);
@@ -669,6 +798,334 @@ namespace DTS_Engine.Core.Algorithms
             }
 
             return baseLength;
+        }
+
+
+        #endregion
+
+        #region OUT-PERFORM ALGORITHM (Multi-Proposal with Scoring)
+
+        /// <summary>
+        /// [OUT-PERFORM ALGORITHM]
+        /// Tạo ra N phương án bố trí thép cho Group, từ Tiết kiệm đến Dễ thi công.
+        /// Chiến lược: Min-First Backbone + Smart Layer Filling + Joint Synchronization.
+        /// </summary>
+        public static List<ContinuousBeamSolution> CalculateProposalsForGroup(
+            BeamGroup group,
+            List<BeamResultData> spanResults,
+            DtsSettings settings)
+        {
+            var solutions = new List<ContinuousBeamSolution>();
+            if (spanResults == null || spanResults.Count == 0 || group?.Spans == null) return solutions;
+
+            // 1. CHUẨN BỊ DỮ LIỆU
+            var inventory = settings.General?.AvailableDiameters ?? new List<int> { 16, 18, 20, 22, 25 };
+            var allowedDias = DiameterParser.ParseRange(settings.Beam?.MainBarRange ?? "16-25", inventory);
+
+            if (settings.Beam?.PreferEvenDiameter == true)
+                allowedDias = DiameterParser.FilterEvenDiameters(allowedDias);
+
+            allowedDias.Sort(); // Ưu tiên đường kính nhỏ trước (Tiết kiệm)
+
+            // Lấy bề rộng/cao dầm từ Group (STRICT - không fallback hardcode)
+            double beamWidth = group.Width;
+            double beamHeight = group.Height;
+
+            // VALIDATION: Phải có data tiết diện từ XData hoặc SAP2000
+            if (beamWidth <= 0 || beamHeight <= 0)
+            {
+                // Thử lấy từ spanResults[0] nếu Group không có
+                if (spanResults.Count > 0 && spanResults[0] != null)
+                {
+                    beamWidth = spanResults[0].Width > 0 ? spanResults[0].Width : beamWidth;
+                    beamHeight = spanResults[0].SectionHeight > 0 ? spanResults[0].SectionHeight : beamHeight;
+                }
+            }
+
+            // Nếu vẫn không có -> Skip với warning
+            if (beamWidth <= 0 || beamHeight <= 0)
+            {
+                // Không có data tiết diện -> Không thể tính toán
+                var errorSol = new ContinuousBeamSolution
+                {
+                    OptionName = "ERROR",
+                    IsValid = false,
+                    ValidationMessage = $"Không tìm thấy tiết diện dầm (Width={beamWidth}, Height={beamHeight}). Chạy DTS_REBAR_SAP_RESULT trước."
+                };
+                solutions.Add(errorSol);
+                return solutions;
+            }
+
+            // Lấy setting cho số thanh min/max
+            int minBarsPerLayer = settings.Beam?.MinBarsPerLayer ?? 2;
+            int maxLayers = settings.Beam?.MaxLayers ?? 2;
+
+            // 2. VÒNG LẶP THỬ NGHIỆM (SIMULATION LOOP)
+            foreach (int backboneDia in allowedDias)
+            {
+                int maxBarsL1 = GetMaxBarsPerLayer(beamWidth, backboneDia, settings);
+                int startBars = minBarsPerLayer;
+                int endBars = Math.Min(maxBarsL1, minBarsPerLayer + 2); // Thử backbone từ Min đến Min+2
+
+                for (int bbCount = startBars; bbCount <= endBars; bbCount++)
+                {
+                    var sol = SolveScenario(group, spanResults, backboneDia, bbCount, maxBarsL1, beamWidth, settings);
+
+                    if (sol.IsValid)
+                    {
+                        solutions.Add(sol);
+                    }
+                }
+            }
+
+            // 3. CHẤM ĐIỂM & CHỌN LỌC (RANKING)
+            var rankedSolutions = solutions.OrderByDescending(s => s.EfficiencyScore).ToList();
+            var finalProposals = PruneSimilarSolutions(rankedSolutions);
+
+            return finalProposals.Take(3).ToList();
+        }
+
+        /// <summary>
+        /// Giải bài toán bố trí cho một kịch bản Backbone cụ thể.
+        /// </summary>
+        private static ContinuousBeamSolution SolveScenario(
+            BeamGroup group,
+            List<BeamResultData> spanResults,
+            int bbDia,
+            int bbCount,
+            int maxBarsL1,
+            double beamWidth,
+            DtsSettings settings)
+        {
+            double as1 = Math.PI * bbDia * bbDia / 400.0; // cm²
+            double asBackbone = bbCount * as1;
+
+            var sol = new ContinuousBeamSolution
+            {
+                OptionName = $"{bbCount}D{bbDia}",
+                BackboneDiameter = bbDia,
+                BackboneCount_Top = bbCount,
+                BackboneCount_Bot = bbCount,
+                As_Backbone_Top = asBackbone,
+                As_Backbone_Bot = asBackbone,
+                Reinforcements = new Dictionary<string, RebarSpec>(),
+                IsValid = true
+            };
+
+            double totalWeight = 0;
+            double totalLength = group.Spans.Sum(s => s.Length);
+
+            // --- A. GIẢI QUYẾT CÁC GỐI (JOINTS) - ĐỒNG BỘ HÓA ---
+            int numSpans = Math.Min(group.Spans.Count, spanResults.Count);
+            for (int i = 0; i <= numSpans; i++)
+            {
+                var leftSpan = (i > 0 && i - 1 < group.Spans.Count) ? group.Spans[i - 1] : null;
+                var rightSpan = (i < numSpans && i < group.Spans.Count) ? group.Spans[i] : null;
+
+                // 1. Tính As Req Max tại gối (Max của End trái và Start phải)
+                double reqTopLeft = (leftSpan != null && i - 1 < spanResults.Count)
+                    ? GetReqArea(spanResults[i - 1], true, 2, settings) : 0;
+                double reqTopRight = (rightSpan != null && i < spanResults.Count)
+                    ? GetReqArea(spanResults[i], true, 0, settings) : 0;
+
+                double reqTopJoint = Math.Max(reqTopLeft, reqTopRight);
+
+                // 2. Tính thép gia cường (Additional)
+                var topSpecs = CalculateReinforcementSmart(reqTopJoint, asBackbone, bbCount, maxBarsL1, bbDia, as1, "Top", settings);
+
+                // 3. Gán thép gia cường
+                foreach (var spec in topSpecs)
+                {
+                    if (leftSpan != null)
+                        sol.Reinforcements[$"{leftSpan.SpanId}_Top_Right"] = spec;
+                    if (rightSpan != null)
+                        sol.Reinforcements[$"{rightSpan.SpanId}_Top_Left"] = spec;
+
+                    // Ước tính chiều dài gối = L/4 + L/4
+                    double len = (leftSpan?.Length ?? 0) * 0.25 + (rightSpan?.Length ?? 0) * 0.25;
+                    totalWeight += spec.Count * as1 * 0.00785 * len / 1000.0; // mm to m
+                }
+            }
+
+            // --- B. GIẢI QUYẾT GIỮA NHỊP (MID-SPAN) ---
+            for (int i = 0; i < numSpans; i++)
+            {
+                var span = group.Spans[i];
+                var data = spanResults[i];
+
+                // 1. Thép Lớp Dưới (Bot Mid)
+                double reqBotMid = GetReqArea(data, false, 1, settings);
+                var botSpecs = CalculateReinforcementSmart(reqBotMid, asBackbone, bbCount, maxBarsL1, bbDia, as1, "Bot", settings);
+
+                foreach (var spec in botSpecs)
+                {
+                    sol.Reinforcements[$"{span.SpanId}_Bot_Mid"] = spec;
+                    totalWeight += spec.Count * as1 * 0.00785 * (span.Length * 0.8) / 1000.0;
+                }
+
+                // 2. Thép Lớp Trên giữa nhịp (Top Mid) - Thường là cấu tạo
+                double reqTopMid = GetReqArea(data, true, 1, settings);
+                if (reqTopMid > asBackbone * 1.05) // Chỉ thêm nếu cần
+                {
+                    var topMidSpecs = CalculateReinforcementSmart(reqTopMid, asBackbone, bbCount, maxBarsL1, bbDia, as1, "Top", settings);
+                    foreach (var spec in topMidSpecs)
+                    {
+                        sol.Reinforcements[$"{span.SpanId}_Top_Mid"] = spec;
+                    }
+                }
+            }
+
+            // --- C. TÍNH ĐIỂM (SCORING) ---
+            // Trọng lượng Backbone
+            totalWeight += (sol.As_Backbone_Top + sol.As_Backbone_Bot) * 0.00785 * totalLength / 1000.0;
+            sol.TotalSteelWeight = totalWeight;
+
+            // Gọi hàm tính điểm chuyên biệt
+            CalculateEfficiencyScore(sol, settings);
+
+            // Mô tả
+            sol.Description = bbCount == 2 ? "Tiết kiệm" :
+                              bbCount == 3 ? "Cân bằng" : "An toàn";
+
+            // Append Score info to description for debug/viewing
+            sol.Description += $" (Score: {Math.Round(sol.EfficiencyScore, 0)})";
+
+            return sol;
+        }
+
+        private static void CalculateEfficiencyScore(ContinuousBeamSolution sol, DtsSettings settings)
+        {
+            // 1. Base Score = Inverse of Weight
+            // (100,000 / Weight) -> Weight 100kg = 1000 pts. Weight 200kg = 500 pts.
+            double baseScore = 100000.0 / (sol.TotalSteelWeight + 1.0);
+
+            // 2. Penalties (Phạt)
+            double penaltyMultiplier = 1.0;
+
+            // 2.1 Max Layers Penalty
+            int maxLayersUsed = sol.Reinforcements.Values.Any() ? sol.Reinforcements.Values.Max(x => x.Layer) : 1;
+            if (maxLayersUsed == 2) penaltyMultiplier *= 0.95; // Lớp 2: -5%
+            if (maxLayersUsed >= 3) penaltyMultiplier *= 0.70; // Lớp 3: -30% (Rất tệ)
+
+            // 2.2 Prefer Symmetric Penalty (Đối xứng)
+            if (settings.Beam?.PreferSymmetric == true)
+            {
+                // Check tất cả các vị trí gia cường
+                foreach (var spec in sol.Reinforcements.Values)
+                {
+                    // Nếu số lượng lẻ -> Phạt
+                    // (Lưu ý: CalculateReinforcementSmart đã cố gắng làm chẵn, nhưng nếu logic khác sinh ra lẻ thì phạt)
+                    if (spec.Count % 2 != 0)
+                    {
+                        penaltyMultiplier *= 0.95; // -5% per asymmetric spot
+                    }
+                }
+            }
+
+            // 2.3 Prefer Fewer Bars (Ít thanh - Đường kính lớn)
+            if (settings.Beam?.PreferFewerBars == true)
+            {
+                // Logic: Nếu tổng số thanh tại mặt cắt quá nhiều (> MinPossible + 2) -> Phạt
+                // Ở đây ta phạt dựa trên số lượng thanh Backbone
+                if (sol.BackboneCount_Top > 4) penaltyMultiplier *= 0.90;
+            }
+
+            // 2.4 Prefer Single Diameter (Đồng bộ đường kính)
+            // Nếu đường kính gia cường != đường kính backbone -> Phạt nhẹ
+            if (settings.Beam?.PreferSingleDiameter == true)
+            {
+                bool mixed = sol.Reinforcements.Values.Any(r => r.Diameter != sol.BackboneDiameter);
+                if (mixed) penaltyMultiplier *= 0.95;
+            }
+
+            sol.EfficiencyScore = baseScore * penaltyMultiplier;
+        }
+
+        /// <summary>
+        /// Thuật toán "Rót Thép" thông minh: Ưu tiên chèn Lớp 1 -> Lớp 2...
+        /// </summary>
+        /// <summary>
+        /// Thuật toán "Rót Thép" thông minh: Ưu tiên chèn Lớp 1 -> Lớp 2...
+        /// Có xét đến tính đối xứng và settings.
+        /// </summary>
+        private static List<RebarSpec> CalculateReinforcementSmart(
+            double reqTotal, double provBackbone, int bbCount, int maxL1, int dia, double as1, string pos, DtsSettings settings)
+        {
+            var result = new List<RebarSpec>();
+            double missing = reqTotal - provBackbone;
+            if (missing <= 0.01) return result;
+
+            int barsNeeded = (int)Math.Ceiling(missing / as1);
+
+            // Rule: Gia cường nên chẵn để đối xứng (nếu User yêu cầu)
+            if (settings.Beam?.PreferSymmetric == true && barsNeeded % 2 != 0)
+            {
+                barsNeeded++;
+            }
+
+            // Check chỗ trống lớp 1
+            int spaceL1 = maxL1 - bbCount;
+            if (spaceL1 < 0) spaceL1 = 0;
+
+            if (barsNeeded <= spaceL1)
+            {
+                // Đủ chỗ lớp 1 -> Nhét hết vào
+                result.Add(new RebarSpec { Diameter = dia, Count = barsNeeded, Position = pos, Layer = 1 });
+            }
+            else
+            {
+                // Không đủ chỗ lớp 1 -> Rót đầy lớp 1 trước
+                // Nếu PreferSymmetric, số lượng rót vào lớp 1 cũng nên chẵn (nếu còn dư nhiều)
+                // Tuy nhiên để tối ưu diện tích (h0), ta ưu tiên max số lượng.
+
+                int fillL1 = spaceL1;
+
+                // Tinh chỉnh fillL1 để đẹp đội hình (nếu cần)
+                // Ví dụ: spaceL1 = 3, barsNeeded = 4. 
+                // Nếu fill 3 (L1) + 1 (L2) -> L2 bị lẻ 1 thanh (xấu).
+                // Nếu fill 2 (L1) + 2 (L2) -> Đẹp hơn? Nhưng h0 giảm.
+                // Quyết định: ƯU TIÊN SỨC CHỊU LỰC (h0) -> Fill Max L1.
+
+                if (fillL1 > 0)
+                {
+                    result.Add(new RebarSpec { Diameter = dia, Count = fillL1, Position = pos, Layer = 1 });
+                }
+
+                int rem = barsNeeded - fillL1;
+                if (rem > 0)
+                {
+                    // Lớp 2
+                    // Kiểm tra maxBarsL2 (thường = maxL1)
+                    int maxL2 = maxL1;
+                    int fillL2 = Math.Min(rem, maxL2);
+
+                    result.Add(new RebarSpec { Diameter = dia, Count = fillL2, Position = pos, Layer = 2 });
+
+                    // Nếu vẫn còn dư -> Lớp 3 (sẽ bị phạt điểm rất nặng ở Scoring)
+                    int remL3 = rem - fillL2;
+                    if (remL3 > 0)
+                    {
+                        result.Add(new RebarSpec { Diameter = dia, Count = remL3, Position = pos, Layer = 3 });
+                    }
+                }
+            }
+            return result;
+        }
+
+        private static List<ContinuousBeamSolution> PruneSimilarSolutions(List<ContinuousBeamSolution> input)
+        {
+            return input.GroupBy(x => x.OptionName)
+                        .Select(g => g.First())
+                        .ToList();
+        }
+
+        private static double GetReqArea(BeamResultData data, bool isTop, int pos, DtsSettings s)
+        {
+            if (data == null) return 0;
+            double torsionFactor = isTop ? (s?.Beam?.TorsionDist_TopBar ?? 0.5) : (s?.Beam?.TorsionDist_BotBar ?? 0.5);
+            double baseArea = isTop ? (data.TopArea?.ElementAtOrDefault(pos) ?? 0) : (data.BotArea?.ElementAtOrDefault(pos) ?? 0);
+            double torsion = data.TorsionArea?.ElementAtOrDefault(pos) ?? 0;
+            return baseArea + torsion * torsionFactor;
         }
 
         #endregion

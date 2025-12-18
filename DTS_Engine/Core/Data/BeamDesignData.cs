@@ -47,6 +47,8 @@ namespace DTS_Engine.Core.Data
             // SAP Mapping
             clone.SapElementName = SapElementName;
             clone.MappingSource = MappingSource;
+            clone.BeamType = BeamType;
+            clone.BelongToGroup = BelongToGroup;
             return clone;
         }
 
@@ -86,6 +88,19 @@ namespace DTS_Engine.Core.Data
         /// Nguồn gốc mapping: "XData" | "Coordinate" | "Manual"
         /// </summary>
         public string MappingSource { get; set; } = "Coordinate";
+
+        // ===== GROUPING INFO (Persistent) =====
+        /// <summary>
+        /// Loại dầm: "Girder" (Chính) hoặc "Beam" (Phụ).
+        /// Determines Curtailment Rules.
+        /// </summary>
+        public string BeamType { get; set; } = "Beam";
+
+        /// <summary>
+        /// Tên Group mà dầm này thuộc về (VD: "G2-B1").
+        /// Dùng để khôi phục Group khi mở lại bản vẽ.
+        /// </summary>
+        public string BelongToGroup { get; set; }
 
         // ===== Section Info =====
         public string SectionName { get; set; }
@@ -136,6 +151,9 @@ namespace DTS_Engine.Core.Data
             // SAP Mapping
             if (!string.IsNullOrEmpty(SapElementName)) dict["SapElementName"] = SapElementName;
             if (!string.IsNullOrEmpty(MappingSource)) dict["MappingSource"] = MappingSource;
+            // Grouping Info
+            if (!string.IsNullOrEmpty(BeamType)) dict["BeamType"] = BeamType;
+            if (!string.IsNullOrEmpty(BelongToGroup)) dict["BelongToGroup"] = BelongToGroup;
             return dict;
         }
 
@@ -167,6 +185,9 @@ namespace DTS_Engine.Core.Data
             // SAP Mapping
             if (dict.TryGetValue("SapElementName", out var sapN)) SapElementName = sapN?.ToString();
             if (dict.TryGetValue("MappingSource", out var mapS)) MappingSource = mapS?.ToString();
+            // Grouping Info
+            if (dict.TryGetValue("BeamType", out var bt)) BeamType = bt?.ToString();
+            if (dict.TryGetValue("BelongToGroup", out var btg)) BelongToGroup = btg?.ToString();
         }
 
         private double[] ConvertToDoubleArray(object obj)
@@ -293,8 +314,10 @@ namespace DTS_Engine.Core.Data
     }
 
     /// <summary>
-    /// Cài đặt tính toán Rebar (Global Settings).
+    /// [DEPRECATED] Cài đặt tính toán Rebar (Global Settings).
+    /// Sử dụng DtsSettings.Beam thay thế cho tất cả rebar calculation settings.
     /// </summary>
+    [Obsolete("Use DtsSettings.Beam instead. This class is kept for backward compatibility only.")]
     public class RebarSettings
     {
         private static RebarSettings _instance;

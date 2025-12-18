@@ -149,7 +149,7 @@ namespace DTS_Engine.Commands
             int successCount = 0;
             int insufficientCount = 0; // NEW: Track beams where Aprov < Areq
             var insufficientBeamIds = new List<ObjectId>(); // NEW: For highlighting
-            var settings = RebarSettings.Instance;
+            var dtsSettings = DtsSettings.Instance;
 
             UsingTransaction(tr =>
             {
@@ -164,7 +164,7 @@ namespace DTS_Engine.Commands
                     {
                         try
                         {
-                            designData.TorsionFactorUsed = settings.TorsionFactorTop;
+                            designData.TorsionFactorUsed = dtsSettings.Beam?.TorsionDist_TopBar ?? 0.25;
 
                             // Store mapping info for future use
                             designData.SapElementName = sapName;
@@ -199,8 +199,8 @@ namespace DTS_Engine.Commands
                                     bool isInsufficient = false;
                                     for (int i = 0; i < 3; i++)
                                     {
-                                        double areqTop = designData.TopArea[i] + designData.TorsionArea[i] * settings.TorsionRatioTop;
-                                        double areqBot = designData.BotArea[i] + designData.TorsionArea[i] * settings.TorsionRatioBot;
+                                        double areqTop = designData.TopArea[i] + designData.TorsionArea[i] * (dtsSettings.Beam?.TorsionDist_TopBar ?? 0.25);
+                                        double areqBot = designData.BotArea[i] + designData.TorsionArea[i] * (dtsSettings.Beam?.TorsionDist_BotBar ?? 0.25);
 
                                         if (existingData.TopAreaProv[i] < areqTop * 0.99 ||
                                             existingData.BotAreaProv[i] < areqBot * 0.99)
@@ -248,8 +248,8 @@ namespace DTS_Engine.Commands
                                     switch (displayMode)
                                     {
                                         case 0: // Combined (Flex + Torsion phân bổ)
-                                            displayTop[i] = designData.TopArea[i] + designData.TorsionArea[i] * settings.TorsionRatioTop;
-                                            displayBot[i] = designData.BotArea[i] + designData.TorsionArea[i] * settings.TorsionRatioBot;
+                                            displayTop[i] = designData.TopArea[i] + designData.TorsionArea[i] * (dtsSettings.Beam?.TorsionDist_TopBar ?? 0.25);
+                                            displayBot[i] = designData.BotArea[i] + designData.TorsionArea[i] * (dtsSettings.Beam?.TorsionDist_BotBar ?? 0.25);
                                             displayTopStr[i] = FormatValue(displayTop[i]);
                                             displayBotStr[i] = FormatValue(displayBot[i]);
                                             break;
@@ -267,7 +267,7 @@ namespace DTS_Engine.Commands
                                                 // Top: ShearArea = Av/s (Đai cắt trên đơn vị dài)
                                                 // Bot: TorsionArea × SideRatio = Thép dọc xoắn phân bổ cho sườn
                                             displayTopStr[i] = FormatValue(designData.ShearArea[i]);
-                                            displayBotStr[i] = FormatValue(designData.TorsionArea[i] * settings.TorsionRatioSide);
+                                            displayBotStr[i] = FormatValue(designData.TorsionArea[i] * (dtsSettings.Beam?.TorsionDist_SideBar ?? 0.50));
                                             break;
                                     }
                                 }
@@ -450,104 +450,323 @@ namespace DTS_Engine.Commands
         public void DTS_REBAR_CALCULATE()
         {
             WriteMessage("=== REBAR: TÍNH TOÁN CỐT THÉP ===");
-
-            // 1. Select
             WriteMessage("\nChọn các đường Dầm cần tính thép: ");
             var selectedIds = AcadUtils.SelectObjectsOnScreen("LINE,LWPOLYLINE,POLYLINE");
             if (selectedIds.Count == 0) return;
 
-            int count = 0;
-            RebarSettings settings = RebarSettings.Instance;
+            // Load settings
+            var dtsSettings = DtsSettings.Instance;
+
+            // Load existing groups để check dầm thuộc group nào
+            var allGroups = GetOrCreateBeamGroups();
+
+            // Tạo map: EntityHandle -> BeamGroup
+            var handleToGroup = new Dictionary<string, BeamGroup>();
+            foreach (var group in allGroups)
+            {
+                foreach (var handle in group.EntityHandles)
+                {
+                    handleToGroup[handle] = group;
+                }
+            }
+
+            // Phân loại dầm: trong group hoặc dầm đơn
+            var groupedBeams = new Dictionary<BeamGroup, List<(ObjectId Id, BeamResultData Data)>>();
+            var singleBeams = new List<(ObjectId Id, BeamResultData Data)>();
 
             UsingTransaction(tr =>
             {
-                var btr = tr.GetObject(AcadUtils.Db.CurrentSpaceId, OpenMode.ForWrite) as BlockTableRecord;
-
                 foreach (ObjectId id in selectedIds)
                 {
-                    DBObject obj = tr.GetObject(id, OpenMode.ForWrite);
+                    var obj = tr.GetObject(id, OpenMode.ForRead);
                     var data = XDataUtils.ReadElementData(obj) as BeamResultData;
-
                     if (data == null) continue;
 
-                    // Validate Dimensions - NO LONGER USE HARDCODED FALLBACK
+                    // Validate dimensions
                     if (data.Width <= 0 || data.SectionHeight <= 0)
                     {
-                        // CRITICAL: Do not use hardcoded values, report error and skip
-                        WriteMessage($" -> Lỗi: Dầm {data.SapElementName ?? "?"} thiếu tiết diện (Width={data.Width}, Height={data.SectionHeight}). Bỏ qua.");
+                        WriteMessage($"  ⚠️ Dầm {data.SapElementName ?? "?"} thiếu tiết diện. Bỏ qua.");
                         continue;
                     }
 
-                    // Calculate Rebar and update directly into data object
-                    for (int i = 0; i < 3; i++)
+                    string handle = obj.Handle.ToString();
+                    if (handleToGroup.TryGetValue(handle, out var group))
                     {
-                        // === Longitudinal Rebar ===
-                        double asTop = data.TopArea[i] + data.TorsionArea[i] * settings.TorsionRatioTop;
-                        double asBot = data.BotArea[i] + data.TorsionArea[i] * settings.TorsionRatioBot;
-
-                        // LEGACY: Using old RebarSettings-based Calculate (marked Obsolete)
-                        // TODO: Migrate to DtsSettings version in future refactoring
-#pragma warning disable CS0618
-                        string sTop = RebarCalculator.Calculate(asTop, data.Width * 10, data.SectionHeight * 10, settings);
-                        string sBot = RebarCalculator.Calculate(asBot, data.Width * 10, data.SectionHeight * 10, settings);
-#pragma warning restore CS0618
-
-                        data.TopRebarString[i] = sTop;
-                        data.BotRebarString[i] = sBot;
-                        data.TopAreaProv[i] = RebarStringParser.Parse(sTop);
-                        data.BotAreaProv[i] = RebarStringParser.Parse(sBot);
-
-                        // === Stirrup (Thép đai) - ACI 318-19: Av/s + 2*At/s ===
-                        // beamWidth (mm) = data.Width (cm) * 10
-                        string sStirrup = RebarCalculator.CalculateStirrup(data.ShearArea[i], data.TTArea[i], data.Width * 10, settings);
-                        data.StirrupString[i] = sStirrup;
-
-                        // === Web Bars (Thép sườn) ===
-                        // Dùng TorsionTotal và RatioSide từ settings
-                        string sWeb = RebarCalculator.CalculateWebBars(data.TorsionArea[i], settings.TorsionRatioSide, data.SectionHeight * 10, settings);
-                        data.WebBarString[i] = sWeb;
+                        // Dầm thuộc group
+                        if (!groupedBeams.ContainsKey(group))
+                            groupedBeams[group] = new List<(ObjectId, BeamResultData)>();
+                        groupedBeams[group].Add((id, data));
                     }
-
-                    // Save updated data back to XData (preserves raw areas)
-                    XDataUtils.UpdateElementData(obj, data, tr);
-
-                    // Update Labels on screen
-                    // Format: Top line = Longitudinal + Stirrup, Bot line = Longitudinal + WebBar
-                    var curve = obj as Curve;
-                    if (curve != null)
+                    else
                     {
-                        Point3d pStart = curve.StartPoint;
-                        Point3d pEnd = curve.EndPoint;
-
-                        for (int i = 0; i < 3; i++)
-                        {
-                            // Top: Thép dọc Top (dòng 1) + Thép đai (dòng 2)
-                            // Dùng \P cho xuống dòng trong MText
-                            string topText = data.TopRebarString[i] ?? "-";
-                            if (!string.IsNullOrEmpty(data.StirrupString[i]) && data.StirrupString[i] != "-")
-                                topText += "\\P" + data.StirrupString[i];
-
-                            // Bot: Thép dọc Bot (dòng 1) + Thép sườn (dòng 2)
-                            string botText = data.BotRebarString[i] ?? "-";
-                            if (!string.IsNullOrEmpty(data.WebBarString[i]) && data.WebBarString[i] != "-")
-                                botText += "\\P" + data.WebBarString[i];
-
-                            // Plot with owner handle
-                            string ownerH = obj.Handle.ToString();
-                            LabelPlotter.PlotRebarLabel(btr, tr, pStart, pEnd, topText, i, true, ownerH);
-                            LabelPlotter.PlotRebarLabel(btr, tr, pStart, pEnd, botText, i, false, ownerH);
-                        }
+                        // Dầm đơn
+                        singleBeams.Add((id, data));
                     }
-
-                    count++;
                 }
             });
 
-            WriteSuccess($"Đã tính toán và cập nhật cho {count} dầm.");
+            int singleCount = 0;
+            int groupCount = 0;
+            int lockedCount = 0;
 
-            // ===== SYNC: Populate BeamGroups với kết quả tính toán =====
-            // Để DTS_REBAR_VIEWER có dữ liệu để hiển thị
-            SyncRebarCalculationsToGroups(selectedIds);
+            // ========== XỬ LÝ DẦM ĐƠN (Dùng DtsSettings - không dùng Legacy) ==========
+            if (singleBeams.Count > 0)
+            {
+                WriteMessage($"\n--- Tính thép dầm đơn: {singleBeams.Count} dầm ---");
+                UsingTransaction(tr =>
+                {
+                    var btr = tr.GetObject(AcadUtils.Db.CurrentSpaceId, OpenMode.ForWrite) as BlockTableRecord;
+                    foreach (var (id, data) in singleBeams)
+                    {
+                        var obj = tr.GetObject(id, OpenMode.ForWrite);
+
+                        // Lấy torsion ratio từ DtsSettings (không phải RebarSettings)
+                        double torsionRatioTop = dtsSettings.Beam?.TorsionDist_TopBar ?? 0.25;
+                        double torsionRatioBot = dtsSettings.Beam?.TorsionDist_BotBar ?? 0.25;
+                        double torsionRatioSide = dtsSettings.Beam?.TorsionDist_SideBar ?? 0.50;
+
+                        for (int i = 0; i < 3; i++)
+                        {
+                            double asTop = data.TopArea[i] + data.TorsionArea[i] * torsionRatioTop;
+                            double asBot = data.BotArea[i] + data.TorsionArea[i] * torsionRatioBot;
+
+                            // [FIX] Sử dụng DtsSettings thay vì RebarSettings
+                            string sTop = RebarCalculator.Calculate(asTop, data.Width * 10, data.SectionHeight * 10, dtsSettings);
+                            string sBot = RebarCalculator.Calculate(asBot, data.Width * 10, data.SectionHeight * 10, dtsSettings);
+
+                            data.TopRebarString[i] = sTop;
+                            data.BotRebarString[i] = sBot;
+                            data.TopAreaProv[i] = RebarStringParser.Parse(sTop);
+                            data.BotAreaProv[i] = RebarStringParser.Parse(sBot);
+
+                            // [FIX] Dùng DtsSettings thay vì RebarSettings cho Stirrup và Web
+                            string sStirrup = RebarCalculator.CalculateStirrup(data.ShearArea[i], data.TTArea[i], data.Width * 10, dtsSettings);
+                            data.StirrupString[i] = sStirrup;
+
+                            string sWeb = RebarCalculator.CalculateWebBars(data.TorsionArea[i], torsionRatioSide, data.SectionHeight * 10, dtsSettings);
+                            data.WebBarString[i] = sWeb;
+                        }
+
+                        XDataUtils.UpdateElementData(obj, data, tr);
+                        singleCount++;
+                    }
+                });
+            }
+
+            // ========== XỬ LÝ DẦM TRONG GROUP (Out-Perform) ==========
+            if (groupedBeams.Count > 0)
+            {
+                WriteMessage($"\n--- Tính thép theo nhóm: {groupedBeams.Count} nhóm ---");
+                UsingTransaction(tr =>
+                {
+                    foreach (var kvp in groupedBeams)
+                    {
+                        var group = kvp.Key;
+                        var beamList = kvp.Value;
+
+                        // Generate proposals using Out-Perform (ALWAYS, even if locked)
+                        var spanResults = beamList.Select(b => b.Data).ToList();
+                        var objIds = beamList.Select(b => b.Id).ToList();
+
+                        var proposals = RebarCalculator.CalculateProposalsForGroup(group, spanResults, dtsSettings);
+
+                        if (proposals == null || proposals.Count == 0)
+                        {
+                            WriteMessage($"  ❌ {group.GroupName}: Không thể tạo phương án.");
+                            continue;
+                        }
+
+                        var errorSol = proposals.FirstOrDefault(p => !p.IsValid);
+                        if (errorSol != null)
+                        {
+                            WriteMessage($"  ❌ {group.GroupName}: {errorSol.ValidationMessage}");
+                            continue;
+                        }
+
+                        // [FIX] Luôn cập nhật BackboneOptions với proposals mới
+                        group.BackboneOptions = proposals;
+                        group.SelectedBackboneIndex = 0;
+
+                        // [FIX] CHỈ apply khi CHƯA chốt
+                        if (group.IsDesignLocked)
+                        {
+                            // Đã chốt: Giữ nguyên SelectedDesign, KHÔNG apply proposals mới
+                            lockedCount++;
+                            WriteMessage($"  🔒 {group.GroupName}: Đã chốt. Proposals mới đã lưu nhưng giữ nguyên SelectedDesign.");
+                        }
+                        else
+                        {
+                            // Chưa chốt: Apply best solution
+                            var bestSolution = proposals.FirstOrDefault(p => p.IsValid);
+                            if (bestSolution != null)
+                            {
+                                ApplyGroupSolutionToEntities(tr, group, objIds, spanResults, bestSolution, dtsSettings);
+                                groupCount++;
+                                WriteMessage($"  ✅ {group.GroupName}: {bestSolution.OptionName} ({bestSolution.TotalSteelWeight:F1}kg)");
+                            }
+                        }
+                    }
+
+                    SaveBeamGroupsToNOD(allGroups);
+                });
+            }
+
+            // Summary
+            WriteSuccess($"Hoàn thành: {singleCount} dầm đơn + {groupCount} nhóm. {lockedCount} nhóm đã chốt (giữ nguyên).");
+        }
+
+        /// <summary>
+        /// [DEPRECATED] Đã merge vào DTS_REBAR_CALCULATE.
+        /// Giữ lại cho backward compatibility, redirect sang DTS_REBAR_CALCULATE.
+        /// </summary>
+        [Obsolete("Use DTS_REBAR_CALCULATE instead - logic merged.")]
+        [CommandMethod("DTS_REBAR_CALCULATE_GROUP")]
+        public void DTS_REBAR_CALCULATE_GROUP()
+        {
+            WriteMessage("⚠️ Command đã được merge vào DTS_REBAR_CALCULATE. Tự động chuyển...\n");
+            DTS_REBAR_CALCULATE();
+        }
+
+        /// <summary>
+        /// Chốt phương án thép cho BeamGroup đang chọn.
+        /// Phương án chốt sẽ KHÔNG bị ghi đè khi recalculate.
+        /// </summary>
+        [CommandMethod("DTS_REBAR_LOCK")]
+        public void DTS_REBAR_LOCK()
+        {
+            WriteMessage("=== REBAR: CHỐT PHƯƠNG ÁN THÉP ===");
+
+            // 1. Select dầm
+            WriteMessage("\nChọn dầm trong nhóm cần chốt: ");
+            var selectedIds = AcadUtils.SelectObjectsOnScreen("LINE,LWPOLYLINE,POLYLINE");
+            if (selectedIds.Count == 0) return;
+
+            // 2. Tìm group chứa dầm đã chọn
+            var groups = GetOrCreateBeamGroups();
+            string selectedHandle = null;
+
+            UsingTransaction(tr =>
+            {
+                var firstObj = tr.GetObject(selectedIds[0], OpenMode.ForRead);
+                selectedHandle = firstObj?.Handle.ToString();
+            });
+
+            if (selectedHandle == null)
+            {
+                WriteError("Không thể đọc handle của đối tượng.");
+                return;
+            }
+
+            var targetGroup = groups.FirstOrDefault(g => g.EntityHandles.Contains(selectedHandle));
+            if (targetGroup == null)
+            {
+                WriteError("Dầm này chưa thuộc BeamGroup nào. Chạy DTS_AUTO_GROUP trước.");
+                return;
+            }
+
+            // 3. Check có proposals chưa
+            if (targetGroup.BackboneOptions == null || targetGroup.BackboneOptions.Count == 0)
+            {
+                WriteError($"{targetGroup.GroupName}: Chưa có phương án. Chạy DTS_REBAR_CALCULATE_GROUP trước.");
+                return;
+            }
+
+            // 4. Lock solution
+            int selectedIdx = Math.Min(targetGroup.SelectedBackboneIndex, targetGroup.BackboneOptions.Count - 1);
+            selectedIdx = Math.Max(0, selectedIdx);
+
+            var solutionToLock = targetGroup.BackboneOptions[selectedIdx];
+            if (!solutionToLock.IsValid)
+            {
+                WriteError($"Phương án [{selectedIdx}] không hợp lệ: {solutionToLock.ValidationMessage}");
+                return;
+            }
+
+            targetGroup.SelectedDesign = solutionToLock;
+            targetGroup.LockedAt = DateTime.UtcNow;
+            targetGroup.LockedBy = Environment.UserName;
+
+            // 5. Save to NOD
+            SaveBeamGroupsToNOD(groups);
+
+            WriteSuccess($"✅ Đã chốt phương án cho {targetGroup.GroupName}:");
+            WriteMessage($"   - Backbone: {solutionToLock.OptionName}");
+            WriteMessage($"   - Khối lượng: {solutionToLock.TotalSteelWeight:F2} kg");
+            WriteMessage($"   - Thời gian: {targetGroup.LockedAt:HH:mm dd/MM/yyyy}");
+        }
+
+        /// <summary>
+        /// Mở khóa (unlock) phương án đã chốt cho BeamGroup.
+        /// </summary>
+        [CommandMethod("DTS_REBAR_UNLOCK")]
+        public void DTS_REBAR_UNLOCK()
+        {
+            WriteMessage("=== REBAR: MỞ KHÓA PHƯƠNG ÁN ===");
+
+            WriteMessage("\nChọn dầm trong nhóm cần mở khóa: ");
+            var selectedIds = AcadUtils.SelectObjectsOnScreen("LINE,LWPOLYLINE,POLYLINE");
+            if (selectedIds.Count == 0) return;
+
+            var groups = GetOrCreateBeamGroups();
+            string selectedHandle = null;
+
+            UsingTransaction(tr =>
+            {
+                var firstObj = tr.GetObject(selectedIds[0], OpenMode.ForRead);
+                selectedHandle = firstObj?.Handle.ToString();
+            });
+
+            var targetGroup = groups.FirstOrDefault(g => g.EntityHandles.Contains(selectedHandle));
+            if (targetGroup == null)
+            {
+                WriteError("Dầm này chưa thuộc BeamGroup nào.");
+                return;
+            }
+
+            if (!targetGroup.IsDesignLocked)
+            {
+                WriteMessage($"{targetGroup.GroupName}: Chưa chốt phương án nào.");
+                return;
+            }
+
+            // Unlock
+            targetGroup.SelectedDesign = null;
+            targetGroup.LockedAt = null;
+            targetGroup.LockedBy = null;
+
+            SaveBeamGroupsToNOD(groups);
+            WriteSuccess($"✅ Đã mở khóa phương án cho {targetGroup.GroupName}. Chạy DTS_REBAR_CALCULATE_GROUP để tính lại.");
+        }
+
+        /// <summary>
+        /// Hiển thị danh sách các BeamGroup đã chốt phương án.
+        /// </summary>
+        [CommandMethod("DTS_REBAR_LOCKED_LIST")]
+        public void DTS_REBAR_LOCKED_LIST()
+        {
+            WriteMessage("=== DANH SÁCH NHÓM DẦM ĐÃ CHỐT ===\n");
+
+            var groups = GetOrCreateBeamGroups();
+            var lockedGroups = groups.Where(g => g.IsDesignLocked).ToList();
+
+            if (lockedGroups.Count == 0)
+            {
+                WriteMessage("Chưa có nhóm dầm nào được chốt.\n");
+                WriteMessage("Sử dụng DTS_REBAR_CALCULATE_GROUP để tạo phương án, sau đó DTS_REBAR_LOCK để chốt.");
+                return;
+            }
+
+            WriteMessage($"Tổng: {lockedGroups.Count} nhóm đã chốt\n");
+            WriteMessage("─────────────────────────────────────────────────────");
+
+            foreach (var g in lockedGroups.OrderBy(x => x.GroupName))
+            {
+                var sol = g.SelectedDesign;
+                WriteMessage($"  {g.GroupName,-20} | {sol?.OptionName,-10} | {sol?.TotalSteelWeight:F1} kg | {g.LockedAt:dd/MM/yyyy HH:mm}");
+            }
+
+            WriteMessage("─────────────────────────────────────────────────────");
+            WriteMessage("\nDùng DTS_REBAR_UNLOCK để mở khóa nếu cần tính lại.");
         }
 
 
@@ -805,7 +1024,7 @@ namespace DTS_Engine.Commands
             // 4. Read XData and Update SAP
             int successCount = 0;
             int failCount = 0;
-            RebarSettings settings = RebarSettings.Instance;
+            var dtsSettings = DtsSettings.Instance;
 
             UsingTransaction(tr =>
             {
@@ -881,15 +1100,16 @@ namespace DTS_Engine.Commands
                     {
                         // 4. Last resort: Re-calculate (only if no user data exists)
                         WriteMessage($"   {sapName}: Không có dữ liệu user, tính toán lại...");
+                        double torsionRatioTop = dtsSettings.Beam?.TorsionDist_TopBar ?? 0.25;
+                        double torsionRatioBot = dtsSettings.Beam?.TorsionDist_BotBar ?? 0.25;
                         for (int i = 0; i < 3; i++)
                         {
-                            double asTop = data.TopArea[i] + data.TorsionArea[i] * settings.TorsionRatioTop;
-                            double asBot = data.BotArea[i] + data.TorsionArea[i] * settings.TorsionRatioBot;
+                            double asTop = data.TopArea[i] + data.TorsionArea[i] * torsionRatioTop;
+                            double asBot = data.BotArea[i] + data.TorsionArea[i] * torsionRatioBot;
 
-#pragma warning disable CS0618 // Legacy Calculate - TODO: migrate to DtsSettings
-                            string sTop = RebarCalculator.Calculate(asTop, data.Width * 10, data.SectionHeight * 10, settings);
-                            string sBot = RebarCalculator.Calculate(asBot, data.Width * 10, data.SectionHeight * 10, settings);
-#pragma warning restore CS0618
+                            // [FIX] Dùng DtsSettings thay vì RebarSettings
+                            string sTop = RebarCalculator.Calculate(asTop, data.Width * 10, data.SectionHeight * 10, dtsSettings);
+                            string sBot = RebarCalculator.Calculate(asBot, data.Width * 10, data.SectionHeight * 10, dtsSettings);
 
                             data.TopAreaProv[i] = RebarStringParser.Parse(sTop);
                             data.BotAreaProv[i] = RebarStringParser.Parse(sBot);
@@ -917,8 +1137,8 @@ namespace DTS_Engine.Commands
                         newSectionName,
                         topProv,
                         botProv,
-                        settings.CoverTop,
-                        settings.CoverBot
+                        dtsSettings.Beam?.CoverTop ?? 35,
+                        dtsSettings.Beam?.CoverBot ?? 35
                     );
 
                     if (success)
@@ -1092,7 +1312,7 @@ namespace DTS_Engine.Commands
             ClearRebarLabels(selectedHandles);
 
             int count = 0;
-            var settings = RebarSettings.Instance;
+            var dtsSettings = DtsSettings.Instance;
 
             UsingTransaction(tr =>
             {
@@ -1129,8 +1349,10 @@ namespace DTS_Engine.Commands
 
                             case 2: // Thép dọc + Area so sánh (Aprov/Areq)
                                 {
-                                    double asReqTop = data.TopArea[i] + data.TorsionArea[i] * settings.TorsionRatioTop;
-                                    double asReqBot = data.BotArea[i] + data.TorsionArea[i] * settings.TorsionRatioBot;
+                                    double torsionTop = dtsSettings.Beam?.TorsionDist_TopBar ?? 0.25;
+                                    double torsionBot = dtsSettings.Beam?.TorsionDist_BotBar ?? 0.25;
+                                    double asReqTop = data.TopArea[i] + data.TorsionArea[i] * torsionTop;
+                                    double asReqBot = data.BotArea[i] + data.TorsionArea[i] * torsionBot;
                                     string topRebar = data.TopRebarString?[i] ?? "-";
                                     string botRebar = data.BotRebarString?[i] ?? "-";
                                     // Parse Aprov từ rebar string thay vì dùng TopAreaProv
@@ -1155,7 +1377,7 @@ namespace DTS_Engine.Commands
                                     topText = $"{FormatValue(stirrupProv)}/{FormatValue(stirrupReq)}({FormatValue(2 * ats)})\\P{stirrupStr}";
 
                                     // Bot: Web - Aprov/Areq (Areq = TorsionArea × SideRatio)
-                                    double webReq = (data.TorsionArea?[i] ?? 0) * settings.TorsionRatioSide;
+                                    double webReq = (data.TorsionArea?[i] ?? 0) * (dtsSettings.Beam?.TorsionDist_SideBar ?? 0.50);
                                     string webStr = data.WebBarString?[i] ?? "-";
                                     // Parse Aprov từ web string (e.g., "2d12")
                                     double webProv = RebarCalculator.ParseRebarArea(webStr);
@@ -1179,19 +1401,57 @@ namespace DTS_Engine.Commands
 
         /// <summary>
         /// Mở BeamGroupViewer để xem/chỉnh sửa nhóm dầm liên tục
+        /// [FIX] Yêu cầu user chọn dầm hoặc Enter để xem tất cả
         /// </summary>
         [CommandMethod("DTS_REBAR_VIEWER")]
         public void DTS_BEAM_VIEWER()
         {
-            WriteMessage("Loading Beam Group Viewer...");
+            WriteMessage("=== BEAM GROUP VIEWER ===");
+            WriteMessage("\nChọn dầm cần xem (hoặc Enter để xem tất cả nhóm):");
 
             try
             {
-                // Get cached beam groups or create empty list
-                var groups = GetOrCreateBeamGroups();
+                // [FIX] Cho phép user chọn hoặc skip (xem tất cả)
+                var selectedIds = AcadUtils.SelectObjectsOnScreen("LINE,LWPOLYLINE,POLYLINE", true); // allowEmpty = true
 
-                // Show viewer dialog as MODELESS to allow CAD interaction
-                var dialog = new UI.Forms.BeamGroupViewerDialog(groups, ApplyBeamGroupResults);
+                var allGroups = GetOrCreateBeamGroups();
+                List<BeamGroup> filteredGroups;
+
+                if (selectedIds.Count == 0)
+                {
+                    // User nhấn Enter -> Xem tất cả groups
+                    filteredGroups = allGroups;
+                    WriteMessage($"Hiển thị tất cả {allGroups.Count} nhóm dầm.");
+                }
+                else
+                {
+                    // Filter groups chứa dầm đã chọn
+                    var selectedHandles = new HashSet<string>();
+                    UsingTransaction(tr =>
+                    {
+                        foreach (var id in selectedIds)
+                        {
+                            var obj = tr.GetObject(id, OpenMode.ForRead);
+                            if (obj != null)
+                                selectedHandles.Add(obj.Handle.ToString());
+                        }
+                    });
+
+                    filteredGroups = allGroups
+                        .Where(g => g.EntityHandles.Any(h => selectedHandles.Contains(h)))
+                        .ToList();
+
+                    WriteMessage($"Tìm thấy {filteredGroups.Count} nhóm từ {selectedIds.Count} dầm đã chọn.");
+                }
+
+                if (filteredGroups.Count == 0)
+                {
+                    WriteMessage("Không có nhóm dầm nào. Chạy DTS_REBAR_GROUP_AUTO để tạo nhóm.");
+                    return;
+                }
+
+                // Show viewer dialog as MODELESS
+                var dialog = new UI.Forms.BeamGroupViewerDialog(filteredGroups, ApplyBeamGroupResults);
                 Autodesk.AutoCAD.ApplicationServices.Application.ShowModelessDialog(dialog);
             }
             catch (System.Exception ex)
@@ -1270,18 +1530,29 @@ namespace DTS_Engine.Commands
                         continue; // Skip unsupported entities
                     }
 
-                    // Try to read dimensions from XData if available
-                    var beamXData = XDataUtils.ReadBeamData(ent);
-                    if (beamXData != null)
+                    // Try to read ResultData from XData
+                    var resultData = XDataUtils.ReadElementData(ent) as Core.Data.BeamResultData;
+                    if (resultData != null)
                     {
-                        w = beamXData.Width ?? w;
-                        h = beamXData.Height ?? h;
+                        w = resultData.Width > 0 ? resultData.Width * 10 : w;
+                        h = resultData.SectionHeight > 0 ? resultData.SectionHeight * 10 : h;
+                    }
+                    else
+                    {
+                        // Fallback to basic BeamData
+                        var beamXData = XDataUtils.ReadBeamData(ent);
+                        if (beamXData != null)
+                        {
+                            w = beamXData.Width ?? w;
+                            h = beamXData.Height ?? h;
+                        }
                     }
 
                     beamDataList.Add(new Core.Data.BeamGeometry
                     {
                         Handle = ent.Handle.ToString(),
-                        Name = ent.Handle.ToString(),
+                        Name = resultData?.SapElementName ?? ent.Handle.ToString(),
+                        ResultData = resultData,
                         StartX = sx,
                         StartY = sy,
                         EndX = ex,
@@ -1413,6 +1684,9 @@ namespace DTS_Engine.Commands
                     });
 
                     group.Spans.Add(span);
+                    // Propagate A_req
+                    BeamGroupDetector.AggregateRebarAreas(span, new List<Core.Data.BeamGeometry> { beam }, settings);
+
                     prevHeight = beam.Height;
                     cumPosition += beamLen;
                 }
@@ -1475,6 +1749,9 @@ namespace DTS_Engine.Commands
                     }
 
                     group.Spans.Add(span);
+                    // Propagate A_req
+                    BeamGroupDetector.AggregateRebarAreas(span, spanBeams, settings);
+
                     if (isStep) group.HasStepChange = true;
                     prevHeight = spanHeight;
                 }
@@ -1871,6 +2148,7 @@ namespace DTS_Engine.Commands
                         {
                             Handle = obj.Handle.ToString(),
                             Name = data.SapElementName ?? obj.Handle.ToString(),
+                            ResultData = data,
                             StartX = sx,
                             StartY = sy,
                             EndX = ex,
@@ -1887,6 +2165,79 @@ namespace DTS_Engine.Commands
 
             // Create the group using existing logic
             return CreateManualBeamGroup("Auto-Group", beamDataList);
+        }
+
+        /// <summary>
+        /// Áp dụng phương án bố trí thép (ContinuousBeamSolution) vào các CAD entities.
+        /// Cập nhật XData: TopRebarString, BotRebarString, TopAreaProv, BotAreaProv.
+        /// </summary>
+        private void ApplyGroupSolutionToEntities(
+            Transaction tr,
+            BeamGroup group,
+            List<ObjectId> objIds,
+            List<BeamResultData> datas,
+            ContinuousBeamSolution sol,
+            DtsSettings settings)
+        {
+            if (sol == null || !sol.IsValid || datas == null || objIds == null) return;
+
+            // Chuỗi Backbone cơ sở (Lớp 1)
+            string backboneTop = $"{sol.BackboneCount_Top}D{sol.BackboneDiameter}";
+            string backboneBot = $"{sol.BackboneCount_Bot}D{sol.BackboneDiameter}";
+
+            for (int i = 0; i < Math.Min(datas.Count, objIds.Count); i++)
+            {
+                var data = datas[i];
+                if (data == null) continue;
+
+                var obj = tr.GetObject(objIds[i], OpenMode.ForWrite);
+                if (obj == null) continue;
+
+                string spanId = group?.Spans != null && i < group.Spans.Count ? group.Spans[i].SpanId : $"S{i + 1}";
+
+                // Xử lý 3 vị trí: 0=Left/Start, 1=Mid, 2=Right/End
+                for (int pos = 0; pos < 3; pos++)
+                {
+                    string posName = pos == 0 ? "Left" : (pos == 1 ? "Mid" : "Right");
+
+                    // --- XỬ LÝ TOP ---
+                    string keyTop = $"{spanId}_Top_{posName}";
+                    string topStr = backboneTop;
+
+                    if (sol.Reinforcements != null && sol.Reinforcements.TryGetValue(keyTop, out var specTop))
+                    {
+                        topStr += $"+{specTop.Count}D{specTop.Diameter}";
+                    }
+
+                    if (data.TopRebarString == null || data.TopRebarString.Length < 3)
+                        data.TopRebarString = new string[3];
+                    data.TopRebarString[pos] = topStr;
+
+                    if (data.TopAreaProv == null || data.TopAreaProv.Length < 3)
+                        data.TopAreaProv = new double[3];
+                    data.TopAreaProv[pos] = RebarCalculator.ParseRebarArea(topStr);
+
+                    // --- XỬ LÝ BOT ---
+                    string keyBot = $"{spanId}_Bot_{posName}";
+                    string botStr = backboneBot;
+
+                    if (sol.Reinforcements != null && sol.Reinforcements.TryGetValue(keyBot, out var specBot))
+                    {
+                        botStr += $"+{specBot.Count}D{specBot.Diameter}";
+                    }
+
+                    if (data.BotRebarString == null || data.BotRebarString.Length < 3)
+                        data.BotRebarString = new string[3];
+                    data.BotRebarString[pos] = botStr;
+
+                    if (data.BotAreaProv == null || data.BotAreaProv.Length < 3)
+                        data.BotAreaProv = new double[3];
+                    data.BotAreaProv[pos] = RebarCalculator.ParseRebarArea(botStr);
+                }
+
+                // Update XData
+                XDataUtils.UpdateElementData(obj, data, tr);
+            }
         }
 
         /// <summary>
@@ -2139,7 +2490,7 @@ namespace DTS_Engine.Commands
                                         // Write XData to entity
                                         XDataUtils.WriteRebarXData(ent, tr,
                                             topRebar, botRebar, stirrup, sideBar,
-                                            group.GroupName);
+                                            group.GroupName, group.GroupType);
 
                                         count++;
                                     }
@@ -2344,10 +2695,19 @@ namespace DTS_Engine.Commands
         [CommandMethod("DTS_REBAR_GROUP_AUTO")]
         public void DTS_AUTO_GROUP()
         {
-            WriteMessage("=== AUTO GROUP: GOM NHÓM TỰ ĐỘNG TẤT CẢ DẦM ===");
+            WriteMessage("=== AUTO GROUP: GOM NHÓM DẦM THEO VÙNG CHỌN ===");
+
+            // [FIX] Yêu cầu user chọn vùng thay vì tự động quét toàn bộ
+            WriteMessage("\nChọn các dầm cần gom nhóm:");
+            var userSelectedIds = AcadUtils.SelectObjectsOnScreen("LINE,LWPOLYLINE,POLYLINE");
+            if (userSelectedIds.Count == 0)
+            {
+                WriteMessage("Không có dầm nào được chọn. Hủy.");
+                return;
+            }
 
             var settings = DtsSettings.Instance;
-            var rebarSettings = RebarSettings.Instance;
+            // [FIX] RebarSettings not needed - removed unused variable
 
             // 1. Lấy thông tin lưới trục
             List<Point3d> gridIntersections = new List<Point3d>();
@@ -2389,15 +2749,14 @@ namespace DTS_Engine.Commands
             var beamsAlreadyInGroups = GetBeamsAlreadyInGroups(existingGroups);
             int skippedCount = 0;
 
-            // 2. Thu thập dầm CHƯA thuộc nhóm nào (INCREMENTAL mode - không đè data user)
+            // 2. Thu thập dầm từ vùng chọn CHƯA thuộc nhóm nào
             var freeBeamIds = new List<ObjectId>();
-            // Key map: ObjectId -> (MidPoint, IsGirder, IsXDir, AxisKey, Handle, LevelZ)
             var beamsDataMap = new Dictionary<ObjectId, (Point3d Mid, bool IsGirder, bool IsXDir, string AxisKey, string Handle, double LevelZ)>();
 
             UsingTransaction(tr =>
             {
-                var btr = tr.GetObject(AcadUtils.Db.CurrentSpaceId, OpenMode.ForRead) as BlockTableRecord;
-                foreach (ObjectId id in btr)
+                // [FIX] Chỉ xử lý userSelectedIds thay vì toàn bộ bản vẽ
+                foreach (ObjectId id in userSelectedIds)
                 {
                     if (id.IsErased) continue;
                     var obj = tr.GetObject(id, OpenMode.ForRead);

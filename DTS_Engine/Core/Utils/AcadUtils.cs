@@ -127,6 +127,45 @@ namespace DTS_Engine.Core.Utils
         }
 
         /// <summary>
+        /// Chọn đối tượng trên màn hình theo loại, với option cho phép Empty (Enter để bỏ qua)
+        /// </summary>
+        /// <param name="types">Loại đối tượng (VD: "LINE,LWPOLYLINE")</param>
+        /// <param name="allowEmpty">Nếu true, Enter để return empty list (không throw error)</param>
+        public static List<ObjectId> SelectObjectsOnScreen(string types, bool allowEmpty)
+        {
+            List<ObjectId> resultIds = new List<ObjectId>();
+
+            var filterValues = new List<TypedValue>();
+
+            if (!string.IsNullOrWhiteSpace(types))
+            {
+                filterValues.Add(new TypedValue((int)DxfCode.Start, types));
+            }
+
+            // Exclude DTS temporary layers
+            filterValues.Add(new TypedValue((int)DxfCode.Operator, "<NOT"));
+            filterValues.Add(new TypedValue((int)DxfCode.LayerName, "dts_linkmap,dts_highlight,dts_temp,dts_frame_label,dts_labels"));
+            filterValues.Add(new TypedValue((int)DxfCode.Operator, "NOT>"));
+
+            SelectionFilter filter = new SelectionFilter(filterValues.ToArray());
+
+            PromptSelectionOptions opts = new PromptSelectionOptions();
+            opts.MessageForAdding = "\nChọn đối tượng (Enter để bỏ qua): ";
+            opts.AllowDuplicates = false;
+
+            PromptSelectionResult selRes = Ed.GetSelection(opts, filter);
+
+            if (selRes.Status == PromptStatus.OK)
+            {
+                resultIds.AddRange(selRes.Value.GetObjectIds());
+            }
+            // Nếu allowEmpty và user nhấn Enter (Cancel), return empty list thay vì throw
+            // PromptStatus.Cancel hoặc Error sẽ trả về empty list
+
+            return resultIds;
+        }
+
+        /// <summary>
         /// Chọn tất cả đối tượng theo loại trong bản vẽ
         /// </summary>
         public static List<ObjectId> SelectAll(string types)

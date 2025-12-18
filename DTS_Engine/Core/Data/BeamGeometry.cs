@@ -15,6 +15,12 @@ namespace DTS_Engine.Core.Data
         /// <summary>SAP/User assigned name</summary>
         public string Name { get; set; }
 
+        /// <summary>
+        /// Dữ liệu kết quả từ XData (A_req, Top/Bot areas).
+        /// Dùng để truyền vào thuật toán tính toán/grouping.
+        /// </summary>
+        public BeamResultData ResultData { get; set; }
+
         /// <summary>Start point X (mm)</summary>
         public double StartX { get; set; }
 

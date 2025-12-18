@@ -25,6 +25,7 @@ namespace DTS_Engine.Core.Utils
         public const string KEY_STIRRUP = "Stirrup";
         public const string KEY_SIDE_BAR = "SideBar";
         public const string KEY_BEAM_GROUP = "BeamGroupName";
+        public const string KEY_BEAM_TYPE = "BeamType";
         public const string KEY_LAST_MODIFIED = "LastModified";
 
         // NOD Keys for BeamGroup persistence
@@ -204,7 +205,8 @@ namespace DTS_Engine.Core.Utils
             DBObject obj, Transaction tr,
             string topRebar, string botRebar,
             string stirrup, string sideBar,
-            string groupName = null)
+            string groupName = null,
+            string beamType = null)
         {
             if (obj == null || tr == null) return;
 
@@ -222,6 +224,8 @@ namespace DTS_Engine.Core.Utils
                 dict[KEY_SIDE_BAR] = sideBar;
             if (!string.IsNullOrEmpty(groupName))
                 dict[KEY_BEAM_GROUP] = groupName;
+            if (!string.IsNullOrEmpty(beamType))
+                dict[KEY_BEAM_TYPE] = beamType;
 
             // Update timestamp
             dict[KEY_LAST_MODIFIED] = DateTime.Now.ToString("yyyy-MM-dd HH:mm:ss");
@@ -243,7 +247,8 @@ namespace DTS_Engine.Core.Utils
                 BotRebar = dict.ContainsKey(KEY_BOT_REBAR) ? dict[KEY_BOT_REBAR]?.ToString() : null,
                 Stirrup = dict.ContainsKey(KEY_STIRRUP) ? dict[KEY_STIRRUP]?.ToString() : null,
                 SideBar = dict.ContainsKey(KEY_SIDE_BAR) ? dict[KEY_SIDE_BAR]?.ToString() : null,
-                BeamGroupName = dict.ContainsKey(KEY_BEAM_GROUP) ? dict[KEY_BEAM_GROUP]?.ToString() : null
+                BeamGroupName = dict.ContainsKey(KEY_BEAM_GROUP) ? dict[KEY_BEAM_GROUP]?.ToString() : null,
+                BeamType = dict.ContainsKey(KEY_BEAM_TYPE) ? dict[KEY_BEAM_TYPE]?.ToString() : "Beam"
             };
         }
 
@@ -865,5 +870,6 @@ namespace DTS_Engine.Core.Utils
         public string Stirrup { get; set; }
         public string SideBar { get; set; }
         public string BeamGroupName { get; set; }
+        public string BeamType { get; set; }
     }
 }
