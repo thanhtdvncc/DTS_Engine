@@ -191,7 +191,7 @@ namespace DTS_Engine.Commands
                             try
                             {
                                 // === NEW: Sync Highlight - Compare Areq_new vs Aprov_old ===
-                                var existingData = XDataUtils.ReadElementData(obj) as BeamResultData;
+                                var existingData = XDataUtils.ReadRebarData(obj);
                                 if (existingData != null && existingData.TopAreaProv != null)
                                 {
                                     // Check if existing Aprov is insufficient for new Areq
@@ -217,7 +217,40 @@ namespace DTS_Engine.Commands
                                 }
                                 // === END Sync Highlight ===
 
-                                XDataUtils.WriteElementData(obj, designData, tr);
+                                // === PRESERVE EXISTING BEAM DATA ===
+                                // Read existing BeamData (from DTS_PLOT_FROM_SAP) to preserve SupportI/J and AxisName
+                                var existingBeamData = XDataUtils.ReadElementData(obj) as BeamData;
+                                if (existingBeamData != null)
+                                {
+                                    // Carry over support info to prevent overwrite
+                                    designData.SupportI = existingBeamData.SupportI;
+                                    designData.SupportJ = existingBeamData.SupportJ;
+                                    designData.AxisName = existingBeamData.AxisName;
+                                }
+                                // === END PRESERVE ===
+
+                                // === CUSTOM MERGE: Preserve xType from DTS_PLOT_FROM_SAP ===
+                                // Read existing raw data
+                                var existingDict = XDataUtils.GetRawData(obj) ?? new Dictionary<string, object>();
+
+                                // Get new REBAR_DATA fields
+                                designData.UpdateTimestamp();
+                                var newDict = designData.ToDictionary();
+
+                                // Merge: Add new fields but DON'T overwrite xType and xDataVersion
+                                foreach (var entry in newDict)
+                                {
+                                    // Skip xType to preserve original "BEAM" type
+                                    if (entry.Key == "xType") continue;
+                                    // Skip xDataVersion to keep original version
+                                    if (entry.Key == "xDataVersion") continue;
+
+                                    existingDict[entry.Key] = entry.Value;
+                                }
+
+                                // Write merged data
+                                XDataUtils.SetRawData(obj, existingDict, tr);
+                                // === END CUSTOM MERGE ===
                             }
                             catch (System.Exception ex2)
                             {
@@ -459,7 +492,7 @@ namespace DTS_Engine.Commands
                 foreach (ObjectId id in selectedIds)
                 {
                     var obj = tr.GetObject(id, OpenMode.ForRead);
-                    var data = XDataUtils.ReadElementData(obj) as BeamResultData;
+                    var data = XDataUtils.ReadRebarData(obj);
                     if (data == null) continue;
 
                     // Validate dimensions
@@ -837,7 +870,7 @@ namespace DTS_Engine.Commands
                     Vector3d dir = curve.EndPoint - curve.StartPoint;
                     bool isXDir = Math.Abs(dir.X) > Math.Abs(dir.Y);
 
-                    var xdata = XDataUtils.ReadElementData(curve) as BeamResultData;
+                    var xdata = XDataUtils.ReadRebarData(curve);
 
                     // Fix: Làm tròn Z để phân tầng (Tolerance 100mm)
                     double levelZ = Math.Round(mid.Z / 100.0) * 100.0;
@@ -896,6 +929,10 @@ namespace DTS_Engine.Commands
                     string suffix = storyConfig?.Suffix ?? "";
                     int startIndex = storyConfig?.StartIndex ?? 1;
 
+                    // [FIX] StoryIndex = StartIndex trực tiếp từ StoryConfig
+                    // VD: xBaseZ=11700 khớp với StoryConfig có StartIndex=3 => storyIndex="3"
+                    string storyIndex = startIndex.ToString();
+
                     // Tách Dầm chính / Dầm phụ
                     var girders = levelGroup.Where(b => b.IsGirder).ToList();
                     var beams = levelGroup.Where(b => !b.IsGirder).ToList();
@@ -908,9 +945,9 @@ namespace DTS_Engine.Commands
                         // [CONFIGURABLE] Gọi hàm sort thông minh với NamingConfig
                         var sortedList = GetSmartSortedBeams(list, namingCfg);
 
-                        // Danh sách Assigned Types để gom nhóm (WxH + Steel)
+                        // Danh sách Assigned Types để gom nhóm (WxH + Steel + Direction)
                         var assignedTypes = new Dictionary<string, int>();
-                        int nextNumber = startIndex;
+                        int nextNumber = 1; // Số thứ tự bắt đầu từ 1 trong mỗi nhóm direction
 
                         foreach (var item in sortedList)
                         {
@@ -923,8 +960,11 @@ namespace DTS_Engine.Commands
                             string bot = (item.Data?.BotRebarString != null && item.Data.BotRebarString.Length > 1) ? item.Data.BotRebarString[1] ?? "-" : "-";
                             string stir = (item.Data?.StirrupString != null && item.Data.StirrupString.Length > 1) ? item.Data.StirrupString[1] ?? "-" : "-";
 
-                            // Key để gom nhóm
-                            string typeKey = $"{w}x{h}_{top.Trim()}_{bot.Trim()}_{stir.Trim()}";
+                            // [FIX] Lấy Direction từ item.IsXDir
+                            string direction = item.IsXDir ? "X" : "Y";
+
+                            // Key để gom nhóm (bao gồm direction)
+                            string typeKey = $"{direction}_{w}x{h}_{top.Trim()}_{bot.Trim()}_{stir.Trim()}";
 
                             int number;
                             if (assignedTypes.ContainsKey(typeKey))
@@ -937,7 +977,9 @@ namespace DTS_Engine.Commands
                                 assignedTypes[typeKey] = number;
                             }
 
-                            string fullName = $"{prefix}{number}{suffix}";
+                            // [FIX] Format đầy đủ: {StoryIndex}{Prefix}{Direction}{Number}{Suffix}
+                            // VD: 3GX12 = Tầng 3, Girder, Hướng X, Số 12
+                            string fullName = $"{storyIndex}{prefix}{direction}{number}{suffix}";
 
                             // Update CAD & XData
                             var curve = tr.GetObject(item.Id, OpenMode.ForWrite) as Curve;
@@ -945,7 +987,8 @@ namespace DTS_Engine.Commands
                             {
                                 if (item.Data != null)
                                 {
-                                    item.Data.SapElementName = fullName;
+                                    // Set BeamName (display name) - NOT SapElementName (SAP frame ID)
+                                    item.Data.BeamName = fullName;
                                     XDataUtils.UpdateElementData(curve, item.Data, tr);
                                 }
                                 LabelPlotter.PlotLabel(btr, tr, curve.StartPoint, curve.EndPoint, fullName, LabelPosition.MiddleBottom);
@@ -1038,7 +1081,7 @@ namespace DTS_Engine.Commands
                     string sapName = kvp.Value;
 
                     DBObject obj = tr.GetObject(cadId, OpenMode.ForRead);
-                    var data = XDataUtils.ReadElementData(obj) as BeamResultData;
+                    var data = XDataUtils.ReadRebarData(obj);
 
                     if (data == null)
                     {
@@ -1324,7 +1367,7 @@ namespace DTS_Engine.Commands
                 foreach (ObjectId id in selectedIds)
                 {
                     DBObject obj = tr.GetObject(id, OpenMode.ForRead);
-                    var data = XDataUtils.ReadElementData(obj) as BeamResultData;
+                    var data = XDataUtils.ReadRebarData(obj);
                     if (data == null) continue;
 
                     var curve = obj as Curve;
@@ -2017,7 +2060,7 @@ namespace DTS_Engine.Commands
                     try
                     {
                         var obj = tr.GetObject(id, OpenMode.ForRead);
-                        var data = XDataUtils.ReadElementData(obj) as BeamResultData;
+                        var data = XDataUtils.ReadRebarData(obj);
                         if (data != null)
                         {
                             handleToData[obj.Handle.ToString()] = data;
@@ -2240,7 +2283,7 @@ namespace DTS_Engine.Commands
                     try
                     {
                         var obj = tr.GetObject(id, OpenMode.ForRead);
-                        var data = XDataUtils.ReadElementData(obj) as BeamResultData;
+                        var data = XDataUtils.ReadRebarData(obj);
                         if (data == null) continue;
 
                         double sx = 0, sy = 0, ex = 0, ey = 0;
@@ -2889,7 +2932,7 @@ namespace DTS_Engine.Commands
                         }
 
                         // Check if this is a beam (has SAP data)
-                        var xdata = XDataUtils.ReadElementData(curve) as BeamResultData;
+                        var xdata = XDataUtils.ReadRebarData(curve);
                         if (xdata != null && !string.IsNullOrEmpty(xdata.SapElementName))
                         {
                             freeBeamIds.Add(id);

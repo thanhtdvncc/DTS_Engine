@@ -192,6 +192,25 @@ namespace DTS_Engine.Core.Utils
         }
 
         /// <summary>
+        /// [SPECIAL] Đọc BeamResultData từ XData bất kể xType.
+        /// Dùng cho các hàm REBAR cần đọc dữ liệu thiết kế thép
+        /// ngay cả khi xType vẫn là "BEAM" (từ DTS_PLOT_FROM_SAP).
+        /// </summary>
+        public static BeamResultData ReadRebarData(DBObject obj)
+        {
+            var dict = GetRawData(obj);
+            if (dict == null) return null;
+
+            // Check if rebar data exists (by key presence, not xType)
+            if (!dict.ContainsKey("TopArea") && !dict.ContainsKey("SapElementName"))
+                return null;
+
+            var result = new BeamResultData();
+            result.FromDictionary(dict);
+            return result;
+        }
+
+        /// <summary>
         /// Ghi thông tin thép vào XData của entity
         /// </summary>
         /// <param name="obj">Entity (LINE/POLYLINE)</param>

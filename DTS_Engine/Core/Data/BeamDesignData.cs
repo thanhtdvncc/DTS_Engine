@@ -144,23 +144,23 @@ namespace DTS_Engine.Core.Data
         {
             var dict = new Dictionary<string, object>();
             WriteBaseProperties(dict);
-            // Raw Data
-            dict["TopArea"] = TopArea;
-            dict["BotArea"] = BotArea;
-            dict["TorsionArea"] = TorsionArea;
-            dict["ShearArea"] = ShearArea;
-            dict["TTArea"] = TTArea;
+            // Raw Data - Round to 8 decimal places to prevent overly precise values
+            dict["TopArea"] = RoundArray(TopArea);
+            dict["BotArea"] = RoundArray(BotArea);
+            dict["TorsionArea"] = RoundArray(TorsionArea);
+            dict["ShearArea"] = RoundArray(ShearArea);
+            dict["TTArea"] = RoundArray(TTArea);
             dict["DesignCombo"] = DesignCombo;
             // Section
             dict["SectionName"] = SectionName;
             dict["Width"] = Width;
             dict["SectionHeight"] = SectionHeight;
-            dict["TorsionFactorUsed"] = TorsionFactorUsed;
+            dict["TorsionFactorUsed"] = Math.Round(TorsionFactorUsed, 8);
             // Longitudinal Solution
             dict["TopRebarString"] = TopRebarString;
             dict["BotRebarString"] = BotRebarString;
-            dict["TopAreaProv"] = TopAreaProv;
-            dict["BotAreaProv"] = BotAreaProv;
+            dict["TopAreaProv"] = RoundArray(TopAreaProv);
+            dict["BotAreaProv"] = RoundArray(BotAreaProv);
             // Stirrup & Web Solution
             dict["StirrupString"] = StirrupString;
             dict["WebBarString"] = WebBarString;
@@ -176,6 +176,20 @@ namespace DTS_Engine.Core.Data
             dict["SupportJ"] = SupportJ;
             if (!string.IsNullOrEmpty(AxisName)) dict["xOnAxis"] = AxisName;
             return dict;
+        }
+
+        /// <summary>
+        /// Round array values to 8 decimal places
+        /// </summary>
+        private static double[] RoundArray(double[] arr)
+        {
+            if (arr == null) return null;
+            var result = new double[arr.Length];
+            for (int i = 0; i < arr.Length; i++)
+            {
+                result[i] = Math.Round(arr[i], 8);
+            }
+            return result;
         }
 
         public override void FromDictionary(Dictionary<string, object> dict)
