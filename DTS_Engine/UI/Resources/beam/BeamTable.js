@@ -85,12 +85,8 @@
 
             if (!maxAdd) return backbone.DisplayString || '-';
 
-            // Merge if same diameter
-            if (backbone.Diameter === maxAdd.Diameter) {
-                const total = backbone.Count + maxAdd.Count;
-                return `${total}D${backbone.Diameter}`;
-            }
-
+            // ALWAYS keep separate to distinguish Continuous (Backbone) vs Additional (Add)
+            // Example: 2D25 (Backbone) + 1D25 (Add) -> "2D25 + 1D25"
             return `${backbone.DisplayString} + ${maxAdd.DisplayString}`;
         },
 
