@@ -494,16 +494,19 @@ namespace DTS_Engine.UI.Forms
         {
             if (group?.Spans == null || sol == null) return;
 
+            // Create backbone RebarInfo
+            var backboneTop = new RebarInfo { Count = sol.BackboneCount_Top, Diameter = sol.BackboneDiameter };
+            var backboneBot = new RebarInfo { Count = sol.BackboneCount_Bot, Diameter = sol.BackboneDiameter };
 
-            string backboneTop = $"{sol.BackboneCount_Top}D{sol.BackboneDiameter}";
-            string backboneBot = $"{sol.BackboneCount_Bot}D{sol.BackboneDiameter}";
+            string backboneTopStr = $"{sol.BackboneCount_Top}D{sol.BackboneDiameter}";
+            string backboneBotStr = $"{sol.BackboneCount_Bot}D{sol.BackboneDiameter}";
 
             foreach (var span in group.Spans)
             {
                 if (span == null) continue;
                 if (span.IsManualModified) continue;
 
-                // Ensure arrays exist (Json.NET may hydrate as jagged arrays in UI, but here we keep the original 2D array)
+                // Ensure arrays exist
                 if (span.TopRebar == null || span.TopRebar.GetLength(0) < 1 || span.TopRebar.GetLength(1) < 5)
                     span.TopRebar = new string[3, 6];
                 if (span.BotRebar == null || span.BotRebar.GetLength(0) < 1 || span.BotRebar.GetLength(1) < 5)
@@ -511,36 +514,64 @@ namespace DTS_Engine.UI.Forms
 
                 string spanId = span.SpanId ?? "S?";
 
-                // TOP: Left/Mid/Right
-                string topLeft = backboneTop;
-                string topMid = backboneTop;
-                string topRight = backboneTop;
+                // ═══════════════════════════════════════════════════════════════
+                // STRUCTURED DATA: Set RebarInfo objects (for Viewer JSON)
+                // ═══════════════════════════════════════════════════════════════
+                span.TopBackbone = backboneTop;
+                span.BotBackbone = backboneBot;
+
+                // TOP Reinforcements
+                span.TopAddLeft = null;
+                span.TopAddMid = null;
+                span.TopAddRight = null;
                 if (sol.Reinforcements != null)
                 {
-                    if (sol.Reinforcements.TryGetValue($"{spanId}_Top_Left", out var tL)) topLeft += $"+{tL.Count}D{tL.Diameter}";
-                    if (sol.Reinforcements.TryGetValue($"{spanId}_Top_Mid", out var tM)) topMid += $"+{tM.Count}D{tM.Diameter}";
-                    if (sol.Reinforcements.TryGetValue($"{spanId}_Top_Right", out var tR)) topRight += $"+{tR.Count}D{tR.Diameter}";
+                    if (sol.Reinforcements.TryGetValue($"{spanId}_Top_Left", out var tL))
+                        span.TopAddLeft = new RebarInfo { Count = tL.Count, Diameter = tL.Diameter, LayerCounts = tL.LayerBreakdown };
+                    if (sol.Reinforcements.TryGetValue($"{spanId}_Top_Mid", out var tM))
+                        span.TopAddMid = new RebarInfo { Count = tM.Count, Diameter = tM.Diameter, LayerCounts = tM.LayerBreakdown };
+                    if (sol.Reinforcements.TryGetValue($"{spanId}_Top_Right", out var tR))
+                        span.TopAddRight = new RebarInfo { Count = tR.Count, Diameter = tR.Diameter, LayerCounts = tR.LayerBreakdown };
                 }
+
+                // BOT Reinforcements
+                span.BotAddLeft = null;
+                span.BotAddMid = null;
+                span.BotAddRight = null;
+                if (sol.Reinforcements != null)
+                {
+                    if (sol.Reinforcements.TryGetValue($"{spanId}_Bot_Left", out var bL))
+                        span.BotAddLeft = new RebarInfo { Count = bL.Count, Diameter = bL.Diameter, LayerCounts = bL.LayerBreakdown };
+                    if (sol.Reinforcements.TryGetValue($"{spanId}_Bot_Mid", out var bM))
+                        span.BotAddMid = new RebarInfo { Count = bM.Count, Diameter = bM.Diameter, LayerCounts = bM.LayerBreakdown };
+                    if (sol.Reinforcements.TryGetValue($"{spanId}_Bot_Right", out var bR))
+                        span.BotAddRight = new RebarInfo { Count = bR.Count, Diameter = bR.Diameter, LayerCounts = bR.LayerBreakdown };
+                }
+
+                // ═══════════════════════════════════════════════════════════════
+                // LEGACY STRING DATA: Keep for backward compatibility
+                // ═══════════════════════════════════════════════════════════════
+                string topLeft = backboneTopStr;
+                string topMid = backboneTopStr;
+                string topRight = backboneTopStr;
+                if (span.TopAddLeft != null) topLeft += $"+{span.TopAddLeft.DisplayString}";
+                if (span.TopAddMid != null) topMid += $"+{span.TopAddMid.DisplayString}";
+                if (span.TopAddRight != null) topRight += $"+{span.TopAddRight.DisplayString}";
 
                 span.TopRebar[0, 0] = topLeft;
                 span.TopRebar[0, 2] = topMid;
                 span.TopRebar[0, 4] = topRight;
 
-                // BOT: Left/Mid/Right with full support
-                string botLeft = backboneBot;
-                string botMid = backboneBot;
-                string botRight = backboneBot;
-                if (sol.Reinforcements != null)
-                {
-                    if (sol.Reinforcements.TryGetValue($"{spanId}_Bot_Left", out var bL)) botLeft += $"+{bL.Count}D{bL.Diameter}";
-                    if (sol.Reinforcements.TryGetValue($"{spanId}_Bot_Mid", out var bM)) botMid += $"+{bM.Count}D{bM.Diameter}";
-                    if (sol.Reinforcements.TryGetValue($"{spanId}_Bot_Right", out var bR)) botRight += $"+{bR.Count}D{bR.Diameter}";
-                }
+                string botLeft = backboneBotStr;
+                string botMid = backboneBotStr;
+                string botRight = backboneBotStr;
+                if (span.BotAddLeft != null) botLeft += $"+{span.BotAddLeft.DisplayString}";
+                if (span.BotAddMid != null) botMid += $"+{span.BotAddMid.DisplayString}";
+                if (span.BotAddRight != null) botRight += $"+{span.BotAddRight.DisplayString}";
 
                 span.BotRebar[0, 0] = botLeft;
                 span.BotRebar[0, 2] = botMid;
                 span.BotRebar[0, 4] = botRight;
-
             }
         }
 

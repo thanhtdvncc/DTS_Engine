@@ -38,6 +38,12 @@ namespace DTS_Engine.Core.Data
         /// </summary>
         public ExportConfig Export { get; set; } = new ExportConfig();
 
+        /// <summary>
+        /// Cấu hình quy tắc cắt/nối thép (Curtailment Rules)
+        /// </summary>
+        public CurtailmentConfig Curtailment { get; set; } = new CurtailmentConfig();
+
+
         // ===== MULTI-STORY NAMING SYSTEM =====
         /// <summary>
         /// Danh sách cấu hình đặt tên theo tầng.
@@ -652,6 +658,20 @@ namespace DTS_Engine.Core.Data
         /// VD: 0.15 = cắt bớt thép nhịp tại vị trí 0.15L
         /// </summary>
         public double BotSpanCutRatio { get; set; } = 0.15;
+
+        /// <summary>
+        /// Hệ số chiều dài thép gia cường gối (Left/Right)
+        /// VD: 0.33 = 1/3 chiều dài nhịp
+        /// Dùng để tính trọng lượng thép
+        /// </summary>
+        public double SupportReinfRatio { get; set; } = 0.33;
+
+        /// <summary>
+        /// Hệ số chiều dài thép gia cường bụng (Mid)
+        /// VD: 0.8 = 80% chiều dài nhịp
+        /// Dùng để tính trọng lượng thép
+        /// </summary>
+        public double MidSpanReinfRatio { get; set; } = 0.8;
     }
 
     /// <summary>

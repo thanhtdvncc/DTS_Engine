@@ -211,6 +211,48 @@ namespace DTS_Engine.Core.Data
         /// Thời điểm sửa thủ công gần nhất (UTC)
         /// </summary>
         public DateTime? LastManualEdit { get; set; }
+
+        // ═══════════════════════════════════════════════════════════════
+        // STRUCTURED REBAR DATA (cho Viewer JSON rendering)
+        // Tách biệt Backbone và Add, không dùng string concat
+        // ═══════════════════════════════════════════════════════════════
+
+        /// <summary>
+        /// Thép backbone Top (chạy suốt) {Count, Diameter}
+        /// </summary>
+        public RebarInfo TopBackbone { get; set; }
+
+        /// <summary>
+        /// Thép backbone Bot (chạy suốt) {Count, Diameter}
+        /// </summary>
+        public RebarInfo BotBackbone { get; set; }
+
+        /// <summary>
+        /// Thép gia cường Top tại từng vị trí: Left, Mid, Right
+        /// </summary>
+        public RebarInfo TopAddLeft { get; set; }
+        public RebarInfo TopAddMid { get; set; }
+        public RebarInfo TopAddRight { get; set; }
+
+        /// <summary>
+        /// Thép gia cường Bot tại từng vị trí: Left, Mid, Right
+        /// </summary>
+        public RebarInfo BotAddLeft { get; set; }
+        public RebarInfo BotAddMid { get; set; }
+        public RebarInfo BotAddRight { get; set; }
+    }
+
+    /// <summary>
+    /// Thông tin thép cơ bản {Count, Diameter} cho JSON serialization.
+    /// Viewer JS sẽ đọc trực tiếp mà không cần parse string "2D25".
+    /// </summary>
+    public class RebarInfo
+    {
+        public int Count { get; set; }
+        public int Diameter { get; set; }
+        public List<int> LayerCounts { get; set; } // Chi tiết theo lớp nếu có
+
+        public string DisplayString => Count > 0 ? $"{Count}D{Diameter}" : "";
     }
 
     // ===== NHÓM DẦM LIÊN TỤC =====

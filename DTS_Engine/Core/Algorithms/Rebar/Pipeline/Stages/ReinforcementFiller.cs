@@ -382,38 +382,67 @@ namespace DTS_Engine.Core.Algorithms.Rebar.Pipeline.Stages
 
         private static void CalculateSolutionMetrics(ContinuousBeamSolution sol, BeamGroup group, DtsSettings settings)
         {
-            double totalLengthMm = group.Spans?.Sum(s => s.Length) ?? 6000;
-            double totalLengthM = totalLengthMm / 1000.0;
+            // ═══════════════════════════════════════════════════════════════
+            // CRITICAL FIX: Correct weight calculation using d²/162 formula
+            // 
+            // OLD (WRONG): As(cm²) * 0.785 * L(m) → wrong units
+            // NEW (CORRECT): d²/162 * L(m) * N → kg
+            // ═══════════════════════════════════════════════════════════════
 
-            // V2 Formula: As (cm²) * 0.785 (kg/m per cm²) * Length (m)
-            // Note: 0.785 = π/4 * 1 cm² * 1 m = 78.5 cm³ = 0.785 kg (steel density 7850 kg/m³)
-            double wBackbone = (sol.As_Backbone_Top + sol.As_Backbone_Bot) * 0.785 * totalLengthM;
+            double totalLengthMM = group.Spans?.Sum(s => s.Length) ?? 6000;
+
+            // --- 1. BACKBONE WEIGHT ---
+            // Backbone runs full length of beam + 2% for lap splices
+            double wBackboneTop = Utils.WeightCalculator.CalculateBackboneWeight(
+                sol.BackboneDiameter, totalLengthMM, sol.BackboneCount_Top, 1.02);
+            double wBackboneBot = Utils.WeightCalculator.CalculateBackboneWeight(
+                sol.BackboneDiameter, totalLengthMM, sol.BackboneCount_Bot, 1.02);
+            double wBackbone = wBackboneTop + wBackboneBot;
+
+            // --- 2. REINFORCEMENT WEIGHT ---
+            // Get length ratios from settings (NO HARDCODING!)
+            double supportRatio = settings?.Curtailment?.SupportReinfRatio ?? 0.33;
+            double midSpanRatio = settings?.Curtailment?.MidSpanReinfRatio ?? 0.8;
 
             double wReinf = 0;
-            int numSpans = group.Spans?.Count ?? 1;
-            double avgSpanM = totalLengthM / numSpans;
-
             foreach (var kvp in sol.Reinforcements)
             {
                 var spec = kvp.Value;
                 if (spec.Count <= 0) continue;
 
-                double barArea = System.Math.PI * spec.Diameter * spec.Diameter / 400.0; // cm²
-                // Factor: Left/Right = 30%, Mid = 50%
-                double factor = kvp.Key.Contains("Mid") ? 0.5 : 0.3;
-                wReinf += spec.Count * barArea * 0.785 * (avgSpanM * factor);
+                // Find span to get length
+                var span = group.Spans?.FirstOrDefault(s => kvp.Key.StartsWith(s.SpanId));
+                double spanLenMM = span?.Length ?? 5000;
+
+                // Determine bar length based on position (from Settings)
+                double barLenMM;
+                if (kvp.Key.Contains("Left") || kvp.Key.Contains("Right"))
+                    barLenMM = spanLenMM * supportRatio; // From settings
+                else
+                    barLenMM = spanLenMM * midSpanRatio; // From settings
+
+                wReinf += Utils.WeightCalculator.CalculateWeight(spec.Diameter, barLenMM, spec.Count);
             }
 
+            // --- 3. TOTAL WEIGHT ---
             sol.TotalSteelWeight = wBackbone + wReinf;
 
-            // Efficiency score (V2 formula)
+            // --- VALIDATION: Sanity check ---
+            // Dầm 10m × 4 thanh D25 ≈ 150kg, không phải 0.1kg
+            if (totalLengthMM > 10000 && sol.TotalSteelWeight < 10)
+            {
+                // Something is wrong - flag for debugging
+                sol.ValidationMessage = $"WARNING: Weight too low! {sol.TotalSteelWeight:F1}kg for {totalLengthMM / 1000:F1}m beam";
+            }
+
+            // --- 4. EFFICIENCY SCORE ---
+            // Higher weight = lower score (prefer lighter solutions)
             double effScore = 10000.0 / (sol.TotalSteelWeight + 1);
             if (sol.Reinforcements.Any(r => r.Value.Layer >= 2)) effScore *= 0.95;
             if (sol.BackboneCount_Top != sol.BackboneCount_Bot) effScore *= 0.98;
-
             sol.EfficiencyScore = effScore;
 
-            // Description
+            // --- 5. DESCRIPTION ---
             sol.Description = sol.BackboneCount_Top == 2 ? "Tiết kiệm" :
                               sol.BackboneCount_Top == 3 ? "Cân bằng" :
                               sol.BackboneCount_Top == 4 ? "An toàn" : "";
