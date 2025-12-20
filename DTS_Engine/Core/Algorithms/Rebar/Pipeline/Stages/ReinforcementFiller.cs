@@ -303,26 +303,41 @@ namespace DTS_Engine.Core.Algorithms.Rebar.Pipeline.Stages
 
         private static void CalculateSolutionMetrics(ContinuousBeamSolution sol, BeamGroup group, DtsSettings settings)
         {
-            double totalLength = group.Spans?.Sum(s => s.Length) ?? 6000;
+            double totalLengthMm = group.Spans?.Sum(s => s.Length) ?? 6000;
+            double totalLengthM = totalLengthMm / 1000.0;
 
-            // Calculate steel weight (kg)
-            double backboneWeight = (sol.As_Backbone_Top + sol.As_Backbone_Bot) * totalLength / 1000 * 7.85 / 10000;
+            // V2 Formula: As (cm²) * 0.785 (kg/m per cm²) * Length (m)
+            // Note: 0.785 = π/4 * 1 cm² * 1 m = 78.5 cm³ = 0.785 kg (steel density 7850 kg/m³)
+            double wBackbone = (sol.As_Backbone_Top + sol.As_Backbone_Bot) * 0.785 * totalLengthM;
 
-            double reinforcementWeight = 0;
+            double wReinf = 0;
+            int numSpans = group.Spans?.Count ?? 1;
+            double avgSpanM = totalLengthM / numSpans;
+
             foreach (var kvp in sol.Reinforcements)
             {
                 var spec = kvp.Value;
-                double area = spec.Count * Math.PI * spec.Diameter * spec.Diameter / 400.0;
-                // Assume reinforcement length is 30% of span length
-                reinforcementWeight += area * totalLength * 0.3 / 1000 * 7.85 / 10000;
+                if (spec.Count <= 0) continue;
+
+                double barArea = System.Math.PI * spec.Diameter * spec.Diameter / 400.0; // cm²
+                // Factor: Left/Right = 30%, Mid = 50%
+                double factor = kvp.Key.Contains("Mid") ? 0.5 : 0.3;
+                wReinf += spec.Count * barArea * 0.785 * (avgSpanM * factor);
             }
 
-            sol.TotalSteelWeight = backboneWeight + reinforcementWeight;
+            sol.TotalSteelWeight = wBackbone + wReinf;
 
-            // Efficiency score (simplified)
-            sol.EfficiencyScore = 100 - sol.TotalSteelWeight / 10;
-            if (sol.EfficiencyScore < 0) sol.EfficiencyScore = 0;
-            if (sol.EfficiencyScore > 100) sol.EfficiencyScore = 100;
+            // Efficiency score (V2 formula)
+            double effScore = 10000.0 / (sol.TotalSteelWeight + 1);
+            if (sol.Reinforcements.Any(r => r.Value.Layer >= 2)) effScore *= 0.95;
+            if (sol.BackboneCount_Top != sol.BackboneCount_Bot) effScore *= 0.98;
+
+            sol.EfficiencyScore = effScore;
+
+            // Description
+            sol.Description = sol.BackboneCount_Top == 2 ? "Tiết kiệm" :
+                              sol.BackboneCount_Top == 3 ? "Cân bằng" :
+                              sol.BackboneCount_Top == 4 ? "An toàn" : "";
         }
     }
 }

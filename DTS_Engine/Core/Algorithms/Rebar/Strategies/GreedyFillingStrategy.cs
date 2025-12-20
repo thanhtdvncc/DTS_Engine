@@ -26,8 +26,9 @@ namespace DTS_Engine.Core.Algorithms.Rebar.Strategies
             double barArea = Math.PI * context.BackboneDiameter * context.BackboneDiameter / 400.0;
             int totalNeeded = (int)Math.Ceiling(context.RequiredArea / barArea);
 
-            // GREEDY: Fill layer 1 first
+            // GREEDY: Fill layer 1 first, but must include backbone
             int n1 = Math.Min(totalNeeded, capacity);
+            n1 = Math.Max(n1, backboneCount);  // CRITICAL: n1 must >= backboneCount
             int n2 = Math.Max(0, totalNeeded - n1);
 
             // Apply constructability constraints

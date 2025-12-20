@@ -45,8 +45,9 @@ namespace DTS_Engine.Core.Algorithms.Rebar.Pipeline.Stages
                 var firstValidSpan = seed.SpanResults?.FirstOrDefault(s => s != null && s.Width > 0);
                 if (firstValidSpan != null)
                 {
-                    if (beamWidth <= 0) beamWidth = firstValidSpan.Width * 1000; // m -> mm
-                    if (beamHeight <= 0) beamHeight = firstValidSpan.SectionHeight * 1000;
+                    // BeamResultData.Width and SectionHeight are in cm
+                    if (beamWidth <= 0) beamWidth = firstValidSpan.Width * 10; // cm -> mm
+                    if (beamHeight <= 0) beamHeight = firstValidSpan.SectionHeight * 10; // cm -> mm
                 }
             }
 

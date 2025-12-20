@@ -1,5 +1,6 @@
 using System.Collections.Generic;
 using System.Linq;
+using DTS_Engine.Core.Algorithms;
 using DTS_Engine.Core.Algorithms.Rebar.Models;
 using DTS_Engine.Core.Algorithms.Rebar.Rules;
 using DTS_Engine.Core.Data;
@@ -80,18 +81,65 @@ namespace DTS_Engine.Core.Algorithms.Rebar.Pipeline
                 }
             }
 
-            // Rank by score (accounting for penalties and bonuses)
-            return validatedContexts
+            // ═══════════════════════════════════════════════════════════════
+            // SCORING (Migrated from V2)
+            // ═══════════════════════════════════════════════════════════════
+
+            var solutionsWithContext = validatedContexts
                 .Where(c => c.CurrentSolution != null)
-                .Select(c =>
+                .ToList();
+
+            if (solutionsWithContext.Count > 0)
+            {
+                // Calculate Constructability Scores
+                foreach (var ctx in solutionsWithContext)
                 {
+                    ctx.CurrentSolution.ConstructabilityScore =
+                        ConstructabilityScoring.CalculateScore(ctx.CurrentSolution, ctx.Group, ctx.Settings);
+                }
+
+                // Normalize Weight Scores
+                var weights = solutionsWithContext
+                    .Select(c => c.CurrentSolution.TotalSteelWeight)
+                    .Where(w => w > 0)
+                    .ToList();
+
+                double minW = weights.Count > 0 ? weights.Min() : 0;
+                double maxW = weights.Count > 0 ? weights.Max() : 0;
+
+                foreach (var ctx in solutionsWithContext)
+                {
+                    var sol = ctx.CurrentSolution;
+
+                    // Calculate weight score (0-100, lower weight = higher score)
+                    double weightScore;
+                    if (weights.Count == 0 || (maxW - minW) < 0.001)
+                    {
+                        weightScore = 100; // All same weight or no weight data
+                    }
+                    else
+                    {
+                        weightScore = (maxW - sol.TotalSteelWeight) / (maxW - minW) * 100;
+                    }
+                    weightScore = System.Math.Max(0, System.Math.Min(100, weightScore));
+
+                    double cs = System.Math.Max(0, System.Math.Min(100, sol.ConstructabilityScore));
+                    sol.TotalScore = 0.6 * weightScore + 0.4 * cs;
+
                     // Apply penalty from Warning rules
-                    c.CurrentSolution.TotalScore -= c.TotalPenalty;
+                    sol.TotalScore -= ctx.TotalPenalty;
                     // Apply bonus from PreferredDiameter match
-                    c.CurrentSolution.TotalScore += c.PreferredDiameterBonus;
-                    return c.CurrentSolution;
-                })
+                    sol.TotalScore += ctx.PreferredDiameterBonus;
+                }
+            }
+
+            // Rank by score and remove duplicates
+            return solutionsWithContext
+                .Select(c => c.CurrentSolution)
+                .GroupBy(s => s.OptionName)
+                .Select(g => g.OrderByDescending(x => x.TotalScore).First())
                 .OrderByDescending(s => s.TotalScore)
+                .ThenBy(s => s.TotalSteelWeight)
                 .Take(5)
                 .ToList();
         }

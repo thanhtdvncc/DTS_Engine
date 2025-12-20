@@ -98,21 +98,46 @@ namespace DTS_Engine.Core.Algorithms.Rebar.Models
 
         /// <summary>
         /// Clone context để tạo scenario mới.
+        /// IMPORTANT: Only clone INPUT and reset OUTPUT/CONTROL.
+        /// Scenario params are set by ScenarioGenerator after clone.
         /// </summary>
         public SolutionContext Clone()
         {
             return new SolutionContext
             {
+                // INPUT - shared references (immutable during pipeline)
                 Group = this.Group,
                 SpanResults = this.SpanResults,
                 Settings = this.Settings,
                 GlobalConstraints = this.GlobalConstraints,
                 ExternalConstraints = this.ExternalConstraints,
-                IsValid = true,
-                TotalPenalty = 0,
+
+                // SANITIZED GEOMETRY - copy from seed (set once by ScenarioGenerator)
+                BeamWidth = this.BeamWidth,
+                BeamHeight = this.BeamHeight,
+                TotalLength = this.TotalLength,
+                AllowedDiameters = this.AllowedDiameters,
+
+                // SCENARIO - reset (will be set by ScenarioGenerator)
+                ScenarioId = null,
+                TopBackboneDiameter = 0,
+                BotBackboneDiameter = 0,
+                TopBackboneCount = 0,
+                BotBackboneCount = 0,
                 PreferredDiameterBonus = 0,
+
+                // OUTPUT - reset
+                CurrentSolution = null,
+                LongitudinalProfile = null,
+                StirrupProfile = null,
+                StirrupLegCount = 0,
                 ValidationResults = new List<ValidationResult>(),
-                Conflicts = new List<ConflictReport>()
+                Conflicts = new List<ConflictReport>(),
+
+                // CONTROL - reset
+                IsValid = true,
+                FailStage = null,
+                TotalPenalty = 0
             };
         }
     }
