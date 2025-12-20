@@ -307,6 +307,7 @@
         <div class="tab" onclick="showTab(3)">Naming</div>
         <div class="tab" onclick="showTab(4)">Neo & Nối</div>
         <div class="tab" onclick="showTab(5)">Bố trí</div>
+        <div class="tab" onclick="showTab(6)">Cấu tạo Đai</div>
     </div>
 
     <div class="content">
@@ -1044,6 +1045,68 @@
 
                     <div class="hint" style="margin-top:8px;">
                         Các hệ số trên dùng để tính toán chiều dài và trọng lượng thép (Weight Calculation).
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- TAB 6: STIRRUP RULES (V3.3) -->
+        <div class="tab-panel" id="tab6">
+            <div class="section">
+                <div class="section-header">Cấu hình Quy tắc Đai (Stirrup Rules)</div>
+                <div class="section-body">
+                    <div class="row" style="margin-bottom:10px;">
+                        <div class="col">
+                            <label style="display:flex;align-items:center;gap:8px;font-weight:bold;">
+                                <input type="checkbox" id="chkEnableStirrupRules" checked>
+                                Kích hoạt quy tắc bố trí đai nâng cao (Tra bảng theo số thanh thép)
+                            </label>
+                            <div class="hint">Nếu tắt, hệ thống sẽ dùng quy tắc đơn giản dựa trên bề rộng dầm.</div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <div style="display:grid;grid-template-columns:1fr 1fr;gap:15px;">
+                <!-- Bảng 1: Có gia cường -->
+                <div class="section">
+                    <div class="section-header">Bảng 1: Có gia cường (Mật độ cao)</div>
+                    <div class="section-body" style="max-height:400px;overflow-y:auto;">
+                        <table id="tblStirrupAddon" style="width:100%;border-collapse:collapse;font-size:11px;">
+                            <thead style="position:sticky;top:0;background:#f8f9fa;">
+                                <tr>
+                                    <th style="border:1px solid #ddd;padding:4px;width:40px;">SL</th>
+                                    <th style="border:1px solid #ddd;padding:4px;">Đai □ (Links)</th>
+                                    <th style="border:1px solid #ddd;padding:4px;">Đai C (Ties)</th>
+                                    <th style="border:1px solid #ddd;padding:4px;width:50px;">Nhánh</th>
+                                </tr>
+                            </thead>
+                            <tbody id="tbodyStirrupAddon"></tbody>
+                        </table>
+                        <div class="hint" style="margin-top:8px;">
+                            Format: "2-5" = đai lồng từ thanh 2→5. Nhiều đai: "2-5; 3-4"
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Bảng 2: Chỉ chạy suốt -->
+                <div class="section">
+                    <div class="section-header">Bảng 2: Chỉ chạy suốt (Mật độ thấp)</div>
+                    <div class="section-body" style="max-height:400px;overflow-y:auto;">
+                        <table id="tblStirrupBackbone" style="width:100%;border-collapse:collapse;font-size:11px;">
+                            <thead style="position:sticky;top:0;background:#f8f9fa;">
+                                <tr>
+                                    <th style="border:1px solid #ddd;padding:4px;width:40px;">SL</th>
+                                    <th style="border:1px solid #ddd;padding:4px;">Đai □ (Links)</th>
+                                    <th style="border:1px solid #ddd;padding:4px;">Đai C (Ties)</th>
+                                    <th style="border:1px solid #ddd;padding:4px;width:50px;">Nhánh</th>
+                                </tr>
+                            </thead>
+                            <tbody id="tbodyStirrupBackbone"></tbody>
+                        </table>
+                        <div class="hint" style="margin-top:8px;">
+                            Dùng khi Layer 1 chỉ có thép chạy suốt (không có thép gia cường xen kẽ).
+                        </div>
                     </div>
                 </div>
             </div>
@@ -2313,10 +2376,120 @@
                         RebarDecimalPlaces: parseInt(getVal('ExportRebarDecimalPlaces')) || 1,
                         Separator: getVal('ExportSeparator') || '_',
                         MaxSectionNameLength: parseInt(getVal('ExportMaxSectionNameLength')) || 49
-                    }
+                    },
+                    Stirrup: collectStirrupData()
                 };
 
+
                 window.chrome.webview.postMessage(JSON.stringify(result));
+            }
+
+            // ============ STIRRUP RULES FUNCTIONS (V3.3) ============
+            function renderStirrupTables() {
+                const stirrup = data.Stirrup || {};
+
+                // Set checkbox
+                const chk = document.getElementById('chkEnableStirrupRules');
+                if (chk) chk.checked = stirrup.EnableAdvancedRules !== false;
+
+                // Render Addon table
+                const tbodyAddon = document.getElementById('tbodyStirrupAddon');
+                if (tbodyAddon) {
+                    tbodyAddon.innerHTML = '';
+                    const rules = stirrup.RulesWithAddon || generateDefaultAddonRules();
+                    rules.forEach(r => {
+                        const tr = document.createElement('tr');
+                        tr.innerHTML = `
+                            <td style="border:1px solid #ddd;padding:4px;text-align:center;background:#f8f9fa;">${r.BarCount}</td>
+                            <td style="border:1px solid #ddd;padding:2px;"><input type="text" class="stirrup-links" value="${r.RectangularLinks || ''}" style="width:100%;border:none;font-size:11px;"></td>
+                            <td style="border:1px solid #ddd;padding:2px;"><input type="text" class="stirrup-ties" value="${r.CrossTies || ''}" style="width:100%;border:none;font-size:11px;"></td>
+                            <td style="border:1px solid #ddd;padding:2px;"><input type="number" class="stirrup-legs" value="${r.TotalLegs || 2}" style="width:100%;border:none;font-size:11px;text-align:center;"></td>
+                        `;
+                        tr.dataset.barCount = r.BarCount;
+                        tbodyAddon.appendChild(tr);
+                    });
+                }
+
+                // Render Backbone table
+                const tbodyBackbone = document.getElementById('tbodyStirrupBackbone');
+                if (tbodyBackbone) {
+                    tbodyBackbone.innerHTML = '';
+                    const rules = stirrup.RulesBackboneOnly || generateDefaultBackboneRules();
+                    rules.forEach(r => {
+                        const tr = document.createElement('tr');
+                        tr.innerHTML = `
+                            <td style="border:1px solid #ddd;padding:4px;text-align:center;background:#f8f9fa;">${r.BarCount}</td>
+                            <td style="border:1px solid #ddd;padding:2px;"><input type="text" class="stirrup-links" value="${r.RectangularLinks || ''}" style="width:100%;border:none;font-size:11px;"></td>
+                            <td style="border:1px solid #ddd;padding:2px;"><input type="text" class="stirrup-ties" value="${r.CrossTies || ''}" style="width:100%;border:none;font-size:11px;"></td>
+                            <td style="border:1px solid #ddd;padding:2px;"><input type="number" class="stirrup-legs" value="${r.TotalLegs || 2}" style="width:100%;border:none;font-size:11px;text-align:center;"></td>
+                        `;
+                        tr.dataset.barCount = r.BarCount;
+                        tbodyBackbone.appendChild(tr);
+                    });
+                }
+            }
+
+            function collectStirrupData() {
+                const chk = document.getElementById('chkEnableStirrupRules');
+                const result = {
+                    EnableAdvancedRules: chk ? chk.checked : true,
+                    RulesWithAddon: [],
+                    RulesBackboneOnly: []
+                };
+
+                // Collect Addon table
+                const addonRows = document.querySelectorAll('#tbodyStirrupAddon tr');
+                addonRows.forEach(tr => {
+                    result.RulesWithAddon.push({
+                        BarCount: parseInt(tr.dataset.barCount) || 0,
+                        RectangularLinks: tr.querySelector('.stirrup-links')?.value || '',
+                        CrossTies: tr.querySelector('.stirrup-ties')?.value || '',
+                        TotalLegs: parseInt(tr.querySelector('.stirrup-legs')?.value) || 2
+                    });
+                });
+
+                // Collect Backbone table
+                const backboneRows = document.querySelectorAll('#tbodyStirrupBackbone tr');
+                backboneRows.forEach(tr => {
+                    result.RulesBackboneOnly.push({
+                        BarCount: parseInt(tr.dataset.barCount) || 0,
+                        RectangularLinks: tr.querySelector('.stirrup-links')?.value || '',
+                        CrossTies: tr.querySelector('.stirrup-ties')?.value || '',
+                        TotalLegs: parseInt(tr.querySelector('.stirrup-legs')?.value) || 2
+                    });
+                });
+
+                return result;
+            }
+
+            function generateDefaultAddonRules() {
+                return [
+                    { BarCount: 1, RectangularLinks: '', CrossTies: '', TotalLegs: 2 },
+                    { BarCount: 2, RectangularLinks: '', CrossTies: '', TotalLegs: 2 },
+                    { BarCount: 3, RectangularLinks: '', CrossTies: '2', TotalLegs: 3 },
+                    { BarCount: 4, RectangularLinks: '2-3', CrossTies: '', TotalLegs: 4 },
+                    { BarCount: 5, RectangularLinks: '2-4', CrossTies: '3', TotalLegs: 5 },
+                    { BarCount: 6, RectangularLinks: '2-5; 3-4', CrossTies: '', TotalLegs: 6 },
+                    { BarCount: 7, RectangularLinks: '2-6; 3-5', CrossTies: '4', TotalLegs: 7 },
+                    { BarCount: 8, RectangularLinks: '2-7; 3-6; 4-5', CrossTies: '', TotalLegs: 8 },
+                    { BarCount: 9, RectangularLinks: '2-8; 3-7; 4-6', CrossTies: '5', TotalLegs: 9 },
+                    { BarCount: 10, RectangularLinks: '2-9; 3-8; 4-7; 5-6', CrossTies: '', TotalLegs: 10 }
+                ];
+            }
+
+            function generateDefaultBackboneRules() {
+                return [
+                    { BarCount: 1, RectangularLinks: '', CrossTies: '1', TotalLegs: 2 },
+                    { BarCount: 2, RectangularLinks: '', CrossTies: '', TotalLegs: 2 },
+                    { BarCount: 3, RectangularLinks: '', CrossTies: '', TotalLegs: 2 },
+                    { BarCount: 4, RectangularLinks: '2-3', CrossTies: '', TotalLegs: 4 },
+                    { BarCount: 5, RectangularLinks: '2-4', CrossTies: '', TotalLegs: 4 },
+                    { BarCount: 6, RectangularLinks: '3-4', CrossTies: '', TotalLegs: 4 },
+                    { BarCount: 7, RectangularLinks: '3-5', CrossTies: '', TotalLegs: 4 },
+                    { BarCount: 8, RectangularLinks: '3-6', CrossTies: '', TotalLegs: 4 },
+                    { BarCount: 9, RectangularLinks: '3-7', CrossTies: '5', TotalLegs: 5 },
+                    { BarCount: 10, RectangularLinks: '3-8; 5-6', CrossTies: '', TotalLegs: 6 }
+                ];
             }
 
             function doCancel() {
@@ -2333,6 +2506,7 @@
 
             // Initialize form on load
             loadForm();
+            renderStirrupTables();
         </script>
 </body>
 

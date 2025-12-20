@@ -48,6 +48,12 @@ namespace DTS_Engine.Core.Data
         /// </summary>
         public RulesConfig Rules { get; set; } = new RulesConfig();
 
+        /// <summary>
+        /// Cấu hình quy tắc bố trí đai (Stirrup Configuration)
+        /// Dựa trên bảng tra tiêu chuẩn theo số thanh thép thực tế
+        /// </summary>
+        public StirrupConfig Stirrup { get; set; } = new StirrupConfig();
+
 
         // ===== MULTI-STORY NAMING SYSTEM =====
         /// <summary>
@@ -1193,4 +1199,147 @@ namespace DTS_Engine.Core.Data
         /// </summary>
         public double SafetyFactor { get; set; } = 1.0;
     }
+
+    // =====================================================================
+    // STIRRUP CONFIGURATION (V3.3) - Lookup Tables for Bar Count
+    // =====================================================================
+
+    /// <summary>
+    /// Cấu hình quy tắc bố trí đai dựa trên số thanh thép thực tế.
+    /// Thay thế logic tính đai dựa trên bề rộng dầm (heuristic).
+    /// </summary>
+    public class StirrupConfig
+    {
+        /// <summary>
+        /// Kích hoạt quy tắc bố trí đai nâng cao (tra bảng).
+        /// Nếu false, sử dụng logic cũ dựa trên bề rộng dầm.
+        /// </summary>
+        public bool EnableAdvancedRules { get; set; } = true;
+
+        /// <summary>
+        /// Bảng 1: Cấu tạo khi CÓ thép gia cường lớp 1 (Mật độ cao).
+        /// Dùng khi Layer 1 = Backbone + Addon xen kẽ.
+        /// </summary>
+        [JsonProperty(ObjectCreationHandling = ObjectCreationHandling.Replace)]
+        public List<StirrupRuleRow> RulesWithAddon { get; set; } = GenerateDefaultAddonRules();
+
+        /// <summary>
+        /// Bảng 2: Cấu tạo khi CHỈ CÓ thép chạy suốt (Mật độ thấp).
+        /// Dùng khi Layer 1 = Chỉ Backbone (thoáng).
+        /// </summary>
+        [JsonProperty(ObjectCreationHandling = ObjectCreationHandling.Replace)]
+        public List<StirrupRuleRow> RulesBackboneOnly { get; set; } = GenerateDefaultBackboneRules();
+
+        /// <summary>
+        /// Tra bảng để lấy số nhánh đai dựa trên số thanh thép lớp 1.
+        /// </summary>
+        public int GetLegCount(int barCount, bool hasAddon)
+        {
+            if (!EnableAdvancedRules) return 2; // Default fallback
+
+            var table = hasAddon ? RulesWithAddon : RulesBackboneOnly;
+            var rule = table?.FirstOrDefault(r => r.BarCount == barCount);
+            return rule?.TotalLegs ?? 2;
+        }
+
+        /// <summary>
+        /// Tra bảng để lấy cấu tạo đai đầy đủ.
+        /// </summary>
+        public StirrupRuleRow GetRule(int barCount, bool hasAddon)
+        {
+            if (!EnableAdvancedRules) return null;
+
+            var table = hasAddon ? RulesWithAddon : RulesBackboneOnly;
+            return table?.FirstOrDefault(r => r.BarCount == barCount);
+        }
+
+        // ===== SEED DATA: Bảng 1 - Có gia cường (Mật độ cao) =====
+        private static List<StirrupRuleRow> GenerateDefaultAddonRules()
+        {
+            return new List<StirrupRuleRow>
+            {
+                new StirrupRuleRow { BarCount = 1, RectangularLinks = "", CrossTies = "", TotalLegs = 2 },
+                new StirrupRuleRow { BarCount = 2, RectangularLinks = "", CrossTies = "", TotalLegs = 2 },
+                new StirrupRuleRow { BarCount = 3, RectangularLinks = "", CrossTies = "2", TotalLegs = 3 },
+                new StirrupRuleRow { BarCount = 4, RectangularLinks = "2-3", CrossTies = "", TotalLegs = 4 },
+                new StirrupRuleRow { BarCount = 5, RectangularLinks = "2-4", CrossTies = "3", TotalLegs = 5 },
+                new StirrupRuleRow { BarCount = 6, RectangularLinks = "2-5; 3-4", CrossTies = "", TotalLegs = 6 },
+                new StirrupRuleRow { BarCount = 7, RectangularLinks = "2-6; 3-5", CrossTies = "4", TotalLegs = 7 },
+                new StirrupRuleRow { BarCount = 8, RectangularLinks = "2-7; 3-6; 4-5", CrossTies = "", TotalLegs = 8 },
+                new StirrupRuleRow { BarCount = 9, RectangularLinks = "2-8; 3-7; 4-6", CrossTies = "5", TotalLegs = 9 },
+                new StirrupRuleRow { BarCount = 10, RectangularLinks = "2-9; 3-8; 4-7; 5-6", CrossTies = "", TotalLegs = 10 },
+                new StirrupRuleRow { BarCount = 11, RectangularLinks = "2-10; 3-9; 4-8; 5-7", CrossTies = "6", TotalLegs = 11 },
+                new StirrupRuleRow { BarCount = 12, RectangularLinks = "2-11; 3-10; 4-9; 5-8; 6-7", CrossTies = "", TotalLegs = 12 },
+                new StirrupRuleRow { BarCount = 13, RectangularLinks = "2-12; 3-11; 4-10; 5-9; 6-8", CrossTies = "7", TotalLegs = 13 },
+                new StirrupRuleRow { BarCount = 14, RectangularLinks = "2-13; 3-12; 4-11; 5-10; 6-9; 7-8", CrossTies = "", TotalLegs = 14 },
+                new StirrupRuleRow { BarCount = 15, RectangularLinks = "2-14; 3-13; 4-12; 5-11; 6-10; 7-9", CrossTies = "8", TotalLegs = 15 },
+                new StirrupRuleRow { BarCount = 16, RectangularLinks = "2-15; 3-14; 4-13; 5-12; 6-11; 7-10; 8-9", CrossTies = "", TotalLegs = 16 },
+                new StirrupRuleRow { BarCount = 17, RectangularLinks = "2-16; 3-15; 4-14; 5-13; 6-12; 7-11; 8-10", CrossTies = "9", TotalLegs = 17 },
+                new StirrupRuleRow { BarCount = 18, RectangularLinks = "2-17; 3-16; 4-15; 5-14; 6-13; 7-12; 8-11; 9-10", CrossTies = "", TotalLegs = 18 },
+                new StirrupRuleRow { BarCount = 19, RectangularLinks = "2-18; 3-17; 4-16; 5-15; 6-14; 7-13; 8-12; 9-11", CrossTies = "10", TotalLegs = 19 },
+                new StirrupRuleRow { BarCount = 20, RectangularLinks = "2-19; 3-18; 4-17; 5-16; 6-15; 7-14; 8-13; 9-12; 10-11", CrossTies = "", TotalLegs = 20 }
+            };
+        }
+
+        // ===== SEED DATA: Bảng 2 - Chỉ chạy suốt (Mật độ thấp) =====
+        private static List<StirrupRuleRow> GenerateDefaultBackboneRules()
+        {
+            return new List<StirrupRuleRow>
+            {
+                new StirrupRuleRow { BarCount = 1, RectangularLinks = "", CrossTies = "1", TotalLegs = 2 },
+                new StirrupRuleRow { BarCount = 2, RectangularLinks = "", CrossTies = "", TotalLegs = 2 },
+                new StirrupRuleRow { BarCount = 3, RectangularLinks = "", CrossTies = "", TotalLegs = 2 },
+                new StirrupRuleRow { BarCount = 4, RectangularLinks = "2-3", CrossTies = "", TotalLegs = 4 },
+                new StirrupRuleRow { BarCount = 5, RectangularLinks = "2-4", CrossTies = "", TotalLegs = 4 },
+                new StirrupRuleRow { BarCount = 6, RectangularLinks = "3-4", CrossTies = "", TotalLegs = 4 },
+                new StirrupRuleRow { BarCount = 7, RectangularLinks = "3-5", CrossTies = "", TotalLegs = 4 },
+                new StirrupRuleRow { BarCount = 8, RectangularLinks = "3-6", CrossTies = "", TotalLegs = 4 },
+                new StirrupRuleRow { BarCount = 9, RectangularLinks = "3-7", CrossTies = "5", TotalLegs = 5 },
+                new StirrupRuleRow { BarCount = 10, RectangularLinks = "3-8; 5-6", CrossTies = "", TotalLegs = 6 },
+                new StirrupRuleRow { BarCount = 11, RectangularLinks = "3-5; 7-9", CrossTies = "", TotalLegs = 6 },
+                new StirrupRuleRow { BarCount = 12, RectangularLinks = "3-5; 8-10", CrossTies = "", TotalLegs = 6 },
+                new StirrupRuleRow { BarCount = 13, RectangularLinks = "3-5; 9-11", CrossTies = "7", TotalLegs = 7 },
+                new StirrupRuleRow { BarCount = 14, RectangularLinks = "3-5; 7-8; 10-12", CrossTies = "", TotalLegs = 8 },
+                new StirrupRuleRow { BarCount = 15, RectangularLinks = "3-5; 7-9; 11-13", CrossTies = "", TotalLegs = 8 },
+                new StirrupRuleRow { BarCount = 16, RectangularLinks = "3-5; 7-10; 12-14", CrossTies = "", TotalLegs = 8 },
+                new StirrupRuleRow { BarCount = 17, RectangularLinks = "3-5; 7-11; 13-15", CrossTies = "9", TotalLegs = 9 },
+                new StirrupRuleRow { BarCount = 18, RectangularLinks = "3-5; 7-12; 9-10; 14-16", CrossTies = "", TotalLegs = 10 },
+                new StirrupRuleRow { BarCount = 19, RectangularLinks = "3-5; 7-9; 11-13; 15-17", CrossTies = "", TotalLegs = 10 },
+                new StirrupRuleRow { BarCount = 20, RectangularLinks = "3-5; 7-9; 12-14; 16-18", CrossTies = "", TotalLegs = 10 }
+            };
+        }
+    }
+
+    /// <summary>
+    /// Một dòng trong bảng quy tắc đai.
+    /// Mô tả cấu tạo đai cho số lượng thanh thép cụ thể.
+    /// </summary>
+    public class StirrupRuleRow
+    {
+        /// <summary>
+        /// Số lượng thanh thép lớp 1 (Input - ReadOnly khi hiển thị)
+        /// </summary>
+        public int BarCount { get; set; }
+
+        /// <summary>
+        /// Cấu tạo đai lồng (Rectangular Links/Hoops).
+        /// Format: "2-5" = đai lồng từ thanh 2 đến thanh 5.
+        /// Nhiều đai: "2-5; 3-4" (phân cách bằng ;)
+        /// </summary>
+        public string RectangularLinks { get; set; } = "";
+
+        /// <summary>
+        /// Cấu tạo đai C (Crossties).
+        /// Format: "3" = đai C móc vào thanh 3.
+        /// Nhiều đai: "3; 5" (phân cách bằng ;)
+        /// </summary>
+        public string CrossTies { get; set; } = "";
+
+        /// <summary>
+        /// Tổng số nhánh đai (bao gồm cả đai kín và đai C).
+        /// Dùng để tính nhanh mà không cần parse string.
+        /// </summary>
+        public int TotalLegs { get; set; } = 2;
+    }
 }
+

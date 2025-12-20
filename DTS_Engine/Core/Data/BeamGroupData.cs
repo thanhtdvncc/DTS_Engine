@@ -565,8 +565,31 @@ namespace DTS_Engine.Core.Data
         public List<int> LayerBreakdown { get; set; }
 
         /// <summary>
+        /// Flag đánh dấu thanh thép chạy suốt qua nhịp (không cắt).
+        /// Dùng cho Bridging Logic khi nhịp ngắn.
+        /// </summary>
+        public bool IsRunningThrough { get; set; } = false;
+
+        /// <summary>
+        /// [V3.3 Extension Point] Slot index cho Spatial-Aware Filling.
+        /// Null = chưa xác định vị trí cụ thể.
+        /// </summary>
+        public List<int> SlotIndices { get; set; }
+
+        /// <summary>
         /// Chuỗi hiển thị: "2D22"
         /// </summary>
         public string DisplayString => $"{Count}D{Diameter}";
+
+        /// <summary>
+        /// So sánh 2 RebarSpec có tương đồng để merge không.
+        /// </summary>
+        public bool IsSimilar(RebarSpec other)
+        {
+            if (other == null) return false;
+            return Diameter == other.Diameter &&
+                   Count == other.Count &&
+                   Layer == other.Layer;
+        }
     }
 }
