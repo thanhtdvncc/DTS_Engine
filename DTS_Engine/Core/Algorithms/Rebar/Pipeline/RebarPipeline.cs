@@ -90,6 +90,47 @@ namespace DTS_Engine.Core.Algorithms.Rebar.Pipeline
 
             if (solutionsWithContext.Count > 0)
             {
+                // ═══════════════════════════════════════════════════════════════
+                // CRITICAL HARD CHECK: Insufficient Steel → FAIL IMMEDIATELY
+                // Phương án thiếu thép KHÔNG ĐƯỢC CHẤM ĐIỂM, dù nhẹ đến đâu
+                // ═══════════════════════════════════════════════════════════════
+                const double TOLERANCE = 0.98; // Allow 2% tolerance for rounding
+                solutionsWithContext = solutionsWithContext.Where(ctx =>
+                {
+                    var sol = ctx.CurrentSolution;
+                    if (sol == null) return false;
+
+                    // Tính tổng As_provided từ backbone + reinforcements
+                    double providedTop = sol.As_Backbone_Top;
+                    double providedBot = sol.As_Backbone_Bot;
+                    foreach (var kv in sol.Reinforcements)
+                    {
+                        double barArea = System.Math.PI * kv.Value.Diameter * kv.Value.Diameter / 400.0;
+                        double contrib = barArea * kv.Value.Count;
+                        if (kv.Key.Contains("Top")) providedTop += contrib;
+                        else if (kv.Key.Contains("Bot")) providedBot += contrib;
+                    }
+
+                    // So sánh với As_required
+                    double reqTop = sol.As_Required_Top_Max;
+                    double reqBot = sol.As_Required_Bot_Max;
+
+                    if (providedTop < reqTop * TOLERANCE || providedBot < reqBot * TOLERANCE)
+                    {
+                        sol.IsValid = false;
+                        sol.ValidationMessage = $"FATAL: Insufficient Steel! " +
+                            $"Top: {providedTop:F2}/{reqTop:F2}cm², " +
+                            $"Bot: {providedBot:F2}/{reqBot:F2}cm²";
+                        return false; // LOẠI NGAY
+                    }
+                    return true;
+                }).ToList();
+
+                if (solutionsWithContext.Count == 0)
+                {
+                    return new List<ContinuousBeamSolution>(); // Không có phương án nào đủ thép
+                }
+
                 // Calculate Constructability Scores
                 foreach (var ctx in solutionsWithContext)
                 {

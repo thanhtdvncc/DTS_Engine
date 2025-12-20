@@ -245,6 +245,9 @@ namespace DTS_Engine.Core.Algorithms.Rebar.Pipeline.Stages
 
             if (backboneCount > capacity) return false;
 
+            // Get MaxLayers from settings
+            int maxLayers = ctx.Settings?.Beam?.MaxLayers ?? 2;
+
             // Create filling context
             var fillContext = new FillingContext
             {
@@ -254,6 +257,7 @@ namespace DTS_Engine.Core.Algorithms.Rebar.Pipeline.Stages
                 BackboneDiameter = backboneDia,
                 LayerCapacity = capacity,
                 StirrupLegCount = legCount,
+                MaxLayers = maxLayers,
                 Settings = ctx.Settings,
                 Constraints = ctx.ExternalConstraints
             };
@@ -268,8 +272,9 @@ namespace DTS_Engine.Core.Algorithms.Rebar.Pipeline.Stages
             else if (!planA.IsValid && planB.IsValid) bestPlan = planB;
             else if (planA.IsValid && planB.IsValid)
             {
-                // Prefer fewer bars
+                // Prefer fewer bars, then fewer waste
                 if (planB.TotalBars < planA.TotalBars) bestPlan = planB;
+                else if (planB.TotalBars == planA.TotalBars && planB.WasteCount < planA.WasteCount) bestPlan = planB;
                 else bestPlan = planA;
             }
             else return false;
@@ -277,27 +282,34 @@ namespace DTS_Engine.Core.Algorithms.Rebar.Pipeline.Stages
             // ACCUMULATE WASTE COUNT for penalty scoring
             ctx.AccumulatedWasteCount += bestPlan.WasteCount;
 
-            int addL1 = bestPlan.CountLayer1 - backboneCount;
-            int addL2 = bestPlan.CountLayer2;
-
             // ═══════════════════════════════════════════════════════════════
-            // HOTFIX: Clamp để đảm bảo không bao giờ ra số âm
-            // Ngăn ngừa trường hợp strategy trả về sai giá trị
+            // DYNAMIC N-LAYER: Handle List<int> LayerCounts
+            // Layer 0 includes backbone, additional bars = LayerCounts[0] - backboneCount
+            // Layer 1+ are all additional
             // ═══════════════════════════════════════════════════════════════
-            addL1 = Math.Max(0, addL1);
-            addL2 = Math.Max(0, addL2);
+            var layerCounts = bestPlan.LayerCounts;
+            if (layerCounts == null || layerCounts.Count == 0) return true; // No additional needed
 
+            int addL1 = Math.Max(0, layerCounts[0] - backboneCount);
+            int addOtherLayers = 0;
+            for (int i = 1; i < layerCounts.Count; i++)
+            {
+                addOtherLayers += layerCounts[i];
+            }
 
-            if (addL1 > 0 || addL2 > 0)
+            int totalAdd = addL1 + addOtherLayers;
+
+            if (totalAdd > 0)
             {
                 sol.Reinforcements[locationKey] = new RebarSpec
                 {
                     Diameter = addDia,
-                    Count = addL1 + addL2,
-                    Layer = addL2 > 0 ? 2 : 1,
-                    Position = locationKey.Contains("Top") ? "Top" : "Bot"
+                    Count = totalAdd,
+                    Layer = layerCounts.Count, // Number of layers used
+                    Position = locationKey.Contains("Top") ? "Top" : "Bot",
+                    // Store layer breakdown for viewer
+                    LayerBreakdown = layerCounts
                 };
-
             }
 
             return true;

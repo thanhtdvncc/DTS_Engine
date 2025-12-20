@@ -1,10 +1,15 @@
 using System;
+using System.Collections.Generic;
 using DTS_Engine.Core.Algorithms.Rebar.Models;
 
 namespace DTS_Engine.Core.Algorithms.Rebar.Strategies
 {
     /// <summary>
-    /// Chiến thuật GREEDY: Ưu tiên nhồi lớp 1 trước, chỉ tràn sang lớp 2 khi cần.
+    /// Chiến thuật GREEDY: Ưu tiên nhồi lớp 1 trước, chỉ tràn sang lớp tiếp theo khi cần.
+    /// 
+    /// DYNAMIC N-LAYER: Hỗ trợ tối đa MaxLayers lớp (không còn hardcode 2 lớp).
+    /// Pyramid Rule: L[n] <= L[n-1] cho mọi n.
+    /// 
     /// Ưu điểm: Tập trung thép, dễ đổ bê tông.
     /// Nhược điểm: Có thể cần nhiều thanh hơn nếu lớp 1 đầy.
     /// </summary>
@@ -15,8 +20,8 @@ namespace DTS_Engine.Core.Algorithms.Rebar.Strategies
         public FillingResult Calculate(FillingContext context)
         {
             var settings = context.Settings;
-            int maxLayers = settings.Beam?.MaxLayers ?? 2;
-            bool preferSymmetric = settings.Beam?.PreferSymmetric ?? true;
+            int maxLayers = context.MaxLayers;
+            bool preferSymmetric = settings?.Beam?.PreferSymmetric ?? true;
 
             int capacity = context.LayerCapacity;
             int backboneCount = context.BackboneCount;
@@ -26,17 +31,14 @@ namespace DTS_Engine.Core.Algorithms.Rebar.Strategies
             double missing = context.RequiredArea - context.BackboneArea;
 
             // ═══════════════════════════════════════════════════════════════
-            // HOTFIX: Nếu thép chủ đã đủ, trả về cấu hình hiện tại
-            // Trước đây trả về TotalBars=0 gây ra phép trừ âm ở ReinforcementFiller
+            // CASE 1: Backbone đã đủ → chỉ trả về L1 = backbone
             // ═══════════════════════════════════════════════════════════════
             if (missing <= 0.01)
             {
                 return new FillingResult
                 {
                     IsValid = true,
-                    TotalBars = backboneCount,     // Đã có backbone
-                    CountLayer1 = backboneCount,   // Nằm hết ở lớp 1
-                    CountLayer2 = 0
+                    LayerCounts = new List<int> { backboneCount }
                 };
             }
 
@@ -44,99 +46,154 @@ namespace DTS_Engine.Core.Algorithms.Rebar.Strategies
             double barArea = Math.PI * context.BackboneDiameter * context.BackboneDiameter / 400.0;
             int totalNeeded = (int)Math.Ceiling(context.RequiredArea / barArea);
 
-            // GREEDY: Fill layer 1 first, but must include backbone
-            int n1 = Math.Min(totalNeeded, capacity);
-            n1 = Math.Max(n1, backboneCount);  // CRITICAL: n1 must >= backboneCount
-            int n2 = Math.Max(0, totalNeeded - n1);
-
-            // Apply constructability constraints
-            return ApplyConstraints(n1, n2, capacity, backboneCount, legCount, maxLayers, preferSymmetric);
-        }
-
-        private FillingResult ApplyConstraints(
-            int n1, int n2, int capacity, int backboneCount, int legCount,
-            int maxLayers, bool preferSymmetric)
-        {
-            // CONSTRAINT 1: Pyramid Rule (L2 <= L1)
-            if (n2 > n1)
-            {
-                return new FillingResult
-                {
-                    IsValid = false,
-                    FailReason = "Vi phạm quy tắc kim tự tháp (L2 > L1)"
-                };
-            }
-
-            // CONSTRAINT 2: Max Layers
-            if (n2 > 0 && maxLayers < 2)
-            {
-                return new FillingResult
-                {
-                    IsValid = false,
-                    FailReason = "Vượt quá số lớp cho phép"
-                };
-            }
-
-            // CONSTRAINT 3: Snap-to-Structure (Stirrup Legs)
-            if (n2 > 0 && legCount > 2)
-            {
-                if (n2 >= legCount - 1 && n2 < legCount && n2 <= n1)
-                    n2 = legCount;
-            }
-
-            // CONSTRAINT 4: Symmetry
-            if (preferSymmetric)
-            {
-                if (n1 % 2 != 0 && n1 + 1 <= capacity) n1++;
-                if (n2 > 0 && n2 % 2 != 0 && n2 + 1 <= n1) n2++;
-            }
-
-            // CONSTRAINT 5: Vertical Alignment
-            if (n2 > 0 && n1 % 2 == 0 && n2 % 2 != 0 && n2 + 1 <= n1)
-                n2++;
-
             // ═══════════════════════════════════════════════════════════════
-            // CONSTRAINT 6: MinBarsPerLayer (CRITICAL)
-            // Nếu L2 có thanh thì phải có tối thiểu 2 thanh (không được 1 thanh lẻ)
-            // Trường hợp 3+1: Phải bump lên 3+2, hoặc fail để BalancedStrategy thử 2+2
+            // DYNAMIC N-LAYER GREEDY FILLING
             // ═══════════════════════════════════════════════════════════════
-            const int MIN_BARS_PER_LAYER = 2;
+            var layerCounts = new List<int>();
+            int remaining = totalNeeded;
+            int prevLayerMax = capacity;  // First layer can fill up to capacity
             int wasteCount = 0;
-            if (n2 > 0 && n2 < MIN_BARS_PER_LAYER)
+
+            for (int layer = 0; layer < maxLayers && remaining > 0; layer++)
             {
-                // Bump L2 lên tối thiểu 2 nếu còn thỏa pyramid
-                if (MIN_BARS_PER_LAYER <= n1)
+                int thisLayerMax;
+                if (layer == 0)
                 {
-                    wasteCount = MIN_BARS_PER_LAYER - n2; // Số thanh waste (thường = 1)
-                    n2 = MIN_BARS_PER_LAYER;
+                    // Layer 1: Fill to capacity but must include backbone
+                    thisLayerMax = capacity;
                 }
                 else
                 {
-                    // Không thể bump → Fail phương án này để BalancedStrategy thử cách khác
+                    // Layer 2+: Pyramid rule - cannot exceed previous layer
+                    thisLayerMax = layerCounts[layer - 1];
+                }
+
+                int barsThisLayer = Math.Min(remaining, thisLayerMax);
+
+                // Layer 1 must include backbone
+                if (layer == 0)
+                {
+                    barsThisLayer = Math.Max(barsThisLayer, backboneCount);
+                }
+
+                layerCounts.Add(barsThisLayer);
+                remaining -= barsThisLayer;
+            }
+
+            // ═══════════════════════════════════════════════════════════════
+            // FAIL: Không đủ chỗ với maxLayers lớp
+            // ═══════════════════════════════════════════════════════════════
+            if (remaining > 0)
+            {
+                return new FillingResult
+                {
+                    IsValid = false,
+                    FailReason = $"Không thể bố trí {totalNeeded} thanh với {maxLayers} lớp (capacity={capacity})"
+                };
+            }
+
+            // ═══════════════════════════════════════════════════════════════
+            // APPLY CONSTRAINTS: Symmetry, MinBarsPerLayer, etc.
+            // ═══════════════════════════════════════════════════════════════
+            return ApplyConstraints(layerCounts, capacity, backboneCount, legCount, preferSymmetric, ref wasteCount);
+        }
+
+        private FillingResult ApplyConstraints(
+            List<int> layerCounts, int capacity, int backboneCount, int legCount,
+            bool preferSymmetric, ref int wasteCount)
+        {
+            // CONSTRAINT 1: Pyramid Rule (L[n] <= L[n-1]) - already ensured by greedy loop
+            for (int i = 1; i < layerCounts.Count; i++)
+            {
+                if (layerCounts[i] > layerCounts[i - 1])
+                {
                     return new FillingResult
                     {
                         IsValid = false,
-                        FailReason = $"L2 chỉ có {n2} thanh, cần tối thiểu {MIN_BARS_PER_LAYER}"
+                        FailReason = $"Vi phạm Pyramid Rule: L{i + 1}={layerCounts[i]} > L{i}={layerCounts[i - 1]}"
                     };
                 }
             }
 
-            // Re-check constraints after adjustments
-            if (n2 > n1 || n1 > capacity)
+            // CONSTRAINT 2: Capacity check for L1
+            if (layerCounts.Count > 0 && layerCounts[0] > capacity)
             {
                 return new FillingResult
                 {
                     IsValid = false,
-                    FailReason = "Không thể thỏa mãn ràng buộc sau khi điều chỉnh"
+                    FailReason = $"L1={layerCounts[0]} vượt capacity={capacity}"
                 };
+            }
+
+            // CONSTRAINT 3: Snap-to-Structure (Stirrup Legs) cho các lớp có thép
+            if (legCount > 2)
+            {
+                for (int i = 1; i < layerCounts.Count; i++)
+                {
+                    int n = layerCounts[i];
+                    int prevLayer = layerCounts[i - 1];
+                    if (n > 0 && n >= legCount - 1 && n < legCount && n <= prevLayer)
+                    {
+                        layerCounts[i] = legCount;
+                    }
+                }
+            }
+
+            // CONSTRAINT 4: Symmetry - prefer even counts
+            if (preferSymmetric)
+            {
+                for (int i = 0; i < layerCounts.Count; i++)
+                {
+                    int n = layerCounts[i];
+                    int maxForThisLayer = (i == 0) ? capacity : layerCounts[i - 1];
+                    if (n % 2 != 0 && n + 1 <= maxForThisLayer)
+                    {
+                        layerCounts[i] = n + 1;
+                    }
+                }
+            }
+
+            // CONSTRAINT 5: MinBarsPerLayer - layers 2+ must have at least 2 bars if any
+            const int MIN_BARS_PER_LAYER = 2;
+            for (int i = 1; i < layerCounts.Count; i++)
+            {
+                int n = layerCounts[i];
+                int prevLayer = layerCounts[i - 1];
+                if (n > 0 && n < MIN_BARS_PER_LAYER)
+                {
+                    if (MIN_BARS_PER_LAYER <= prevLayer)
+                    {
+                        wasteCount += MIN_BARS_PER_LAYER - n;
+                        layerCounts[i] = MIN_BARS_PER_LAYER;
+                    }
+                    else
+                    {
+                        return new FillingResult
+                        {
+                            IsValid = false,
+                            FailReason = $"L{i + 1} chỉ có {n} thanh, cần tối thiểu {MIN_BARS_PER_LAYER}"
+                        };
+                    }
+                }
+            }
+
+            // Re-validate Pyramid after adjustments
+            for (int i = 1; i < layerCounts.Count; i++)
+            {
+                if (layerCounts[i] > layerCounts[i - 1])
+                {
+                    return new FillingResult
+                    {
+                        IsValid = false,
+                        FailReason = "Không thể thỏa mãn ràng buộc sau khi điều chỉnh symmetry"
+                    };
+                }
             }
 
             return new FillingResult
             {
                 IsValid = true,
-                CountLayer1 = n1,
-                CountLayer2 = n2,
-                TotalBars = n1 + n2,
+                LayerCounts = layerCounts,
                 WasteCount = wasteCount
             };
         }

@@ -37,9 +37,10 @@ namespace DTS_Engine.Core.Algorithms.Rebar
             // Create rule engine with default rules
             var rules = new List<IDesignRule>
             {
-                new PyramidRule(),            // Priority 1: Critical - L2 <= L1
+                new PyramidRule(),            // Priority 1: Critical - L[n] <= L[n-1]
                 new SymmetryRule(),           // Priority 5: Warning - Prefer even counts
                 new PreferredDiameterRule(),  // Priority 10: Info - Diameter matching
+                new VerticalAlignmentRule(),  // Priority 12: Warning - Top/Bot odd/even match
                 new WastePenaltyRule()        // Priority 15: Warning - Penalize waste bars
             };
 

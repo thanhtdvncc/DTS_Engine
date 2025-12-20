@@ -1,3 +1,5 @@
+using System.Collections.Generic;
+using System.Linq;
 using DTS_Engine.Core.Data;
 
 namespace DTS_Engine.Core.Algorithms.Rebar.Strategies
@@ -41,6 +43,12 @@ namespace DTS_Engine.Core.Algorithms.Rebar.Strategies
         /// <summary>Số nhánh đai</summary>
         public int StirrupLegCount { get; set; }
 
+        /// <summary>
+        /// Số lớp thép tối đa cho phép (dynamic N-layer).
+        /// Mặc định 2 cho backwards compatibility.
+        /// </summary>
+        public int MaxLayers { get; set; } = 2;
+
         /// <summary>Settings từ DtsSettings.Beam</summary>
         public DtsSettings Settings { get; set; }
 
@@ -50,20 +58,24 @@ namespace DTS_Engine.Core.Algorithms.Rebar.Strategies
 
     /// <summary>
     /// Kết quả từ IFillingStrategy.Calculate().
+    /// Hỗ trợ dynamic N lớp thay vì hardcode 2 lớp.
     /// </summary>
     public class FillingResult
     {
         /// <summary>Có thể bố trí được không?</summary>
         public bool IsValid { get; set; }
 
-        /// <summary>Số thanh lớp 1</summary>
-        public int CountLayer1 { get; set; }
+        /// <summary>
+        /// Số thanh mỗi lớp (index 0 = Layer 1, index 1 = Layer 2, ...).
+        /// DYNAMIC: Hỗ trợ N lớp thay vì hardcode 2.
+        /// </summary>
+        public List<int> LayerCounts { get; set; } = new List<int>();
 
-        /// <summary>Số thanh lớp 2</summary>
-        public int CountLayer2 { get; set; }
-
-        /// <summary>Tổng số thanh</summary>
-        public int TotalBars { get; set; }
+        /// <summary>Tổng số thanh (computed from LayerCounts)</summary>
+        public int TotalBars
+        {
+            get { return LayerCounts?.Sum() ?? 0; }
+        }
 
         /// <summary>
         /// Số thanh lãng phí do ràng buộc cấu tạo (VD: bump từ 1 lên 2).
@@ -73,5 +85,28 @@ namespace DTS_Engine.Core.Algorithms.Rebar.Strategies
 
         /// <summary>Lý do thất bại nếu IsValid = false</summary>
         public string FailReason { get; set; }
+
+        // ═══════════════════════════════════════════════════════════════
+        // HELPER PROPERTIES (Backwards compatibility & convenience)
+        // ═══════════════════════════════════════════════════════════════
+
+        /// <summary>Số thanh lớp 1 (helper, equivalent to LayerCounts[0])</summary>
+        public int CountLayer1
+        {
+            get { return LayerCounts?.Count > 0 ? LayerCounts[0] : 0; }
+        }
+
+        /// <summary>Số thanh lớp 2 (helper, equivalent to LayerCounts[1])</summary>
+        public int CountLayer2
+        {
+            get { return LayerCounts?.Count > 1 ? LayerCounts[1] : 0; }
+        }
+
+        /// <summary>Số lớp sử dụng</summary>
+        public int LayerCount
+        {
+            get { return LayerCounts?.Count ?? 0; }
+        }
     }
 }
+

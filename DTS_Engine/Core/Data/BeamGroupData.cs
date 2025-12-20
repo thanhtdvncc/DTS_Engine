@@ -507,7 +507,13 @@ namespace DTS_Engine.Core.Data
         public int Diameter { get; set; }
         public int Count { get; set; }
         public string Position { get; set; }  // "Top" hoặc "Bot"
-        public int Layer { get; set; }        // 1 = chạy suốt, 2+ = gia cường
+        public int Layer { get; set; }        // Number of layers used
+
+        /// <summary>
+        /// Chi tiết số thanh từng lớp (index 0 = L1, index 1 = L2, ...).
+        /// DYNAMIC N-LAYER: Hỗ trợ tính toán và vẽ nhiều lớp.
+        /// </summary>
+        public List<int> LayerBreakdown { get; set; }
 
         /// <summary>
         /// Chuỗi hiển thị: "2D22"
