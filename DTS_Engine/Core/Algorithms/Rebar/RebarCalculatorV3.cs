@@ -29,9 +29,9 @@ namespace DTS_Engine.Core.Algorithms.Rebar
             var stages = new List<IRebarPipelineStage>
             {
                 new ScenarioGenerator(),      // Stage 1: Generate backbone scenarios
-                new ReinforcementFiller()     // Stage 2: Fill reinforcement per span
-                // Stage 3: StirrupCalculator (V3.1)
-                // Stage 4: ConflictResolver (V3.1)
+                new ReinforcementFiller(),    // Stage 2: Fill reinforcement per span
+                new StirrupCalculator(),      // Stage 3: Calculate stirrups from SAP2000 data
+                new ConflictResolver()        // Stage 4: Check and report design conflicts
             };
 
             // Create rule engine with default rules

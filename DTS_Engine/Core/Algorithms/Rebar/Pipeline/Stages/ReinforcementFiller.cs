@@ -232,6 +232,7 @@ namespace DTS_Engine.Core.Algorithms.Rebar.Pipeline.Stages
         /// Helper to design a single location (Support or Midspan)
         /// trying both Greedy and Balanced, returning the best valid Spec.
         /// Returns null if CANNOT fit (dầm quá hẹp).
+        /// V3.2: Supports flexible diameter selection when PreferSingleDiameter = false.
         /// </summary>
         private RebarSpec DesignLocation(
             SolutionContext ctx,
@@ -248,73 +249,97 @@ namespace DTS_Engine.Core.Algorithms.Rebar.Pipeline.Stages
                 return new RebarSpec { Count = 0, Diameter = backboneDia, Layer = 1 }; // No add bars
             }
 
-            // Prepare context for strategies
-            int capacity = GetMaxBarsPerLayer(ctx.BeamWidth, backboneDia, ctx.Settings);
-            if (backboneCount > capacity) return null; // Already exceeds capacity
+            var settings = ctx.Settings;
+            bool preferSingleDiameter = settings?.Beam?.PreferSingleDiameter ?? true;
 
-            var fillCtx = new FillingContext
+            // Build list of diameters to try
+            var diametersToTry = new List<int> { backboneDia };
+
+            // If not preferring single diameter, also try larger diameters
+            // This allows using fewer bars of larger diameter (e.g., 2D25 instead of 4D20)
+            if (!preferSingleDiameter)
             {
-                RequiredArea = reqArea,
-                BackboneArea = backboneArea,
-                BackboneCount = backboneCount,
-                BackboneDiameter = backboneDia,
-                LayerCapacity = capacity,
-                StirrupLegCount = ctx.StirrupLegCount,
-                MaxLayers = ctx.Settings?.Beam?.MaxLayers ?? 2,
-                Settings = ctx.Settings,
-                Constraints = ctx.ExternalConstraints
-            };
-
-            // Try Strategy 1: Greedy (ưu tiên ít lớp)
-            var resGreedy = _greedyStrategy.Calculate(fillCtx);
-
-            // Try Strategy 2: Balanced (ưu tiên đối xứng)
-            var resBalanced = _balancedStrategy.Calculate(fillCtx);
-
-            FillingResult best = null;
-
-            // Decision Logic (Engineer Mindset):
-            // 1. Validity is King.
-            // 2. Prefer fewer layers (Greedy) unless congestion is high.
-            // 3. Prefer Balanced for symmetry if layers are equal.
-
-            if (resGreedy.IsValid && !resBalanced.IsValid) best = resGreedy;
-            else if (!resGreedy.IsValid && resBalanced.IsValid) best = resBalanced;
-            else if (resGreedy.IsValid && resBalanced.IsValid)
-            {
-                // Compare logic
-                if (resGreedy.LayerCounts.Count < resBalanced.LayerCounts.Count)
-                    best = resGreedy;
-                else if (resBalanced.LayerCounts.Count < resGreedy.LayerCounts.Count)
-                    best = resBalanced;
-                else
+                var availableDiameters = settings?.General?.AvailableDiameters ?? new List<int> { 12, 14, 16, 18, 20, 22, 25, 28, 32 };
+                foreach (var dia in availableDiameters.OrderBy(d => d))
                 {
-                    // Same layers, prefer fewer bars (less waste)
-                    best = (resGreedy.TotalBars <= resBalanced.TotalBars) ? resGreedy : resBalanced;
+                    if (dia > backboneDia && !diametersToTry.Contains(dia))
+                    {
+                        diametersToTry.Add(dia);
+                    }
                 }
             }
 
-            if (best == null) return null; // FAILED - Cannot fit
+            RebarSpec bestSpec = null;
+            int bestScore = int.MinValue;
 
-            // Accumulate waste for penalty scoring
-            ctx.AccumulatedWasteCount += best.WasteCount;
-
-            // Convert Result to Spec
-            // LayerCounts includes Backbone. Extract ONLY additional bars.
-            int totalBars = best.LayerCounts.Sum();
-            int addBars = totalBars - backboneCount;
-
-            if (addBars <= 0)
-                return new RebarSpec { Count = 0, Diameter = backboneDia, Layer = 1 };
-
-            return new RebarSpec
+            foreach (int tryDia in diametersToTry)
             {
-                Diameter = backboneDia, // Keeping same diameter for standardization
-                Count = addBars,
-                Layer = best.LayerCounts.Count,
-                Position = isTop ? "Top" : "Bot",
-                LayerBreakdown = best.LayerCounts
-            };
+                int capacity = GetMaxBarsPerLayer(ctx.BeamWidth, tryDia, settings);
+                if (backboneCount > capacity) continue; // Skip if backbone already exceeds capacity
+
+                var fillCtx = new FillingContext
+                {
+                    RequiredArea = reqArea,
+                    BackboneArea = backboneArea,
+                    BackboneCount = backboneCount,
+                    BackboneDiameter = tryDia, // Use trial diameter
+                    LayerCapacity = capacity,
+                    StirrupLegCount = ctx.StirrupLegCount,
+                    MaxLayers = settings?.Beam?.MaxLayers ?? 2,
+                    Settings = settings,
+                    Constraints = ctx.ExternalConstraints
+                };
+
+                // Try both strategies
+                var resGreedy = _greedyStrategy.Calculate(fillCtx);
+                var resBalanced = _balancedStrategy.Calculate(fillCtx);
+
+                FillingResult best = null;
+
+                if (resGreedy.IsValid && !resBalanced.IsValid) best = resGreedy;
+                else if (!resGreedy.IsValid && resBalanced.IsValid) best = resBalanced;
+                else if (resGreedy.IsValid && resBalanced.IsValid)
+                {
+                    // Compare logic
+                    if (resGreedy.LayerCounts.Count < resBalanced.LayerCounts.Count)
+                        best = resGreedy;
+                    else if (resBalanced.LayerCounts.Count < resGreedy.LayerCounts.Count)
+                        best = resBalanced;
+                    else
+                        best = (resGreedy.TotalBars <= resBalanced.TotalBars) ? resGreedy : resBalanced;
+                }
+
+                if (best == null) continue;
+
+                // Calculate score for this diameter choice
+                // Prefer: fewer bars, fewer layers, same diameter as backbone
+                int totalBars = best.LayerCounts.Sum();
+                int addBars = totalBars - backboneCount;
+                if (addBars <= 0) continue;
+
+                int score = 1000;
+                score -= addBars * 10;                    // Fewer bars is better
+                score -= best.LayerCounts.Count * 50;     // Fewer layers is better
+                score -= best.WasteCount * 5;             // Less waste is better
+                if (tryDia == backboneDia) score += 30;   // Prefer same diameter (easier construction)
+
+                if (score > bestScore)
+                {
+                    bestScore = score;
+                    bestSpec = new RebarSpec
+                    {
+                        Diameter = tryDia,
+                        Count = addBars,
+                        Layer = best.LayerCounts.Count,
+                        Position = isTop ? "Top" : "Bot",
+                        LayerBreakdown = best.LayerCounts
+                    };
+
+                    ctx.AccumulatedWasteCount += best.WasteCount;
+                }
+            }
+
+            return bestSpec; // Returns null if no valid option found
         }
 
         private void AssignSpecToSolution(ContinuousBeamSolution sol, RebarSpec spec, string key)
@@ -344,13 +369,29 @@ namespace DTS_Engine.Core.Algorithms.Rebar.Pipeline.Stages
 
         /// <summary>
         /// ENGINEER UPGRADE: Stricter capacity check based on real clear spacing.
+        /// Considers: bar diameter, aggregate size, and TCVN/ACI standards.
         /// Formula: n*d + (n-1)*s <= usable width
         /// </summary>
         private static int GetMaxBarsPerLayer(double width, int dia, DtsSettings settings)
         {
             double cover = settings?.Beam?.CoverSide ?? 25;
             double stirrup = settings?.Beam?.EstimatedStirrupDiameter ?? 10;
-            double minSpacing = Math.Max(dia, settings?.Beam?.MinClearSpacing ?? 25);
+            int aggregateSize = settings?.Beam?.AggregateSize ?? 20;
+
+            // Minimum clear spacing theo tiêu chuẩn:
+            // 1. >= bar diameter
+            // 2. >= 1.33 × aggregate size (để cốt liệu lọt qua)
+            // 3. >= MinClearSpacing from settings
+            double minSpacingAggregate = 1.33 * aggregateSize;
+            double minSpacingSettings = settings?.Beam?.MinClearSpacing ?? 25;
+            double minSpacing = Math.Max(dia, Math.Max(minSpacingAggregate, minSpacingSettings));
+
+            // Check if UseBarDiameterForSpacing is enabled
+            if (settings?.Beam?.UseBarDiameterForSpacing == true)
+            {
+                double multiplier = settings?.Beam?.BarDiameterSpacingMultiplier ?? 1.0;
+                minSpacing = Math.Max(minSpacing, dia * multiplier);
+            }
 
             double usable = width - 2 * cover - 2 * stirrup;
             if (usable <= 0) return 0;
@@ -405,8 +446,20 @@ namespace DTS_Engine.Core.Algorithms.Rebar.Pipeline.Stages
             double wBackbone = wBackboneTop + wBackboneBot;
 
             // --- 2. REINFORCEMENT WEIGHT ---
-            double supportRatio = settings?.Curtailment?.SupportReinfRatio ?? 0.33;
-            double midSpanRatio = settings?.Curtailment?.MidSpanReinfRatio ?? 0.8;
+            // Detect Beam vs Girder based on GroupName convention (G = Girder, B = Beam)
+            bool isGirder = group?.GroupName?.StartsWith("G") == true ||
+                           group?.GroupName?.Contains("Girder") == true;
+
+            // Get correct curtailment settings based on beam type
+            CurtailmentConfig curtailment;
+            if (isGirder)
+                curtailment = settings?.Beam?.GirderCurtailment ?? new CurtailmentConfig { SupportReinfRatio = 0.33, MidSpanReinfRatio = 0.8 };
+            else
+                curtailment = settings?.Beam?.BeamCurtailment ?? new CurtailmentConfig { SupportReinfRatio = 0.33, MidSpanReinfRatio = 0.8 };
+
+            // Fallback to global Curtailment if type-specific is null
+            double supportRatio = curtailment?.SupportReinfRatio ?? settings?.Curtailment?.SupportReinfRatio ?? 0.33;
+            double midSpanRatio = curtailment?.MidSpanReinfRatio ?? settings?.Curtailment?.MidSpanReinfRatio ?? 0.8;
 
             double wReinf = 0;
             foreach (var kvp in sol.Reinforcements)

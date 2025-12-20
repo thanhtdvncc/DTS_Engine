@@ -509,6 +509,13 @@ namespace DTS_Engine.Core.Data
         /// </summary>
         public Dictionary<string, RebarSpec> Reinforcements { get; set; } = new Dictionary<string, RebarSpec>();
 
+        // ===== STIRRUPS (Stage 3) =====
+        /// <summary>
+        /// Dictionary: "SpanId_Stirrup_Position" → Stirrup string
+        /// VD: "S1_Stirrup_Left" → "2-d10a150", "S1_Stirrup_Governing" → "4-d10a100"
+        /// </summary>
+        public Dictionary<string, string> StirrupDesigns { get; set; } = new Dictionary<string, string>();
+
         // ===== METRICS =====
         public double TotalSteelWeight { get; set; }
         public double EfficiencyScore { get; set; }
