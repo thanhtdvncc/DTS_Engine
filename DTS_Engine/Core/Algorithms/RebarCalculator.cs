@@ -838,7 +838,7 @@ namespace DTS_Engine.Core.Algorithms
         #region OUT-PERFORM ALGORITHM (Multi-Proposal with Scoring)
 
         /// <summary>
-        /// [V2.0 - DETERMINISTIC ALGORITHM]
+        /// [V2.0 - LEGACY - Use RebarCalculatorV3 instead]
         /// Tạo ra N phương án bố trí thép cho Group, từ Tiết kiệm đến Dễ thi công.
         /// 
         /// CORE PRINCIPLES:
@@ -847,6 +847,7 @@ namespace DTS_Engine.Core.Algorithms
         /// 3. Deterministic Filling - Calculate, don't guess (Greedy vs Balanced)
         /// 4. Strict Constructability - Stirrup leg snapping, pyramid rules
         /// </summary>
+        [System.Obsolete("Use RebarCalculatorV3.CalculateProposalsForGroup instead. V3 uses Pipeline/Strategy/Rules pattern for better extensibility.")]
         public static List<ContinuousBeamSolution> CalculateProposalsForGroup(
             BeamGroup group,
             List<BeamResultData> spanResults,

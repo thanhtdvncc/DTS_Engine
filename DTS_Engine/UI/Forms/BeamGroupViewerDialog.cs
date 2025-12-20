@@ -7,6 +7,7 @@ using System.Reflection;
 using System.Threading.Tasks;
 using System.Windows.Forms;
 using DTS_Engine.Core.Algorithms;
+using DTS_Engine.Core.Algorithms.Rebar;
 using DTS_Engine.Core.Data;
 using DTS_Engine.Core.Engines;
 using DTS_Engine.Core.Utils;
@@ -393,7 +394,7 @@ namespace DTS_Engine.UI.Forms
                     return;
                 }
 
-                var proposals = RebarCalculator.CalculateProposalsForGroup(group, spanResults, settings);
+                var proposals = RebarCalculatorV3.CalculateProposalsForGroup(group, spanResults, settings);
                 if (proposals == null || proposals.Count == 0)
                 {
                     await SendToastSimpleAsync("❌ Không thể tạo phương án.");

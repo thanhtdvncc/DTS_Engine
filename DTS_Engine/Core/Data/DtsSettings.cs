@@ -324,6 +324,13 @@ namespace DTS_Engine.Core.Data
         /// Tên mác bê tông (hiển thị). VD: "B25", "C30"
         /// </summary>
         public string ConcreteGradeName { get; set; } = "B25";
+
+        /// <summary>
+        /// Enable V3 Pipeline-based Rebar Calculator.
+        /// When true (default), uses RebarCalculatorV3 with Pipeline/Strategy/Rules pattern.
+        /// When false, uses legacy RebarCalculator V2 with 4-loop monolithic algorithm.
+        /// </summary>
+        public bool UseV3Pipeline { get; set; } = true;
     }
 
     /// <summary>

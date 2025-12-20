@@ -3,6 +3,7 @@ using Autodesk.AutoCAD.EditorInput;
 using Autodesk.AutoCAD.Geometry;
 using Autodesk.AutoCAD.Runtime;
 using DTS_Engine.Core.Algorithms;
+using DTS_Engine.Core.Algorithms.Rebar;
 using DTS_Engine.Core.Data;
 using DTS_Engine.Core.Engines;
 using DTS_Engine.Core.Utils;
@@ -560,7 +561,7 @@ namespace DTS_Engine.Commands
                         var spanResults = beamList.Select(b => b.Data).ToList();
                         var objIds = beamList.Select(b => b.Id).ToList();
 
-                        var proposals = RebarCalculator.CalculateProposalsForGroup(group, spanResults, dtsSettings);
+                        var proposals = RebarCalculatorV3.CalculateProposalsForGroup(group, spanResults, dtsSettings);
 
                         if (proposals == null || proposals.Count == 0)
                         {
