@@ -63,7 +63,6 @@ namespace DTS_Engine.Core.Algorithms.Rebar.Pipeline
                 if (!contexts.Any())
                 {
                     // Tất cả đều fail
-                    System.Diagnostics.Debug.WriteLine($"[RebarPipeline] All contexts failed at stage: {stage.StageName}");
                     return new List<ContinuousBeamSolution>();
                 }
             }

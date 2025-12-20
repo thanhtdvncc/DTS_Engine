@@ -95,6 +95,30 @@ namespace DTS_Engine.Core.Algorithms.Rebar.Strategies
             if (n2 > 0 && n1 % 2 == 0 && n2 % 2 != 0 && n2 + 1 <= n1)
                 n2++;
 
+            // ═══════════════════════════════════════════════════════════════
+            // CONSTRAINT 6: MinBarsPerLayer (CRITICAL)
+            // Nếu L2 có thanh thì phải có tối thiểu 2 thanh (không được 1 thanh lẻ)
+            // Trường hợp 3+1: Phải bump lên 3+2, hoặc thử phương án 2+2
+            // ═══════════════════════════════════════════════════════════════
+            const int MIN_BARS_PER_LAYER = 2;
+            if (n2 > 0 && n2 < MIN_BARS_PER_LAYER)
+            {
+                // Bump L2 lên tối thiểu 2 nếu còn thỏa pyramid
+                if (MIN_BARS_PER_LAYER <= n1)
+                {
+                    n2 = MIN_BARS_PER_LAYER;
+                }
+                else
+                {
+                    // Không thể bump → Fail phương án này
+                    return new FillingResult
+                    {
+                        IsValid = false,
+                        FailReason = $"L2 chỉ có {n2} thanh, cần tối thiểu {MIN_BARS_PER_LAYER}"
+                    };
+                }
+            }
+
             // Re-check constraints after adjustments
             if (n2 > n1 || n1 > capacity)
             {

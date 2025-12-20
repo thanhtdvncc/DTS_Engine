@@ -54,7 +54,7 @@ namespace DTS_Engine.Core.Algorithms.Rebar.Pipeline.Stages
             // HARD FAIL: No valid dimensions
             if (beamWidth <= 0 || beamHeight <= 0)
             {
-                System.Diagnostics.Debug.WriteLine($"[ScenarioGenerator] FAIL: Invalid dimensions W={beamWidth}, H={beamHeight}");
+
                 var failContext = seed.Clone();
                 failContext.IsValid = false;
                 failContext.FailStage = StageName;
@@ -84,7 +84,7 @@ namespace DTS_Engine.Core.Algorithms.Rebar.Pipeline.Stages
 
             if (!allowedDias.Any())
             {
-                System.Diagnostics.Debug.WriteLine("[ScenarioGenerator] FAIL: No valid diameters");
+
                 var failContext = seed.Clone();
                 failContext.IsValid = false;
                 failContext.FailStage = StageName;
@@ -94,7 +94,6 @@ namespace DTS_Engine.Core.Algorithms.Rebar.Pipeline.Stages
 
             double maxSpacing = settings.Beam?.MaxClearSpacing ?? 300;
 
-            System.Diagnostics.Debug.WriteLine($"[ScenarioGenerator] W={beamWidth:F0}, H={beamHeight:F0}, Diameters=[{string.Join(",", allowedDias)}]");
 
             int scenariosGenerated = 0;
 
@@ -172,7 +171,7 @@ namespace DTS_Engine.Core.Algorithms.Rebar.Pipeline.Stages
                 }
             }
 
-            System.Diagnostics.Debug.WriteLine($"[ScenarioGenerator] Generated {scenariosGenerated} scenarios");
+
         }
 
         // ═══════════════════════════════════════════════════════════════
@@ -181,7 +180,11 @@ namespace DTS_Engine.Core.Algorithms.Rebar.Pipeline.Stages
 
         /// <summary>
         /// Calculate minimum bars to prevent spacing > MaxSpacing (crack control).
-        /// Formula: N_min = ceil((W - 2C) / (S_max + d))
+        /// 
+        /// HOTFIX: Thêm quy tắc Heuristic để dầm 400mm có tối thiểu 3 thanh:
+        /// - Rule 1: Formula chuẩn theo MaxSpacing
+        /// - Rule 2: Heuristic thực tế: mỗi 180mm bề rộng cần 1 thanh
+        /// - Kết quả: MAX(2, max(rule1, rule2))
         /// </summary>
         private static int CalculateMinBarsForSpacing(double width, int dia, double maxSpacing, DtsSettings settings)
         {
@@ -191,8 +194,17 @@ namespace DTS_Engine.Core.Algorithms.Rebar.Pipeline.Stages
 
             if (usable <= 0 || maxSpacing <= 0) return 2;
 
-            int n = (int)Math.Ceiling(usable / (maxSpacing + dia));
-            return Math.Max(2, n);
+            // Rule 1: Tính theo công thức khoảng hở tiêu chuẩn
+            int minByCode = (int)Math.Ceiling(usable / (maxSpacing + dia));
+
+            // Rule 2: Heuristic thực tế - mỗi 180mm bề rộng dầm cần 1 thanh
+            // VD: Dầm 400 -> 400/180 = 2.2 -> ceil = 3 thanh
+            // VD: Dầm 300 -> 300/180 = 1.67 -> ceil = 2 thanh
+            const double HEURISTIC_DIVISOR = 180.0; // mm per bar
+            int minByHeuristic = (int)Math.Ceiling(width / HEURISTIC_DIVISOR);
+
+            // Lấy giá trị lớn hơn để đảm bảo an toàn & thẩm mỹ
+            return Math.Max(2, Math.Max(minByCode, minByHeuristic));
         }
 
         /// <summary>

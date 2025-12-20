@@ -413,16 +413,10 @@ namespace DTS_Engine.UI.Forms
 
                 // Update displayed span rebar text for preview (do not overwrite manual-modified spans)
                 var bestSolution = proposals.FirstOrDefault(p => p != null && p.IsValid);
-                System.Diagnostics.Debug.WriteLine($"[QuickCalc] bestSolution={bestSolution?.OptionName ?? "NULL"}, IsDesignLocked={group.IsDesignLocked}, Reinforcements.Count={bestSolution?.Reinforcements?.Count ?? 0}");
 
                 if (bestSolution != null && group.IsDesignLocked == false)
                 {
-                    System.Diagnostics.Debug.WriteLine("[QuickCalc] --> Calling ApplySolutionToSpanData");
                     ApplySolutionToSpanData(group, bestSolution);
-                }
-                else
-                {
-                    System.Diagnostics.Debug.WriteLine($"[QuickCalc] --> SKIP ApplySolutionToSpanData (bestSolution null={bestSolution == null}, IsDesignLocked={group.IsDesignLocked})");
                 }
 
                 // Push updated group back to WebView
@@ -500,12 +494,6 @@ namespace DTS_Engine.UI.Forms
         {
             if (group?.Spans == null || sol == null) return;
 
-            System.Diagnostics.Debug.WriteLine($"[ApplySolutionToSpanData] Solution: {sol.OptionName}, Reinforcements.Count = {sol.Reinforcements?.Count ?? 0}");
-            if (sol.Reinforcements != null)
-            {
-                foreach (var kv in sol.Reinforcements)
-                    System.Diagnostics.Debug.WriteLine($"  --> {kv.Key} = {kv.Value.Count}D{kv.Value.Diameter}");
-            }
 
             string backboneTop = $"{sol.BackboneCount_Top}D{sol.BackboneDiameter}";
             string backboneBot = $"{sol.BackboneCount_Bot}D{sol.BackboneDiameter}";
@@ -513,11 +501,7 @@ namespace DTS_Engine.UI.Forms
             foreach (var span in group.Spans)
             {
                 if (span == null) continue;
-                if (span.IsManualModified)
-                {
-                    System.Diagnostics.Debug.WriteLine($"[ApplySolutionToSpanData] SKIP {span.SpanId} (IsManualModified=true)");
-                    continue;
-                }
+                if (span.IsManualModified) continue;
 
                 // Ensure arrays exist (Json.NET may hydrate as jagged arrays in UI, but here we keep the original 2D array)
                 if (span.TopRebar == null || span.TopRebar.GetLength(0) < 1 || span.TopRebar.GetLength(1) < 5)
@@ -557,7 +541,6 @@ namespace DTS_Engine.UI.Forms
                 span.BotRebar[0, 2] = botMid;
                 span.BotRebar[0, 4] = botRight;
 
-                System.Diagnostics.Debug.WriteLine($"[ApplySolutionToSpanData] {spanId}: Top=[{topLeft}, {topMid}, {topRight}], Bot=[{botLeft}, {botMid}, {botRight}]");
             }
         }
 

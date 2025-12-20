@@ -284,7 +284,6 @@ namespace DTS_Engine.Core.Algorithms.Rebar.Pipeline.Stages
             addL1 = Math.Max(0, addL1);
             addL2 = Math.Max(0, addL2);
 
-            System.Diagnostics.Debug.WriteLine($"[TryAutoFill] {locationKey}: reqArea={reqArea:F2}, backboneArea={backboneArea:F2}, addL1={addL1}, addL2={addL2}");
 
             if (addL1 > 0 || addL2 > 0)
             {
@@ -295,7 +294,7 @@ namespace DTS_Engine.Core.Algorithms.Rebar.Pipeline.Stages
                     Layer = addL2 > 0 ? 2 : 1,
                     Position = locationKey.Contains("Top") ? "Top" : "Bot"
                 };
-                System.Diagnostics.Debug.WriteLine($"[TryAutoFill] --> Added Reinforcement: {locationKey} = {addL1 + addL2}D{addDia}");
+
             }
 
             return true;

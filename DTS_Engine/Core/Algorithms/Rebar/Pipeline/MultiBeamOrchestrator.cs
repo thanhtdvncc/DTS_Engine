@@ -33,7 +33,6 @@ namespace DTS_Engine.Core.Algorithms.Rebar.Pipeline
             var results = new Dictionary<string, ContinuousBeamSolution>();
             var globalConstraints = initialConstraints ?? new ProjectConstraints();
 
-            System.Diagnostics.Debug.WriteLine($"[MultiBeamOrchestrator] Starting floor solve for {beams.Count} beams");
 
             foreach (var (group, spanResults) in beams)
             {
@@ -48,7 +47,7 @@ namespace DTS_Engine.Core.Algorithms.Rebar.Pipeline
                         ForcedBackboneCountBot = group.SelectedDesign.BackboneCount_Bot,
                         Source = "UserLock"
                     };
-                    System.Diagnostics.Debug.WriteLine($"[MultiBeamOrchestrator] Beam {group.GroupName} is locked: {group.SelectedDesign.OptionName}");
+
                 }
 
                 // Execute pipeline for this beam
@@ -67,22 +66,22 @@ namespace DTS_Engine.Core.Algorithms.Rebar.Pipeline
                         StirrupDiameter = 10  // TODO: Get from StirrupCalculator when implemented
                     };
 
-                    System.Diagnostics.Debug.WriteLine($"[MultiBeamOrchestrator] Beam {group.GroupName} solved: {bestSolution.OptionName}, Score={bestSolution.TotalScore:F1}");
+
 
                     // If no preferred diameter set yet, use this beam's backbone as preferred
                     if (!globalConstraints.PreferredMainDiameter.HasValue)
                     {
                         globalConstraints.PreferredMainDiameter = bestSolution.BackboneDiameter;
-                        System.Diagnostics.Debug.WriteLine($"[MultiBeamOrchestrator] Set PreferredMainDiameter to D{bestSolution.BackboneDiameter}");
+
                     }
                 }
                 else
                 {
-                    System.Diagnostics.Debug.WriteLine($"[MultiBeamOrchestrator] WARNING: No valid solution for beam {group.GroupName}");
+
                 }
             }
 
-            System.Diagnostics.Debug.WriteLine($"[MultiBeamOrchestrator] Floor solve complete: {results.Count}/{beams.Count} beams solved");
+
             return results;
         }
 
