@@ -35,6 +35,7 @@ namespace DTS_Engine.Core.Algorithms.Rebar.Pipeline.Stages
                 CheckClearSpacingConflicts(ctx);
                 CheckLayerInconsistency(ctx);
                 CheckDiameterJumps(ctx);
+                CheckAnchorageConflicts(ctx);
 
                 yield return ctx;
             }
@@ -226,6 +227,126 @@ namespace DTS_Engine.Core.Algorithms.Rebar.Pipeline.Stages
                     break; // Only report once per solution
                 }
             }
+        }
+
+        /// <summary>
+        /// Check 5: Kiểm tra Neo thép (Anchorage Checks)
+        /// - Gối biên: Thép lớp trên phải neo xuống cột đoạn Ldh (development length with hook)
+        /// - Thép gia cường: Phải neo đủ Ld từ tiết diện có mô men max
+        /// </summary>
+        private void CheckAnchorageConflicts(SolutionContext ctx)
+        {
+            var sol = ctx.CurrentSolution;
+            var settings = ctx.Settings;
+            var group = ctx.Group;
+            if (sol == null || settings == null || group?.Spans == null) return;
+
+            // Get anchorage config
+            var anchorage = settings.Anchorage;
+            if (anchorage == null) return;
+
+            // Get material grades from settings
+            string concreteGrade = settings.General?.ConcreteGradeName ?? "B25";
+            string steelGrade = settings.General?.SteelGradeName ?? "CB400-V";
+            // Extract base steel grade (CB400-V → CB400)
+            if (steelGrade.Contains("-"))
+                steelGrade = steelGrade.Split('-')[0];
+
+            int backboneDia = sol.BackboneDiameter;
+            if (backboneDia <= 0) return;
+
+            // ================================================================
+            // CHECK 5.1: Edge Column Anchorage (Ldh - hooked development)
+            // At edge supports, top bars must hook down into column
+            // ================================================================
+            var spans = group.Spans.ToList();
+            if (spans.Count > 0)
+            {
+                // First span - left edge (gối biên trái)
+                var firstSpan = spans[0];
+                if (!IsInteriorSupport(firstSpan, true))
+                {
+                    double Ldh = anchorage.GetHookLength(backboneDia, concreteGrade, 90);
+                    double columnDepth = ctx.BeamWidth; // Estimate column depth ≈ beam width
+
+                    if (Ldh > columnDepth)
+                    {
+                        ctx.Conflicts.Add(new ConflictReport
+                        {
+                            ConflictType = "AnchorageDeficit_EdgeHook",
+                            SpanId = firstSpan.SpanId,
+                            Description = string.Format(
+                                "Gối biên trái: Chiều dài neo móc Ldh={0:F0}mm > chiều sâu cột~{1:F0}mm. Thép D{2} có thể không neo đủ.",
+                                Ldh, columnDepth, backboneDia),
+                            SuggestedFix = "Tăng chiều sâu cột, dùng đường kính nhỏ hơn, hoặc dùng neo cơ khí."
+                        });
+                    }
+                }
+
+                // Last span - right edge (gối biên phải)
+                var lastSpan = spans[spans.Count - 1];
+                if (!IsInteriorSupport(lastSpan, false))
+                {
+                    double Ldh = anchorage.GetHookLength(backboneDia, concreteGrade, 90);
+                    double columnDepth = ctx.BeamWidth;
+
+                    if (Ldh > columnDepth)
+                    {
+                        ctx.Conflicts.Add(new ConflictReport
+                        {
+                            ConflictType = "AnchorageDeficit_EdgeHook",
+                            SpanId = lastSpan.SpanId,
+                            Description = string.Format(
+                                "Gối biên phải: Chiều dài neo móc Ldh={0:F0}mm > chiều sâu cột~{1:F0}mm. Thép D{2} có thể không neo đủ.",
+                                Ldh, columnDepth, backboneDia),
+                            SuggestedFix = "Tăng chiều sâu cột, dùng đường kính nhỏ hơn, hoặc dùng neo cơ khí."
+                        });
+                    }
+                }
+            }
+
+            // ================================================================
+            // CHECK 5.2: Addon Bar Termination (Ld check)
+            // Addon bars must extend Ld beyond point of maximum moment
+            // ================================================================
+            foreach (var kvp in sol.Reinforcements)
+            {
+                var spec = kvp.Value;
+                if (spec == null || spec.Count <= 0 || spec.Diameter <= 0) continue;
+
+                // Get development length for addon bar
+                double Ld = anchorage.GetAnchorageLength(spec.Diameter, concreteGrade, steelGrade);
+
+                // Estimate available anchorage length based on curtailment
+                // Top support bars typically extend 0.25L into span
+                // Bottom midspan bars typically cut 0.15L from support
+                double spanLength = ctx.TotalLength / Math.Max(1, spans.Count);
+                double curtailRatio = kvp.Key.Contains("Top") ? 0.25 : 0.15;
+                double availableLength = spanLength * curtailRatio;
+
+                if (Ld > availableLength)
+                {
+                    ctx.Conflicts.Add(new ConflictReport
+                    {
+                        ConflictType = "AnchorageDeficit_AddonBar",
+                        SpanId = kvp.Key,
+                        Description = string.Format(
+                            "Thép gia cường {0}: Ld={1:F0}mm > đoạn kéo dài khả dụng~{2:F0}mm ({3:P0} nhịp). Có thể không neo đủ tại điểm cắt.",
+                            kvp.Key, Ld, availableLength, curtailRatio),
+                        SuggestedFix = "Kéo dài đoạn gia cường, dùng đường kính nhỏ hơn, hoặc sử dụng neo cơ khí."
+                    });
+                }
+            }
+        }
+
+        /// <summary>
+        /// Determine if a span's support is interior (continuous) or edge.
+        /// </summary>
+        private bool IsInteriorSupport(SpanData span, bool isLeft)
+        {
+            // Simple heuristic: edge if no adjacent span on that side
+            // This can be enhanced with actual geometry data
+            return false; // Conservative: assume edge unless proven otherwise
         }
     }
 }
