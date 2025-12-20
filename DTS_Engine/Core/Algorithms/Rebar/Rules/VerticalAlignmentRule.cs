@@ -19,10 +19,7 @@ namespace DTS_Engine.Core.Algorithms.Rebar.Rules
         public string RuleName { get { return "VerticalAlignment"; } }
         public int Priority { get { return 12; } } // After Pyramid, before WastePenalty
 
-        /// <summary>
-        /// Điểm phạt cho lệch pha chẵn/lẻ (construction nightmare)
-        /// </summary>
-        private const double MISALIGNMENT_PENALTY = 25.0;
+        // REMOVED CONST: Now using Settings.Rules.AlignmentPenaltyScore (V3.3)
 
         public ValidationResult Validate(SolutionContext context)
         {
@@ -47,7 +44,7 @@ namespace DTS_Engine.Core.Algorithms.Rebar.Rules
                 {
                     RuleName = RuleName,
                     Level = SeverityLevel.Warning,
-                    PenaltyScore = MISALIGNMENT_PENALTY,
+                    PenaltyScore = penaltyScore,
                     Message = $"Lệch pha Chẵn/Lẻ: Top={nTop}({(topEven ? "chẵn" : "lẻ")}), " +
                               $"Bot={nBot}({(botEven ? "chẵn" : "lẻ")}) - Khó buộc đai thẳng hàng"
                 };

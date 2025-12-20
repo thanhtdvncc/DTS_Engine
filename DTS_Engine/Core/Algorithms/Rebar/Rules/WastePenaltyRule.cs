@@ -12,10 +12,7 @@ namespace DTS_Engine.Core.Algorithms.Rebar.Rules
         public string RuleName { get { return "WastePenalty"; } }
         public int Priority { get { return 15; } } // Run after other rules
 
-        /// <summary>
-        /// Điểm phạt cho mỗi thanh waste (thanh thêm vào chỉ để đủ cấu tạo, không đóng góp lực)
-        /// </summary>
-        private const double PENALTY_PER_WASTE_BAR = 20.0;
+        // REMOVED CONST: Now using Settings.Rules.WastePenaltyScore (V3.3)
 
         public ValidationResult Validate(SolutionContext context)
         {

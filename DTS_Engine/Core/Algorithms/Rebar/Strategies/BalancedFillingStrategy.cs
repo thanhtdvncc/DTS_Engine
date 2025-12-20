@@ -78,9 +78,11 @@ namespace DTS_Engine.Core.Algorithms.Rebar.Strategies
 
             // ═══════════════════════════════════════════════════════════════
             // APPLY CONSTRAINTS: Symmetry, MinBarsPerLayer, etc.
+            // V3.3: Get minBarsPerLayer from settings
             // ═══════════════════════════════════════════════════════════════
             int wasteCount = 0;
-            return ApplyConstraints(layerCounts, capacity, backboneCount, legCount, preferSymmetric, ref wasteCount);
+            int minBarsPerLayer = settings?.Beam?.MinBarsPerLayer ?? 2;
+            return ApplyConstraints(layerCounts, capacity, backboneCount, legCount, preferSymmetric, minBarsPerLayer, ref wasteCount);
         }
 
         /// <summary>
@@ -173,7 +175,7 @@ namespace DTS_Engine.Core.Algorithms.Rebar.Strategies
 
         private FillingResult ApplyConstraints(
             List<int> layerCounts, int capacity, int backboneCount, int legCount,
-            bool preferSymmetric, ref int wasteCount)
+            bool preferSymmetric, int minBarsPerLayer, ref int wasteCount)
         {
             // CONSTRAINT 1: Pyramid Rule validation
             for (int i = 1; i < layerCounts.Count; i++)
@@ -226,25 +228,25 @@ namespace DTS_Engine.Core.Algorithms.Rebar.Strategies
                 }
             }
 
-            // CONSTRAINT 5: MinBarsPerLayer - layers 2+ must have at least 2 bars if any
-            const int MIN_BARS_PER_LAYER = 2;
+            // CONSTRAINT 5: MinBarsPerLayer - layers 2+ must have at least min bars if any
+            // V3.3: minBarsPerLayer passed as parameter from settings
             for (int i = 1; i < layerCounts.Count; i++)
             {
                 int n = layerCounts[i];
                 int prevLayer = layerCounts[i - 1];
-                if (n > 0 && n < MIN_BARS_PER_LAYER)
+                if (n > 0 && n < minBarsPerLayer)
                 {
-                    if (MIN_BARS_PER_LAYER <= prevLayer)
+                    if (minBarsPerLayer <= prevLayer)
                     {
-                        wasteCount += MIN_BARS_PER_LAYER - n;
-                        layerCounts[i] = MIN_BARS_PER_LAYER;
+                        wasteCount += minBarsPerLayer - n;
+                        layerCounts[i] = minBarsPerLayer;
                     }
                     else
                     {
                         return new FillingResult
                         {
                             IsValid = false,
-                            FailReason = $"L{i + 1} chỉ có {n} thanh, cần tối thiểu {MIN_BARS_PER_LAYER}"
+                            FailReason = $"L{i + 1} chỉ có {n} thanh, cần tối thiểu {minBarsPerLayer}"
                         };
                     }
                 }
