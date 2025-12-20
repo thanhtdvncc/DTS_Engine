@@ -22,7 +22,25 @@ namespace DTS_Engine.Core.Algorithms.Rebar.Strategies
             int backboneCount = context.BackboneCount;
             int legCount = context.StirrupLegCount;
 
-            // Calculate total bars needed
+            // Calculate missing area (what backbone doesn't cover)
+            double missing = context.RequiredArea - context.BackboneArea;
+
+            // ═══════════════════════════════════════════════════════════════
+            // HOTFIX: Nếu thép chủ đã đủ, trả về cấu hình hiện tại
+            // Trước đây trả về TotalBars=0 gây ra phép trừ âm ở ReinforcementFiller
+            // ═══════════════════════════════════════════════════════════════
+            if (missing <= 0.01)
+            {
+                return new FillingResult
+                {
+                    IsValid = true,
+                    TotalBars = backboneCount,     // Đã có backbone
+                    CountLayer1 = backboneCount,   // Nằm hết ở lớp 1
+                    CountLayer2 = 0
+                };
+            }
+
+            // Calculate total bars needed (including backbone)
             double barArea = Math.PI * context.BackboneDiameter * context.BackboneDiameter / 400.0;
             int totalNeeded = (int)Math.Ceiling(context.RequiredArea / barArea);
 

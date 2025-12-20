@@ -84,7 +84,8 @@ namespace DTS_Engine.Core.Algorithms.Rebar.Pipeline.Stages
             ctx.StirrupLegCount = legCount;
 
             // ═══════════════════════════════════════════════════════════════
-            // ITERATE EACH SPAN - DETERMINISTIC LOCAL FILLING
+            // ITERATE EACH SPAN - JOINT-AWARE FILLING
+            // HOTFIX: Sử dụng MAX envelope tại cột để thép gối liên tục
             // ═══════════════════════════════════════════════════════════════
 
             for (int i = 0; i < numSpans; i++)
@@ -93,8 +94,22 @@ namespace DTS_Engine.Core.Algorithms.Rebar.Pipeline.Stages
                 var res = results[i];
                 if (res == null) continue;
 
-                // A. TOP REINFORCEMENT (Support zones: Left, Right)
+                // ═══════════════════════════════════════════════════════════
+                // A. TOP REINFORCEMENT - GỐI TRÁI (LEFT SUPPORT)
+                // Logic: Tại cột, lấy MAX(Gối phải nhịp trước, Gối trái nhịp này)
+                // ═══════════════════════════════════════════════════════════
                 double reqTopL = GetReqArea(res, true, 0, settings);
+                if (i > 0)
+                {
+                    // Envelope với gối phải nhịp trước (chung cột)
+                    var prevRes = results[i - 1];
+                    if (prevRes != null)
+                    {
+                        double reqPrevRight = GetReqArea(prevRes, true, 2, settings);
+                        reqTopL = Math.Max(reqTopL, reqPrevRight);
+                    }
+                }
+
                 if (!TryAutoFill(ctx, sol, reqTopL, topDia, nTop, legCount, string.Format("{0}_Top_Left", span.SpanId)))
                 {
                     ctx.IsValid = false;
@@ -104,7 +119,21 @@ namespace DTS_Engine.Core.Algorithms.Rebar.Pipeline.Stages
                     return ctx;
                 }
 
+                // ═══════════════════════════════════════════════════════════
+                // B. TOP REINFORCEMENT - GỐI PHẢI (RIGHT SUPPORT)
+                // Tương tự, envelope với gối trái nhịp sau (nếu có)
+                // ═══════════════════════════════════════════════════════════
                 double reqTopR = GetReqArea(res, true, 2, settings);
+                if (i < numSpans - 1)
+                {
+                    var nextRes = results[i + 1];
+                    if (nextRes != null)
+                    {
+                        double reqNextLeft = GetReqArea(nextRes, true, 0, settings);
+                        reqTopR = Math.Max(reqTopR, reqNextLeft);
+                    }
+                }
+
                 if (!TryAutoFill(ctx, sol, reqTopR, topDia, nTop, legCount, string.Format("{0}_Top_Right", span.SpanId)))
                 {
                     ctx.IsValid = false;
@@ -114,6 +143,9 @@ namespace DTS_Engine.Core.Algorithms.Rebar.Pipeline.Stages
                     return ctx;
                 }
 
+                // ═══════════════════════════════════════════════════════════
+                // C. TOP REINFORCEMENT - GIỮA NHỊP (nếu cần)
+                // ═══════════════════════════════════════════════════════════
                 double reqTopM = GetReqArea(res, true, 1, settings);
                 if (reqTopM > sol.As_Backbone_Top * 1.05)
                 {
@@ -127,7 +159,9 @@ namespace DTS_Engine.Core.Algorithms.Rebar.Pipeline.Stages
                     }
                 }
 
-                // B. BOTTOM REINFORCEMENT (Mid span zone)
+                // ═══════════════════════════════════════════════════════════
+                // D. BOTTOM REINFORCEMENT - GIỮA NHỊP (chính yếu)
+                // ═══════════════════════════════════════════════════════════
                 double reqBotM = GetReqArea(res, false, 1, settings);
                 if (!TryAutoFill(ctx, sol, reqBotM, botDia, nBot, legCount, string.Format("{0}_Bot_Mid", span.SpanId)))
                 {
@@ -138,7 +172,19 @@ namespace DTS_Engine.Core.Algorithms.Rebar.Pipeline.Stages
                     return ctx;
                 }
 
+                // ═══════════════════════════════════════════════════════════
+                // E. BOTTOM REINFORCEMENT - GỐI (nếu cần, với envelope)
+                // ═══════════════════════════════════════════════════════════
                 double reqBotL = GetReqArea(res, false, 0, settings);
+                if (i > 0)
+                {
+                    var prevRes = results[i - 1];
+                    if (prevRes != null)
+                    {
+                        double reqPrevRight = GetReqArea(prevRes, false, 2, settings);
+                        reqBotL = Math.Max(reqBotL, reqPrevRight);
+                    }
+                }
                 if (reqBotL > sol.As_Backbone_Bot * 1.05)
                 {
                     if (!TryAutoFill(ctx, sol, reqBotL, botDia, nBot, legCount, string.Format("{0}_Bot_Left", span.SpanId)))
@@ -151,6 +197,15 @@ namespace DTS_Engine.Core.Algorithms.Rebar.Pipeline.Stages
                 }
 
                 double reqBotR = GetReqArea(res, false, 2, settings);
+                if (i < numSpans - 1)
+                {
+                    var nextRes = results[i + 1];
+                    if (nextRes != null)
+                    {
+                        double reqNextLeft = GetReqArea(nextRes, false, 0, settings);
+                        reqBotR = Math.Max(reqBotR, reqNextLeft);
+                    }
+                }
                 if (reqBotR > sol.As_Backbone_Bot * 1.05)
                 {
                     if (!TryAutoFill(ctx, sol, reqBotR, botDia, nBot, legCount, string.Format("{0}_Bot_Right", span.SpanId)))
@@ -221,6 +276,13 @@ namespace DTS_Engine.Core.Algorithms.Rebar.Pipeline.Stages
 
             int addL1 = bestPlan.CountLayer1 - backboneCount;
             int addL2 = bestPlan.CountLayer2;
+
+            // ═══════════════════════════════════════════════════════════════
+            // HOTFIX: Clamp để đảm bảo không bao giờ ra số âm
+            // Ngăn ngừa trường hợp strategy trả về sai giá trị
+            // ═══════════════════════════════════════════════════════════════
+            addL1 = Math.Max(0, addL1);
+            addL2 = Math.Max(0, addL2);
 
             if (addL1 > 0 || addL2 > 0)
             {
