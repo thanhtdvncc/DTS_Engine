@@ -438,7 +438,8 @@ namespace DTS_Engine.Commands
             var selectedIds = AcadUtils.SelectObjectsOnScreen("LINE,LWPOLYLINE,POLYLINE");
             if (selectedIds.Count == 0) return;
 
-            // Load settings
+            // V3.5.2: Force reload settings from file to ensure UI changes are reflected
+            DtsSettings.Reload();
             var dtsSettings = DtsSettings.Instance;
 
             // Load existing groups để check dầm thuộc group nào

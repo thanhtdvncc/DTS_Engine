@@ -141,6 +141,19 @@ namespace DTS_Engine.Core.Data
         }
 
         /// <summary>
+        /// V3.5.2: Force reload settings from file.
+        /// Call this before calculations to ensure UI changes are reflected.
+        /// </summary>
+        public static void Reload()
+        {
+            lock (_lock)
+            {
+                _instance = Load();
+                System.Diagnostics.Debug.WriteLine("[DtsSettings] Reloaded settings from file.");
+            }
+        }
+
+        /// <summary>
         /// Load settings từ file, tạo mới nếu không tồn tại hoặc file lỗi
         /// An toàn: Nếu file bị corrupt, tự động tạo mới và save lại
         /// </summary>
