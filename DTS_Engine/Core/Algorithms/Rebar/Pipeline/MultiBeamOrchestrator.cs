@@ -96,6 +96,8 @@ namespace DTS_Engine.Core.Algorithms.Rebar.Pipeline
                 }
             }
 
+            // V3.5.2: Auto-open log file after calculation if logging was enabled
+            RebarLogger.OpenLogFile();
 
             return results;
         }

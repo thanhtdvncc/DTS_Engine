@@ -1,5 +1,6 @@
 using System;
 using System.Collections.Generic;
+using System.Diagnostics;
 using System.IO;
 using System.Linq;
 using System.Text;
@@ -140,9 +141,34 @@ namespace DTS_Engine.Core.Algorithms.Rebar.Utils
             return _sessionLog.ToString();
         }
 
+        public static string GetLogPath()
+        {
+            return _logPath;
+        }
+
+        /// <summary>
+        /// Open the log file in default text editor (Notepad, etc.)
+        /// </summary>
+        public static void OpenLogFile()
+        {
+            if (!IsEnabled || string.IsNullOrEmpty(_logPath) || !File.Exists(_logPath))
+                return;
+
+            try
+            {
+                Process.Start(new ProcessStartInfo
+                {
+                    FileName = _logPath,
+                    UseShellExecute = true
+                });
+            }
+            catch { /* Ignore if cannot open */ }
+        }
+
         public static void Clear()
         {
             _sessionLog.Clear();
         }
     }
 }
+
