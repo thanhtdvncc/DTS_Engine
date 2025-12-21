@@ -442,6 +442,12 @@ namespace DTS_Engine.Commands
             DtsSettings.Reload();
             var dtsSettings = DtsSettings.Instance;
 
+            // V3.5.2: Debug - Show if logging is enabled
+            if (dtsSettings.EnablePipelineLogging)
+            {
+                WriteMessage("🔍 DEBUG: Pipeline Logging ENABLED - Log sẽ được tạo sau khi tính toán");
+            }
+
             // Load existing groups để check dầm thuộc group nào
             var allGroups = GetOrCreateBeamGroups();
 

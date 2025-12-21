@@ -177,6 +177,11 @@ namespace DTS_Engine.UI.Forms
                             _settings.StoryConfigs = newSettings.StoryConfigs;
                             _settings.StoryTolerance = newSettings.StoryTolerance;
                             _settings.UserPresets = newSettings.UserPresets;
+
+                            // V3.5.2: Copy missing properties
+                            _settings.Stirrup = newSettings.Stirrup;
+                            _settings.Rules = newSettings.Rules;
+                            _settings.EnablePipelineLogging = newSettings.EnablePipelineLogging;
                         }
 
                         // DEBUG: Log to verify data

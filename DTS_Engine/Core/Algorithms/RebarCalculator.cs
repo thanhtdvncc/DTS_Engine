@@ -97,9 +97,22 @@ namespace DTS_Engine.Core.Algorithms
             List<BeamResultData> spanResults,
             DtsSettings settings)
         {
+            // V3.5.2: Initialize logging based on settings
+            Rebar.Utils.RebarLogger.IsEnabled = settings?.EnablePipelineLogging ?? false;
+            if (Rebar.Utils.RebarLogger.IsEnabled)
+            {
+                Rebar.Utils.RebarLogger.Initialize();
+                Rebar.Utils.RebarLogger.LogPhase($"CALCULATE GROUP: {group?.GroupName ?? "?"}");
+            }
+
             // Always use V3 pipeline
             var calculator = new RebarCalculator();
-            return calculator.Calculate(group, spanResults, settings);
+            var results = calculator.Calculate(group, spanResults, settings);
+
+            // V3.5.2: Open log file after calculation if enabled
+            Rebar.Utils.RebarLogger.OpenLogFile();
+
+            return results;
         }
 
         #endregion
