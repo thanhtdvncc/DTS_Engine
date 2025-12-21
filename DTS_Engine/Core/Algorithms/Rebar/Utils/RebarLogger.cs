@@ -255,12 +255,13 @@ namespace DTS_Engine.Core.Algorithms.Rebar.Utils
         /// <summary>
         /// Log danh sách arrangements từ một section.
         /// </summary>
-        public static void LogArrangements(string sectionId, List<SectionArrangement> arrangements, string side)
+        public static void LogArrangements(string sectionId, List<SectionArrangement> arrangements, string side, double width = 0, double height = 0)
         {
             if (!IsEnabled || arrangements == null) return;
 
             Log($"");
-            Log($"SECTION: {sectionId} - {side}");
+            string dimStr = (width > 0 && height > 0) ? $" ({width:F0}x{height:F0})" : "";
+            Log($"SECTION: {sectionId}{dimStr} - {side}");
             Log($"  Total arrangements: {arrangements.Count}");
 
             if (arrangements.Count == 0)

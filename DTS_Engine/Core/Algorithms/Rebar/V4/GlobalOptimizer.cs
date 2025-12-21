@@ -43,12 +43,7 @@ namespace DTS_Engine.Core.Algorithms.Rebar.V4
                 _allowedDiameters = inventory.Where(d => d >= 16 && d <= 25).ToList();
             }
 
-            // CRITICAL FIX: Lọc đường kính chẵn nếu cấu hình yêu cầu
-            if (beamCfg.PreferEvenDiameter && _allowedDiameters.Any(d => d % 2 == 0))
-            {
-                // Giữ lại D25 vì là đường kính thép chủ phổ biến
-                _allowedDiameters = _allowedDiameters.Where(d => d % 2 == 0 || d == 25).ToList();
-            }
+            // NOTE: Không lọc thép chẵn ở đây - User muốn sử dụng CHÍNH XÁC các đường kính từ Settings.
 
             _minBarsPerSide = beamCfg.MinBarsPerLayer > 0 ? beamCfg.MinBarsPerLayer : 2;
             _maxBarsPerSide = beamCfg.MaxBarsPerLayer > 0 ? beamCfg.MaxBarsPerLayer : 8;

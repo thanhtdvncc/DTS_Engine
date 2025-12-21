@@ -47,11 +47,7 @@ namespace DTS_Engine.Core.Algorithms.Rebar.V4
                 _allowedDiameters = inventory.Where(d => d >= 16 && d <= 25).ToList();
             }
 
-            // Apply PreferEvenDiameter filter
-            if (beamCfg.PreferEvenDiameter && _allowedDiameters.Any(d => d % 2 == 0))
-            {
-                _allowedDiameters = _allowedDiameters.Where(d => d % 2 == 0).ToList();
-            }
+            // NOTE: Không lọc thép chẵn ở đây - User muốn sử dụng CHÍNH XÁC các đường kính từ Settings.
 
             _maxLayers = beamCfg.MaxLayers > 0 ? beamCfg.MaxLayers : 2;
             _minSpacing = beamCfg.MinClearSpacing > 0 ? beamCfg.MinClearSpacing : 30;
@@ -142,9 +138,9 @@ namespace DTS_Engine.Core.Algorithms.Rebar.V4
                 section.ValidArrangementsTop = Solve(section, RebarPosition.Top);
                 section.ValidArrangementsBot = Solve(section, RebarPosition.Bot);
 
-                // Log arrangements for this section
-                Utils.RebarLogger.LogArrangements(section.SectionId, section.ValidArrangementsTop, "TOP");
-                Utils.RebarLogger.LogArrangements(section.SectionId, section.ValidArrangementsBot, "BOT");
+                // Log arrangements for this section (with dimensions)
+                Utils.RebarLogger.LogArrangements(section.SectionId, section.ValidArrangementsTop, "TOP", section.Width, section.Height);
+                Utils.RebarLogger.LogArrangements(section.SectionId, section.ValidArrangementsBot, "BOT", section.Width, section.Height);
             }
         }
 
@@ -203,6 +199,15 @@ namespace DTS_Engine.Core.Algorithms.Rebar.V4
                         var arr = CreateArrangement(config, dia, usableWidth, reqArea);
                         if (arr != null)
                         {
+                            // V4.2 FIX: Giới hạn diện tích thép thừa dựa trên SafetyFactor từ Settings
+                            // NOTE: Nới lỏng để tránh lọc quá nhiều - SafetyFactor + 1.5 để cho phép margin hợp lý
+                            double safetyFactor = _settings.Rules?.SafetyFactor ?? 1.1;
+                            double maxAllowedArea = reqArea * (safetyFactor + 1.5); // VD: SafetyFactor=1.1 => max 2.6x
+                            if (arr.TotalArea > maxAllowedArea && reqArea > 0.5)
+                            {
+                                continue; // Loại bỏ phương án thừa thép quá nhiều
+                            }
+
                             arr.Score = CalculateScore(arr, reqArea, section);
                             results.Add(arr);
                         }
@@ -396,7 +401,11 @@ namespace DTS_Engine.Core.Algorithms.Rebar.V4
             double clearSpacing = CalculateClearSpacing(usableWidth, barsInLayer, diameter);
             double minRequired = GetMinClearSpacing(diameter);
 
-            return clearSpacing >= minRequired;
+            // NOTE: Chỉ chặn theo MinClearSpacing (để đổ bê tông).
+            // MaxClearSpacing sẽ được xử lý ở bước Scoring (ưu tiên nhiều thanh hơn).
+            if (clearSpacing < minRequired) return false;
+
+            return true;
         }
 
         /// <summary>
