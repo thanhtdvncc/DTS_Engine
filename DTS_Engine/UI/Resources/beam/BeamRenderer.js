@@ -1,17 +1,22 @@
-/**
+﻿/**
  * BeamRenderer.js - Beam Canvas Rendering
  * Draws beam spans, supports, rebar, and dimensions.
+ * Supports N spans and N layers dynamically.
  */
 (function (global) {
     'use strict';
 
     const BeamRenderer = {
-        // ===== CONSTANTS =====
-        BEAM_HEIGHT: 80,
-        MIN_SPAN_WIDTH: 80,
-        MAX_CANVAS_WIDTH: 1600,
-        CANVAS_PADDING: 30,
-        SUPPORT_GAP: 15,
+        // ===== CONFIGURATION (from settings) =====
+        config: {
+            BEAM_HEIGHT: 80,
+            MIN_SPAN_WIDTH: 80,
+            MAX_CANVAS_WIDTH: 1600,
+            CANVAS_PADDING: 30,
+            SUPPORT_GAP: 15,
+            LAYER_OFFSET: 4,  // Distance between rebar layers (px)
+            BAR_THICKNESS: 2  // Base thickness for rebar lines
+        },
 
         // ===== COLORS =====
         colors: {
@@ -21,8 +26,11 @@
             highlightStroke: '#3b82f6',
             rebarTop: '#dc2626',
             rebarBot: '#2563eb',
+            rebarTopLight: '#fca5a5',  // Lighter for addon
+            rebarBotLight: '#93c5fd',  // Lighter for addon
             dimension: '#64748b',
-            label: '#1e293b'
+            label: '#1e293b',
+            supportFill: '#475569'
         },
 
         /**
@@ -42,21 +50,63 @@
                 return;
             }
 
-            // Calculate span widths
+            // Calculate layout for N spans
             const spans = group.Spans;
-            const widths = this._calculateSpanWidths(spans, canvas.width);
+            const layout = this._calculateLayout(spans, canvas.width);
 
             // Clear and setup
             global.Dts?.Renderer?.clear();
             global.Dts?.Renderer?.beginTransform();
 
-            // Draw beams
-            let x = this.CANVAS_PADDING;
-            const beamY = 60;
+            // Draw all spans
             beamState.spanBounds = [];
+            this._drawAllSpans(ctx, spans, layout, beamState);
+
+            // End transform
+            global.Dts?.Renderer?.endTransform();
+
+            // Draw overlays
+            global.Dts?.Renderer?.drawBoxZoomOverlay();
+            global.Dts?.Renderer?.updateZoomIndicator();
+        },
+
+        /**
+         * Calculate layout for N spans
+         */
+        _calculateLayout(spans, canvasWidth) {
+            const numSpans = spans.length;
+            const lengths = spans.map(s => s.Length || 1);
+            const totalLength = lengths.reduce((a, b) => a + b, 0);
+
+            // Calculate available width
+            const availableWidth = Math.min(
+                this.config.MAX_CANVAS_WIDTH,
+                canvasWidth
+            ) - this.config.CANVAS_PADDING * 2 - numSpans * this.config.SUPPORT_GAP;
+
+            // Proportional widths
+            const widths = lengths.map(len => {
+                const ratio = len / totalLength;
+                const width = availableWidth * ratio;
+                return Math.max(this.config.MIN_SPAN_WIDTH, width);
+            });
+
+            return {
+                widths,
+                startX: this.config.CANVAS_PADDING,
+                beamY: 60
+            };
+        },
+
+        /**
+         * Draw all spans with supports
+         */
+        _drawAllSpans(ctx, spans, layout, beamState) {
+            let x = layout.startX;
+            const beamY = layout.beamY;
 
             spans.forEach((span, i) => {
-                const w = widths[i];
+                const w = layout.widths[i];
 
                 // Left support (first span only)
                 if (i === 0) {
@@ -67,7 +117,7 @@
                 // Store bounds for hit testing
                 beamState.spanBounds.push({
                     x, y: beamY,
-                    width: w, height: this.BEAM_HEIGHT,
+                    width: w, height: this.config.BEAM_HEIGHT,
                     index: i
                 });
 
@@ -75,40 +125,17 @@
                 const isHighlighted = i === beamState.highlightedSpanIndex;
                 this._drawSpan(ctx, x, beamY, w, span, isHighlighted);
 
-                // Draw rebar
-                this._drawRebar(ctx, x, beamY, w, span);
+                // Draw rebar (N layers)
+                this._drawRebarNLayers(ctx, x, beamY, w, span);
 
                 // Labels and dimensions
                 this._drawLabels(ctx, x, beamY, w, span);
 
                 x += w;
 
-                // Support between spans
+                // Support after each span
                 this._drawSupport(ctx, x, beamY);
-                x += this.SUPPORT_GAP;
-            });
-
-            // End transform
-            global.Dts?.Renderer?.endTransform();
-
-            // Draw overlays (box zoom, etc)
-            global.Dts?.Renderer?.drawBoxZoomOverlay();
-            global.Dts?.Renderer?.updateZoomIndicator();
-        },
-
-        /**
-         * Calculate proportional span widths
-         */
-        _calculateSpanWidths(spans, canvasWidth) {
-            const lengths = spans.map(s => s.Length || 1);
-            const maxLen = Math.max(...lengths);
-
-            const maxSpanWidth = Math.min(200, (this.MAX_CANVAS_WIDTH - this.CANVAS_PADDING * 2 - spans.length * this.SUPPORT_GAP) / Math.max(1, spans.length));
-            const minSpanWidth = Math.max(this.MIN_SPAN_WIDTH, maxSpanWidth / 5);
-
-            return lengths.map(len => {
-                const ratio = len / maxLen;
-                return minSpanWidth + (maxSpanWidth - minSpanWidth) * ratio;
+                x += this.config.SUPPORT_GAP;
             });
         },
 
@@ -132,8 +159,8 @@
             ctx.fillStyle = isHighlighted ? this.colors.highlightFill : this.colors.beamFill;
             ctx.strokeStyle = isHighlighted ? this.colors.highlightStroke : this.colors.beamStroke;
             ctx.lineWidth = isHighlighted ? 2 : 1;
-            ctx.fillRect(x, y, w, this.BEAM_HEIGHT);
-            ctx.strokeRect(x, y, w, this.BEAM_HEIGHT);
+            ctx.fillRect(x, y, w, this.config.BEAM_HEIGHT);
+            ctx.strokeRect(x, y, w, this.config.BEAM_HEIGHT);
         },
 
         /**
@@ -142,66 +169,88 @@
         _drawSupport(ctx, x, y) {
             const h = 15;
             ctx.beginPath();
-            ctx.moveTo(x, y + this.BEAM_HEIGHT);
-            ctx.lineTo(x - 6, y + this.BEAM_HEIGHT + h);
-            ctx.lineTo(x + 6, y + this.BEAM_HEIGHT + h);
+            ctx.moveTo(x, y + this.config.BEAM_HEIGHT);
+            ctx.lineTo(x - 6, y + this.config.BEAM_HEIGHT + h);
+            ctx.lineTo(x + 6, y + this.config.BEAM_HEIGHT + h);
             ctx.closePath();
-            ctx.fillStyle = '#475569';
+            ctx.fillStyle = this.colors.supportFill;
             ctx.fill();
         },
 
         /**
-         * Draw rebar lines (N-layers, Backbone + Add)
+         * Draw rebar lines with N-layer support
+         * Backbone runs full length, Addons are position-specific
          */
-        _drawRebar(ctx, x, y, w, span) {
+        _drawRebarNLayers(ctx, x, y, w, span) {
             const topY = y + 6;
-            const botY = y + this.BEAM_HEIGHT - 6;
-            const layerOffset = 4; // Distance between layers
+            const botY = y + this.config.BEAM_HEIGHT - 6;
 
-            // --- TOP REBAR ---
-            // 1. Backbone (Run full length)
+            // === TOP REBAR ===
+            // 1. Backbone (full length)
             if (span.TopBackbone) {
-                this._drawRebarGroup(ctx, x, topY, w, span.TopBackbone, 'top', 0);
+                this._drawRebarLine(ctx, x, topY, w, span.TopBackbone, 'top', 0, true);
             }
 
-            // 2. Additional (Left, Mid, Right)
-            // Stacking: If backbone exists, add sits below it (higher Y)
-            let baseLayer = span.TopBackbone ? (span.TopBackbone.LayerCounts?.length || 1) : 0;
-
+            // 2. Addons (position-specific)
+            const baseLayerTop = span.TopBackbone ? this._getLayerCount(span.TopBackbone) : 0;
+            
             if (span.TopAddLeft) {
-                // Draw items Left (0 to 0.25L)
-                this._drawRebarGroup(ctx, x, topY, w * 0.25, span.TopAddLeft, 'top', baseLayer);
+                // Left addon: 0 to 0.25L
+                this._drawRebarLine(ctx, x, topY, w * 0.25, span.TopAddLeft, 'top', baseLayerTop, false);
+            }
+            if (span.TopAddMid) {
+                // Mid addon: 0.25L to 0.75L
+                this._drawRebarLine(ctx, x + w * 0.25, topY, w * 0.5, span.TopAddMid, 'top', baseLayerTop, false);
             }
             if (span.TopAddRight) {
-                // Draw items Right (0.75L to L)
-                this._drawRebarGroup(ctx, x + w * 0.75, topY, w * 0.25, span.TopAddRight, 'top', baseLayer);
+                // Right addon: 0.75L to L
+                this._drawRebarLine(ctx, x + w * 0.75, topY, w * 0.25, span.TopAddRight, 'top', baseLayerTop, false);
             }
 
-            // --- BOT REBAR ---
-            // 1. Backbone
+            // === BOT REBAR ===
+            // 1. Backbone (full length)
             if (span.BotBackbone) {
-                this._drawRebarGroup(ctx, x, botY, w, span.BotBackbone, 'bot', 0);
+                this._drawRebarLine(ctx, x, botY, w, span.BotBackbone, 'bot', 0, true);
             }
-            // 2. Additional Mid
-            baseLayer = span.BotBackbone ? (span.BotBackbone.LayerCounts?.length || 1) : 0;
+
+            // 2. Addons
+            const baseLayerBot = span.BotBackbone ? this._getLayerCount(span.BotBackbone) : 0;
+
+            if (span.BotAddLeft) {
+                this._drawRebarLine(ctx, x, botY, w * 0.25, span.BotAddLeft, 'bot', baseLayerBot, false);
+            }
             if (span.BotAddMid) {
-                // Draw items Mid (0.15L to 0.85L)
-                this._drawRebarGroup(ctx, x + w * 0.15, botY, w * 0.7, span.BotAddMid, 'bot', baseLayer);
+                // Mid addon: 0.15L to 0.85L (longer for bottom)
+                this._drawRebarLine(ctx, x + w * 0.15, botY, w * 0.7, span.BotAddMid, 'bot', baseLayerBot, false);
+            }
+            if (span.BotAddRight) {
+                this._drawRebarLine(ctx, x + w * 0.75, botY, w * 0.25, span.BotAddRight, 'bot', baseLayerBot, false);
             }
         },
 
-        _drawRebarGroup(ctx, startX, startY, length, info, pos, startLayer) {
-            const isTop = pos === 'top';
-            const color = isTop ? this.colors.rebarTop : this.colors.rebarBot;
-            ctx.strokeStyle = color;
-            ctx.lineWidth = 2; // Fixed thickness for now
+        /**
+         * Draw a single rebar line (handles N layers)
+         */
+        _drawRebarLine(ctx, startX, startY, length, info, pos, startLayer, isBackbone) {
+            if (!info || !info.Count || info.Count <= 0) return;
 
+            const isTop = pos === 'top';
+            const color = isBackbone
+                ? (isTop ? this.colors.rebarTop : this.colors.rebarBot)
+                : (isTop ? this.colors.rebarTopLight : this.colors.rebarBotLight);
+            
+            ctx.strokeStyle = color;
+            ctx.lineWidth = isBackbone ? this.config.BAR_THICKNESS : this.config.BAR_THICKNESS - 0.5;
+
+            // Get layer breakdown
             const layers = info.LayerCounts || [info.Count];
 
             layers.forEach((count, idx) => {
                 if (count <= 0) return;
+                
                 const layerIdx = startLayer + idx;
-                const offset = layerIdx * 4 * (isTop ? 1 : -1); // Top goes down (+), Bot goes up (-)
+                // Top goes down (+), Bot goes up (-)
+                const offset = layerIdx * this.config.LAYER_OFFSET * (isTop ? 1 : -1);
 
                 ctx.beginPath();
                 ctx.moveTo(startX, startY + offset);
@@ -211,56 +260,82 @@
         },
 
         /**
+         * Get number of layers from RebarInfo
+         */
+        _getLayerCount(info) {
+            if (!info) return 0;
+            if (info.LayerCounts && info.LayerCounts.length > 0) {
+                return info.LayerCounts.length;
+            }
+            return 1;
+        },
+
+        /**
          * Draw span labels and dimensions
          */
         _drawLabels(ctx, x, y, w, span) {
-            // Span ID
+            // Span ID (centered)
             ctx.fillStyle = this.colors.label;
             ctx.font = 'bold 11px sans-serif';
             ctx.textAlign = 'center';
             ctx.textBaseline = 'middle';
-            ctx.fillText(span.SpanId || '', x + w / 2, y + this.BEAM_HEIGHT / 2);
+            ctx.fillText(span.SpanId || '', x + w / 2, y + this.config.BEAM_HEIGHT / 2);
 
-            // Rebar Labels based on RebarInfo
+            // Rebar Labels
             ctx.font = '10px sans-serif';
 
-            // Top Label (Max of Left/Mid/Right)
-            const topLabel = this._getMergedLabel(span.TopBackbone, span.TopAddLeft, span.TopAddRight);
+            // Top Label (summarize all top rebar)
+            const topLabel = this._getSummaryLabel(span.TopBackbone, span.TopAddLeft, span.TopAddMid, span.TopAddRight);
             ctx.fillStyle = this.colors.rebarTop;
             ctx.fillText(topLabel, x + w / 2, y - 12);
 
-            // Bot Label
-            const botLabel = this._getMergedLabel(span.BotBackbone, span.BotAddMid);
+            // Bot Label (summarize all bot rebar)
+            const botLabel = this._getSummaryLabel(span.BotBackbone, span.BotAddMid, span.BotAddLeft, span.BotAddRight);
             ctx.fillStyle = this.colors.rebarBot;
-            ctx.fillText(botLabel, x + w / 2, y + this.BEAM_HEIGHT + 24);
+            ctx.fillText(botLabel, x + w / 2, y + this.config.BEAM_HEIGHT + 24);
 
             // Length dimension
             ctx.fillStyle = this.colors.dimension;
-            ctx.fillText(`${(span.Length || 0).toFixed(2)}m`, x + w / 2, y + this.BEAM_HEIGHT + 12);
+            const lengthText = `${(span.Length || 0).toFixed(2)}m`;
+            ctx.fillText(lengthText, x + w / 2, y + this.config.BEAM_HEIGHT + 12);
 
             // Section size
-            ctx.fillText(`${span.Width || 0}×${span.Height || 0}`, x + w / 2, y - 2);
+            const sectionText = `${span.Width || 0}×${span.Height || 0}`;
+            ctx.fillText(sectionText, x + w / 2, y - 2);
         },
 
-        _getMergedLabel(backbone, ...adds) {
-            if (!backbone) return '';
+        /**
+         * Get summary label for rebar (Backbone + max Addon)
+         */
+        _getSummaryLabel(backbone, ...addons) {
+            if (!backbone || !backbone.Count) return '';
 
-            // Find max add to combine with
-            let maxAdd = null;
+            // Find max addon
+            let maxAddon = null;
             let maxCount = 0;
-            adds.forEach(a => {
+            addons.forEach(a => {
                 if (a && a.Count > maxCount) {
                     maxCount = a.Count;
-                    maxAdd = a;
+                    maxAddon = a;
                 }
             });
 
-            if (!maxAdd) return backbone.DisplayString || '';
+            const backboneStr = backbone.DisplayString || `${backbone.Count}D${backbone.Diameter}`;
 
-            // ALWAYS keep separate to distinguish Continuous (Backbone) vs Additional (Add)
-            // Example: 2D25 (Backbone) + 1D25 (Add) -> "2D25 + 1D25"
-            // Merging to "3D25" implies 3 continuous bars, which is wrong.
-            return `${backbone.DisplayString} + ${maxAdd.DisplayString}`;
+            if (!maxAddon) return backboneStr;
+
+            const addonStr = maxAddon.DisplayString || `${maxAddon.Count}D${maxAddon.Diameter}`;
+
+            // Show as "Backbone + Addon" to distinguish continuous vs additional
+            return `${backboneStr} + ${addonStr}`;
+        },
+
+        /**
+         * Update configuration from settings
+         */
+        updateConfig(settings) {
+            if (!settings) return;
+            // Can be extended to read settings from DtsSettings
         }
     };
 

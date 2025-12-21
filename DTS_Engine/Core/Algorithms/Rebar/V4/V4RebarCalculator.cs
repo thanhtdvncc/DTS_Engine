@@ -1,0 +1,477 @@
+﻿using System;
+using System.Collections.Generic;
+using System.Linq;
+using DTS_Engine.Core.Algorithms.Rebar.Models;
+using DTS_Engine.Core.Data;
+
+namespace DTS_Engine.Core.Algorithms.Rebar.V4
+{
+    /// <summary>
+    /// V4 Rebar Calculator - Bottom-Up Architecture (Sole Engine).
+    /// Entry point cho toàn bộ hệ thống tính toán cốt thép dầm.
+    /// Không có fallback - V4 là engine duy nhất.
+    /// 
+    /// Quy trình:
+    /// 1. Discretization: SpanResults → DesignSections (N spans × Z zones)
+    /// 2. Local Solve: Mỗi section → Danh sách phương án hợp lệ (N layers)
+    /// 3. Topology Merge: Đồng bộ gối (Type 3 Constraint)
+    /// 4. Global Optimize: Tìm Backbone + Tổng hợp Solution
+    /// 
+    /// ISO 25010: Performance Efficiency - O(N × M) thay vì O(M^N)
+    /// ISO 12207: Design Phase - Clean modular architecture
+    /// </summary>
+    public class V4RebarCalculator
+    {
+        #region Configuration
+
+        /// <summary>Cấu hình discretization (số zones per span)</summary>
+        public DiscretizationConfig DiscretizationConfig { get; set; } = DiscretizationConfig.Default;
+
+        #endregion
+
+        #region Dependencies
+
+        private readonly DtsSettings _settings;
+        private readonly SectionSolver _sectionSolver;
+        private readonly TopologyMerger _topologyMerger;
+        private readonly GlobalOptimizer _globalOptimizer;
+
+        #endregion
+
+        #region Constructor
+
+        /// <summary>
+        /// Tạo V4 Calculator với settings.
+        /// </summary>
+        public V4RebarCalculator(DtsSettings settings)
+        {
+            _settings = settings ?? throw new ArgumentNullException(nameof(settings));
+            _sectionSolver = new SectionSolver(settings);
+            _topologyMerger = new TopologyMerger(settings);
+            _globalOptimizer = new GlobalOptimizer(settings);
+        }
+
+        #endregion
+
+        #region Public API
+
+        /// <summary>
+        /// Tính toán và trả về Top N phương án.
+        /// </summary>
+        /// <param name="group">Nhóm dầm</param>
+        /// <param name="spanResults">Kết quả SAP cho mỗi nhịp</param>
+        /// <param name="externalConstraints">Ràng buộc bên ngoài (nếu có)</param>
+        /// <returns>Danh sách ContinuousBeamSolution sắp theo TotalScore</returns>
+        public List<ContinuousBeamSolution> Calculate(
+            BeamGroup group,
+            List<BeamResultData> spanResults,
+            ExternalConstraints externalConstraints = null)
+        {
+            // === LOGGING ===
+            Utils.RebarLogger.IsEnabled = _settings?.EnablePipelineLogging ?? false;
+            if (Utils.RebarLogger.IsEnabled)
+            {
+                Utils.RebarLogger.Initialize();
+                Utils.RebarLogger.LogPhase($"V4 CALCULATE: {group?.GroupName ?? "?"}");
+            }
+
+            try
+            {
+                // Validate input
+                if (spanResults == null || spanResults.Count == 0)
+                {
+                    Utils.RebarLogger.LogError("No span results provided");
+                    return CreateSingleErrorSolution("Không có dữ liệu nội lực nhịp");
+                }
+
+                // === STEP 1: DISCRETIZATION ===
+                Utils.RebarLogger.LogPhase("STEP 1: DISCRETIZATION");
+                var sections = Discretize(group, spanResults);
+
+                if (sections.Count == 0)
+                {
+                    Utils.RebarLogger.LogError("Discretization failed: No sections created");
+                    return CreateSingleErrorSolution("Không thể phân tích dữ liệu nhịp");
+                }
+
+                Utils.RebarLogger.Log($"Created {sections.Count} design sections from {spanResults.Count} spans");
+
+                // === STEP 2: LOCAL SOLVE ===
+                Utils.RebarLogger.LogPhase("STEP 2: LOCAL SOLVE");
+                _sectionSolver.SolveAll(sections);
+
+                // Log section results
+                foreach (var section in sections)
+                {
+                    Utils.RebarLogger.Log($"  {section.SectionId}: " +
+                        $"TopOptions={section.ValidArrangementsTop.Count}, " +
+                        $"BotOptions={section.ValidArrangementsBot.Count}");
+                }
+
+                // Check if any section has no solutions
+                var failedSections = sections
+                    .Where(s => (s.ReqTop > 0.01 && s.ValidArrangementsTop.Count == 0) ||
+                               (s.ReqBot > 0.01 && s.ValidArrangementsBot.Count == 0))
+                    .ToList();
+
+                if (failedSections.Count > 0)
+                {
+                    var failedIds = string.Join(", ", failedSections.Select(s => s.SectionId));
+                    Utils.RebarLogger.LogError($"Local solve failed for sections: {failedIds}");
+
+                    return CreateSingleErrorSolution($"Không tìm được phương án cho: {failedIds}");
+                }
+
+                // === STEP 3: TOPOLOGY MERGE ===
+                Utils.RebarLogger.LogPhase("STEP 3: TOPOLOGY MERGE");
+                if (!_topologyMerger.ApplyConstraints(sections))
+                {
+                    Utils.RebarLogger.LogError("Topology merge failed: No compatible arrangements at supports");
+
+                    return CreateSingleErrorSolution("Không tìm được phương án thống nhất tại gối");
+                }
+
+                // Log after merge
+                var supportSections = sections.Where(s => s.Type == SectionType.Support).ToList();
+                foreach (var section in supportSections)
+                {
+                    Utils.RebarLogger.Log($"  {section.SectionId} (merged): " +
+                        $"TopOptions={section.ValidArrangementsTop.Count}, " +
+                        $"BotOptions={section.ValidArrangementsBot.Count}");
+                }
+
+                // === STEP 4: GLOBAL OPTIMIZE ===
+                Utils.RebarLogger.LogPhase("STEP 4: GLOBAL OPTIMIZE");
+                var solutions = _globalOptimizer.FindBestSolutions(sections, group, externalConstraints);
+
+                // Log solutions
+                foreach (var sol in solutions)
+                {
+                    Utils.RebarLogger.Log($"  Solution: {sol.OptionName} | " +
+                        $"Score={sol.TotalScore:F1} | Weight={sol.TotalSteelWeight:F1}kg | " +
+                        $"Valid={sol.IsValid}");
+                }
+
+                Utils.RebarLogger.LogPhase("V4 COMPLETE");
+                return solutions;
+            }
+            catch (Exception ex)
+            {
+                Utils.RebarLogger.LogError($"V4 Exception: {ex.Message}\n{ex.StackTrace}");
+                return CreateSingleErrorSolution($"Lỗi hệ thống: {ex.Message}");
+            }
+            finally
+            {
+                Utils.RebarLogger.OpenLogFile();
+            }
+        }
+
+        /// <summary>
+        /// Static entry point - V4 is the sole calculator.
+        /// </summary>
+        public static List<ContinuousBeamSolution> CalculateProposals(
+            BeamGroup group,
+            List<BeamResultData> spanResults,
+            DtsSettings settings,
+            ExternalConstraints externalConstraints = null)
+        {
+            var calculator = new V4RebarCalculator(settings);
+            return calculator.Calculate(group, spanResults, externalConstraints);
+        }
+
+        #endregion
+
+        #region Discretization
+
+        /// <summary>
+        /// Chuyển đổi SpanResults thành danh sách DesignSections.
+        /// Hỗ trợ N nhịp linh hoạt với cấu hình zones tùy chỉnh.
+        /// </summary>
+        private List<DesignSection> Discretize(BeamGroup group, List<BeamResultData> spanResults)
+        {
+            var sections = new List<DesignSection>();
+
+            // Lấy số nhịp
+            int numSpans = spanResults.Count;
+
+            // Lấy thông tin nhịp từ group nếu có, nếu không tạo từ spanResults
+            var spanInfos = ExtractSpanInfos(group, spanResults);
+
+            if (spanInfos.Count == 0)
+            {
+                Utils.RebarLogger.LogError("No span info available");
+                return sections;
+            }
+
+            // Cấu hình zones
+            var config = DiscretizationConfig;
+            int zonesPerSpan = config.ZonesPerSpan;
+
+            double torsionTop = _settings.Beam?.TorsionDist_TopBar ?? 0.25;
+            double torsionBot = _settings.Beam?.TorsionDist_BotBar ?? 0.25;
+
+            double cumPosition = 0;
+            int globalIndex = 0;
+
+            for (int spanIdx = 0; spanIdx < spanInfos.Count; spanIdx++)
+            {
+                var spanInfo = spanInfos[spanIdx];
+                var result = spanIdx < spanResults.Count ? spanResults[spanIdx] : null;
+
+                double spanLength = spanInfo.Length;
+                double width = spanInfo.Width;
+                double height = spanInfo.Height;
+
+                // Tạo sections cho mỗi zone
+                for (int zoneIdx = 0; zoneIdx < zonesPerSpan; zoneIdx++)
+                {
+                    double relativePos = config.ZonePositions[zoneIdx];
+                    SectionType zoneType = config.ZoneTypes[zoneIdx];
+
+                    // Xác định loại section thực tế (đầu/cuối dầm có thể là FreeEnd)
+                    SectionType actualType = DetermineSectionType(
+                        spanIdx, numSpans, zoneIdx, zonesPerSpan, zoneType, group);
+
+                    // Xác định position flags
+                    bool isSupportLeft = (zoneIdx == 0);
+                    bool isSupportRight = (zoneIdx == zonesPerSpan - 1);
+
+                    // Lấy diện tích yêu cầu từ result
+                    int resultZoneIndex = MapZoneToResultIndex(zoneIdx, zonesPerSpan);
+                    double reqTop = GetReqArea(result, true, resultZoneIndex, torsionTop);
+                    double reqBot = GetReqArea(result, false, resultZoneIndex, torsionBot);
+                    double reqStirrup = result?.ShearArea?.ElementAtOrDefault(resultZoneIndex) ?? 0;
+
+                    string sectionId = $"{spanInfo.SpanId}_{GetZoneName(zoneIdx, zonesPerSpan)}";
+
+                    sections.Add(new DesignSection
+                    {
+                        GlobalIndex = globalIndex++,
+                        SectionId = sectionId,
+                        SpanIndex = spanIdx,
+                        ZoneIndex = zoneIdx,
+                        SpanId = spanInfo.SpanId,
+                        Type = actualType,
+                        Position = cumPosition + spanLength * relativePos,
+                        RelativePosition = relativePos,
+                        Width = width,
+                        Height = height,
+                        CoverTop = _settings.Beam?.CoverTop ?? 35,
+                        CoverBot = _settings.Beam?.CoverBot ?? 35,
+                        CoverSide = _settings.Beam?.CoverSide ?? 25,
+                        StirrupDiameter = _settings.Beam?.EstimatedStirrupDiameter ?? 10,
+                        ReqTop = reqTop,
+                        ReqBot = reqBot,
+                        ReqStirrup = reqStirrup,
+                        IsSupportLeft = isSupportLeft && spanIdx > 0, // Not for first span start
+                        IsSupportRight = isSupportRight && spanIdx < numSpans - 1 // Not for last span end
+                    });
+                }
+
+                cumPosition += spanLength;
+            }
+
+            return sections;
+        }
+
+        /// <summary>
+        /// Trích xuất thông tin nhịp từ group hoặc tạo từ spanResults.
+        /// </summary>
+        private List<SpanInfo> ExtractSpanInfos(BeamGroup group, List<BeamResultData> spanResults)
+        {
+            var infos = new List<SpanInfo>();
+
+            if (group?.Spans != null && group.Spans.Count > 0)
+            {
+                // Lấy từ group
+                for (int i = 0; i < group.Spans.Count && i < spanResults.Count; i++)
+                {
+                    var span = group.Spans[i];
+                    var result = spanResults[i];
+
+                    infos.Add(new SpanInfo
+                    {
+                        SpanId = span.SpanId ?? $"S{i + 1}",
+                        Length = span.Length > 0 ? span.Length : 5.0,
+                        Width = NormalizeToMm(span.Width > 0 ? span.Width : result?.Width ?? group.Width),
+                        Height = NormalizeToMm(span.Height > 0 ? span.Height : result?.SectionHeight ?? group.Height)
+                    });
+                }
+            }
+            else
+            {
+                // Tạo từ spanResults
+                for (int i = 0; i < spanResults.Count; i++)
+                {
+                    var result = spanResults[i];
+
+                    infos.Add(new SpanInfo
+                    {
+                        SpanId = $"S{i + 1}",
+                        Length = 5.0, // Default 5m
+                        Width = NormalizeToMm(result?.Width ?? group?.Width ?? 300),
+                        Height = NormalizeToMm(result?.SectionHeight ?? group?.Height ?? 500)
+                    });
+                }
+            }
+
+            return infos;
+        }
+
+        /// <summary>
+        /// Xác định loại section thực tế.
+        /// </summary>
+        private SectionType DetermineSectionType(
+            int spanIdx, int numSpans,
+            int zoneIdx, int zonesPerSpan,
+            SectionType zoneType,
+            BeamGroup group)
+        {
+            // Đầu dầm (first zone of first span)
+            if (spanIdx == 0 && zoneIdx == 0)
+            {
+                var firstSupport = group?.Supports?.FirstOrDefault();
+                if (firstSupport?.Type == SupportType.FreeEnd)
+                    return SectionType.FreeEnd;
+            }
+
+            // Cuối dầm (last zone of last span)
+            if (spanIdx == numSpans - 1 && zoneIdx == zonesPerSpan - 1)
+            {
+                var lastSupport = group?.Supports?.LastOrDefault();
+                if (lastSupport?.Type == SupportType.FreeEnd)
+                    return SectionType.FreeEnd;
+            }
+
+            return zoneType;
+        }
+
+        /// <summary>
+        /// Map zone index sang result index (result thường có 3 vị trí: 0=Left, 1=Mid, 2=Right).
+        /// </summary>
+        private int MapZoneToResultIndex(int zoneIdx, int zonesPerSpan)
+        {
+            if (zonesPerSpan == 3)
+            {
+                return zoneIdx; // Direct mapping
+            }
+
+            if (zonesPerSpan == 5)
+            {
+                // [0, 1, 2, 3, 4] -> [0, 0, 1, 2, 2]
+                switch (zoneIdx)
+                {
+                    case 0: return 0;
+                    case 1: return 0;
+                    case 2: return 1;
+                    case 3: return 2;
+                    case 4: return 2;
+                    default: return 1;
+                }
+            }
+
+            // Default: map proportionally
+            double ratio = (double)zoneIdx / (zonesPerSpan - 1);
+            if (ratio <= 0.33) return 0;
+            if (ratio >= 0.67) return 2;
+            return 1;
+        }
+
+        /// <summary>
+        /// Lấy tên zone từ index.
+        /// </summary>
+        private string GetZoneName(int zoneIdx, int zonesPerSpan)
+        {
+            if (zonesPerSpan == 3)
+            {
+                switch (zoneIdx)
+                {
+                    case 0: return "Support_Left";
+                    case 1: return "MidSpan";
+                    case 2: return "Support_Right";
+                    default: return $"Zone{zoneIdx}";
+                }
+            }
+
+            if (zonesPerSpan == 5)
+            {
+                switch (zoneIdx)
+                {
+                    case 0: return "Support_Left";
+                    case 1: return "Quarter_Left";
+                    case 2: return "MidSpan";
+                    case 3: return "Quarter_Right";
+                    case 4: return "Support_Right";
+                    default: return $"Zone{zoneIdx}";
+                }
+            }
+
+            return $"Zone{zoneIdx}";
+        }
+
+        /// <summary>
+        /// Thông tin nhịp tạm thời.
+        /// </summary>
+        private class SpanInfo
+        {
+            public string SpanId { get; set; }
+            public double Length { get; set; }
+            public double Width { get; set; }
+            public double Height { get; set; }
+        }
+
+        #endregion
+
+        #region Helpers
+
+        /// <summary>
+        /// Lấy diện tích yêu cầu (bao gồm torsion distribution).
+        /// </summary>
+        private double GetReqArea(BeamResultData result, bool isTop, int position, double torsionFactor)
+        {
+            if (result == null) return 0;
+
+            double flexArea = isTop
+                ? (result.TopArea?.ElementAtOrDefault(position) ?? 0)
+                : (result.BotArea?.ElementAtOrDefault(position) ?? 0);
+
+            double torsionArea = (result.TorsionArea?.ElementAtOrDefault(position) ?? 0) * torsionFactor;
+
+            return flexArea + torsionArea;
+        }
+
+        /// <summary>
+        /// Normalize kích thước về mm.
+        /// </summary>
+        private double NormalizeToMm(double? val)
+        {
+            if (!val.HasValue || val.Value <= 0) return 0;
+            double v = val.Value;
+
+            if (v < 5) return v * 1000;  // m → mm
+            if (v < 100) return v * 10;  // cm → mm
+            return v; // Already mm
+        }
+
+        /// <summary>
+        /// Tạo danh sách chứa 1 solution lỗi.
+        /// </summary>
+        private List<ContinuousBeamSolution> CreateSingleErrorSolution(string message)
+        {
+            return new List<ContinuousBeamSolution>
+            {
+                new ContinuousBeamSolution
+                {
+                    OptionName = "ERROR",
+                    IsValid = false,
+                    ValidationMessage = message,
+                    TotalScore = 0,
+                    Reinforcements = new Dictionary<string, RebarSpec>(),
+                    SpanResults = new List<SpanRebarResult>()
+                }
+            };
+        }
+
+        #endregion
+    }
+}

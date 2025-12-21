@@ -137,6 +137,13 @@
     <Reference Include="WindowsBase" />
   </ItemGroup>
   <ItemGroup>
+    <Compile Include="Core\Algorithms\Rebar\V4\Constraints\ConstraintEngine.cs" />
+    <Compile Include="Core\Algorithms\Rebar\V4\Constraints\IConstraint.cs" />
+    <Compile Include="Core\Algorithms\Rebar\V4\DesignSection.cs" />
+    <Compile Include="Core\Algorithms\Rebar\V4\GlobalOptimizer.cs" />
+    <Compile Include="Core\Algorithms\Rebar\V4\SectionSolver.cs" />
+    <Compile Include="Core\Algorithms\Rebar\V4\TopologyMerger.cs" />
+    <Compile Include="Core\Algorithms\Rebar\V4\V4RebarCalculator.cs" />
     <Compile Include="DtsInitializer.cs" />
     <Compile Include="Commands\AuditCommands.cs" />
     <Compile Include="Commands\CommandBase.cs" />

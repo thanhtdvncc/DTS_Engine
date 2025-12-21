@@ -1,7 +1,8 @@
-using System;
+﻿using System;
 using System.Collections.Generic;
 using System.Linq;
 using Newtonsoft.Json;
+using DTS_Engine.Core.Algorithms.Rebar.V4;
 
 namespace DTS_Engine.Core.Data
 {
@@ -74,7 +75,7 @@ namespace DTS_Engine.Core.Data
         FreeEnd     // Đầu thừa (cantilever)
     }
 
-    // ===== GỐI ĐỠ =====
+    // ===== GỐI ĐỬ =====
     /// <summary>
     /// Gối đỡ của dải dầm liên tục (Column, Wall, Beam, hoặc FreeEnd)
     /// </summary>
@@ -570,6 +571,13 @@ namespace DTS_Engine.Core.Data
         /// VD: "S1_Top_Left" → {Diameter=22, Count=2}
         /// </summary>
         public Dictionary<string, RebarSpec> Reinforcements { get; set; } = new Dictionary<string, RebarSpec>();
+
+        // ===== V4: STRUCTURED SPAN RESULTS =====
+        /// <summary>
+        /// V4: Kết quả per-span có cấu trúc (Backbone + Addon per zone).
+        /// Dùng để truyền xuống UI hiển thị N nhịp linh hoạt.
+        /// </summary>
+        public List<SpanRebarResult> SpanResults { get; set; } = new List<SpanRebarResult>();
 
         // ===== STIRRUPS (Stage 3) =====
         /// <summary>

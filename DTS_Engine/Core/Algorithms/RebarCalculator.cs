@@ -4,100 +4,85 @@ using System.Linq;
 using DTS_Engine.Core.Data;
 using DTS_Engine.Core.Utils;
 using DTS_Engine.Core.Algorithms.Rebar.Models;
-using DTS_Engine.Core.Algorithms.Rebar.Pipeline;
-using DTS_Engine.Core.Algorithms.Rebar.Pipeline.Stages;
-using DTS_Engine.Core.Algorithms.Rebar.Rules;
+using DTS_Engine.Core.Algorithms.Rebar.V4;
 
 namespace DTS_Engine.Core.Algorithms
 {
     /// <summary>
-    /// V3.0 Rebar Calculator - Unified Class.
-    /// Includes pipeline-based calculation (Continuous Beam) and static utility methods.
-    /// Merged from RebarCalculatorV3 (V3.4.2)
+    /// Unified Rebar Calculator - V4 is the SOLE ENGINE.
+    /// No fallbacks, no legacy pipelines.
+    /// 
+    /// Architecture:
+    /// - V4 Bottom-Up: O(N×M) complexity, supports N spans and N layers
+    /// 
+    /// ISO 25010: Performance Efficiency, Maintainability
+    /// ISO 12207: Clean Architecture - Single Responsibility
     /// </summary>
     public class RebarCalculator
     {
-        #region V3 Pipeline Logic (Instance Based)
+        #region Singleton Calculator Instance
 
-        private readonly RebarPipeline _pipeline;
+        private readonly V4RebarCalculator _v4Calculator;
 
         /// <summary>
-        /// Create V3 calculator with default stages and rules.
+        /// Create calculator with settings.
         /// </summary>
-        public RebarCalculator()
+        public RebarCalculator() : this(DtsSettings.Instance)
         {
-            // Create stages in order
-            var stages = new List<IRebarPipelineStage>
-            {
-                new ScenarioGenerator(),      // Stage 1: Generate backbone scenarios
-                new ReinforcementFiller(),    // Stage 2: Fill reinforcement per span
-                new StirrupCalculator(),      // Stage 3: Calculate stirrups from SAP2000 data
-                new ConflictResolver()        // Stage 4: Check and report design conflicts
-            };
-
-            // Create rule engine with default rules
-            var rules = new List<IDesignRule>
-            {
-                new PyramidRule(),            // Priority 1: Critical - L[n] <= L[n-1]
-                new SymmetryRule(),           // Priority 5: Warning - Prefer even counts
-                new PreferredDiameterRule(),  // Priority 10: Info - Diameter matching
-                new VerticalAlignmentRule(),  // Priority 12: Warning - Top/Bot odd/even match
-                new WastePenaltyRule()        // Priority 15: Warning - Penalize waste bars
-            };
-
-            var ruleEngine = new RuleEngine(rules);
-
-            _pipeline = new RebarPipeline(stages, ruleEngine);
         }
 
         /// <summary>
-        /// Create V3 calculator with custom pipeline.
+        /// Create calculator with custom settings.
         /// </summary>
-        public RebarCalculator(RebarPipeline customPipeline)
+        public RebarCalculator(DtsSettings settings)
         {
-            _pipeline = customPipeline;
+            _v4Calculator = new V4RebarCalculator(settings ?? DtsSettings.Instance);
         }
 
         /// <summary>
         /// Calculate proposals for a BeamGroup.
         /// </summary>
-        /// <param name="group">Beam group to calculate</param>
-        /// <param name="spanResults">SAP analysis results per span</param>
-        /// <param name="settings">User settings</param>
-        /// <param name="projectConstraints">Optional project-level constraints</param>
-        /// <returns>Top 5 solutions ranked by TotalScore</returns>
         public List<ContinuousBeamSolution> Calculate(
             BeamGroup group,
             List<BeamResultData> spanResults,
             DtsSettings settings,
-            ProjectConstraints projectConstraints = null)
+            ExternalConstraints externalConstraints = null)
         {
-            return _pipeline.Execute(group, spanResults, settings, projectConstraints ?? new ProjectConstraints(), null);
+            var calculator = new V4RebarCalculator(settings);
+            return calculator.Calculate(group, spanResults, externalConstraints);
         }
 
-        /// <summary>
-        /// Calculate with external constraints (for locked beams or multi-beam sync).
-        /// </summary>
-        public List<ContinuousBeamSolution> CalculateWithConstraints(
-            BeamGroup group,
-            List<BeamResultData> spanResults,
-            DtsSettings settings,
-            ProjectConstraints projectConstraints,
-            ExternalConstraints externalConstraints)
-        {
-            return _pipeline.Execute(group, spanResults, settings, projectConstraints ?? new ProjectConstraints(), externalConstraints);
-        }
+        #endregion
+
+        #region Static Entry Points
 
         /// <summary>
         /// Static entry point for Continuous Beam Group.
-        /// Allows migrating legacy static calls to V3 pipeline.
+        /// V4 is the SOLE ENGINE - no fallbacks.
         /// </summary>
+        /// <param name="group">Beam group to calculate</param>
+        /// <param name="spanResults">SAP analysis results per span</param>
+        /// <param name="settings">User settings</param>
+        /// <returns>Top N solutions ranked by TotalScore</returns>
         public static List<ContinuousBeamSolution> CalculateProposalsForGroup(
             BeamGroup group,
             List<BeamResultData> spanResults,
             DtsSettings settings)
         {
-            // V3.5.2: Initialize logging based on settings
+            return CalculateProposalsForGroup(group, spanResults, settings, null);
+        }
+
+        /// <summary>
+        /// Static entry point with external constraints.
+        /// V4 is the SOLE ENGINE - no fallbacks.
+        /// </summary>
+        public static List<ContinuousBeamSolution> CalculateProposalsForGroup(
+            BeamGroup group,
+            List<BeamResultData> spanResults,
+            DtsSettings settings,
+            ExternalConstraints externalConstraints)
+        {
+            // Initialize logging based on settings
             Rebar.Utils.RebarLogger.IsEnabled = settings?.EnablePipelineLogging ?? false;
             if (Rebar.Utils.RebarLogger.IsEnabled)
             {
@@ -105,48 +90,73 @@ namespace DTS_Engine.Core.Algorithms
                 Rebar.Utils.RebarLogger.LogPhase($"CALCULATE GROUP: {group?.GroupName ?? "?"}");
             }
 
-            List<ContinuousBeamSolution> results = null;
-
             try
             {
-                // V4.0: Use BeamAwareOptimizer (Branch & Bound + Local Greedy)
-                var optimizer = new Rebar.Pipeline.Stages.BeamAwareOptimizer();
-                results = optimizer.Optimize(group, spanResults, settings);
+                // V4 is the SOLE ENGINE
+                Rebar.Utils.RebarLogger.LogPhase("V4 BOTTOM-UP CALCULATOR");
+
+                var results = V4RebarCalculator.CalculateProposals(
+                    group,
+                    spanResults,
+                    settings,
+                    externalConstraints);
 
                 if (results != null && results.Count > 0)
                 {
-                    Rebar.Utils.RebarLogger.LogPhase($"V4.0 OPTIMIZER: Found {results.Count} solutions");
+                    // Log results
+                    int validCount = results.Count(r => r.IsValid);
+                    Rebar.Utils.RebarLogger.LogPhase($"V4 COMPLETE: {results.Count} solutions ({validCount} valid)");
+
+                    Rebar.Utils.RebarLogger.OpenLogFile();
+                    return results;
+                }
+                else
+                {
+                    // Return error solution
+                    Rebar.Utils.RebarLogger.LogError("V4 returned no solutions");
+                    return new List<ContinuousBeamSolution>
+                    {
+                        CreateErrorSolution("Không tìm được phương án bố trí thép")
+                    };
                 }
             }
-            catch (System.Exception ex)
+            catch (Exception ex)
             {
-                Rebar.Utils.RebarLogger.LogError($"V4.0 Optimizer failed: {ex.Message}");
-                results = null;
-            }
+                Rebar.Utils.RebarLogger.LogError($"Exception: {ex.Message}\n{ex.StackTrace}");
 
-            // Fallback to V3 pipeline if V4 fails or returns no results
-            if (results == null || results.Count == 0)
+                return new List<ContinuousBeamSolution>
+                {
+                    CreateErrorSolution($"Lỗi tính toán: {ex.Message}")
+                };
+            }
+            finally
             {
-                Rebar.Utils.RebarLogger.LogPhase("FALLBACK: Using V3 pipeline");
-                var calculator = new RebarCalculator();
-                results = calculator.Calculate(group, spanResults, settings);
+                Rebar.Utils.RebarLogger.OpenLogFile();
             }
+        }
 
-            // V3.5.2: Open log file after calculation if enabled
-            Rebar.Utils.RebarLogger.OpenLogFile();
-
-            return results;
+        /// <summary>
+        /// Tạo solution lỗi.
+        /// </summary>
+        private static ContinuousBeamSolution CreateErrorSolution(string message)
+        {
+            return new ContinuousBeamSolution
+            {
+                OptionName = "ERROR",
+                IsValid = false,
+                ValidationMessage = message,
+                TotalScore = 0,
+                Reinforcements = new Dictionary<string, RebarSpec>(),
+                SpanResults = new List<SpanRebarResult>()
+            };
         }
 
         #endregion
 
-        #region Static Utility Methods (Legacy & Helpers)
-
-
+        #region Static Utility Methods
 
         /// <summary>
-        /// Tính toán chọn thép sử dụng DtsSettings mới (với range parsing).
-        /// Ưu tiên sử dụng method này cho code mới.
+        /// Tính toán chọn thép đơn giản (cho một vị trí).
         /// </summary>
         public static string Calculate(double areaReq, double b, double h, DtsSettings settings)
         {
@@ -235,8 +245,9 @@ namespace DTS_Engine.Core.Algorithms
             return Math.Round(value, 2);
         }
 
-
-
+        /// <summary>
+        /// Tính số thanh tối đa mỗi lớp.
+        /// </summary>
         private static int GetMaxBarsPerLayer(double beamWidth, int barDiameter, DtsSettings settings)
         {
             double cover = settings.Beam?.CoverSide ?? 25;
@@ -263,29 +274,64 @@ namespace DTS_Engine.Core.Algorithms
         }
 
         /// <summary>
-        /// V3.5.2: Get stirrup leg count using StirrupConfig as SINGLE SOURCE OF TRUTH.
-        /// Estimates bar count from beam width using density heuristic, then looks up StirrupConfig.
+        /// Get stirrup leg count using StirrupConfig.
         /// </summary>
         public static int GetAutoLegs(double beamWidthMm, DtsSettings settings)
         {
-            // V3.5.2: Use StirrupConfig.GetLegCount as primary source
             if (settings?.Stirrup?.EnableAdvancedRules == true)
             {
-                // Estimate bar count from width using density heuristic
-                // Wider beams typically have more bars
                 double density = settings.Beam?.DensityHeuristic ?? 180.0;
                 int estimatedBars = Math.Max(2, (int)Math.Ceiling(beamWidthMm / density));
 
-                // For stirrup calculation, assume backbone only (no addon) as conservative estimate
                 int legs = settings.Stirrup.GetLegCount(estimatedBars, hasAddon: false);
                 if (legs > 0) return legs;
             }
 
-            // Fallback: Width-based heuristic (when StirrupConfig unavailable)
+            // Width-based fallback
             if (beamWidthMm <= 250) return 2;
             if (beamWidthMm <= 400) return 3;
             if (beamWidthMm <= 600) return 4;
             return 5;
+        }
+
+        /// <summary>
+        /// Tính toán đai.
+        /// </summary>
+        public static string CalculateStirrup(double shearArea, double ttArea, double beamWidthMm, DtsSettings settings)
+        {
+            double totalAreaPerLen = shearArea + 2 * ttArea;
+            if (totalAreaPerLen <= 0.001) return "-";
+
+            var beamCfg = settings.Beam;
+            var inventory = settings.General?.AvailableDiameters ?? new List<int> { 8, 10 };
+            var diameters = DiameterParser.ParseRange(beamCfg?.StirrupBarRange ?? "8-10", inventory);
+            if (diameters.Count == 0) diameters = new List<int> { 8, 10 };
+
+            var spacings = beamCfg?.StirrupSpacings;
+            if (spacings == null || spacings.Count == 0) spacings = new List<int> { 100, 150, 200, 250 };
+            int minSpacingAcceptable = 100;
+
+            int baseLegs = GetAutoLegs(beamWidthMm, settings);
+            var legOptions = new List<int> { baseLegs };
+            if (baseLegs - 1 >= 2) legOptions.Insert(0, baseLegs - 1);
+            legOptions.Add(baseLegs + 1);
+            legOptions.Add(baseLegs + 2);
+            if (beamCfg?.AllowOddLegs != true) legOptions = legOptions.Where(l => l % 2 == 0).ToList();
+            if (legOptions.Count == 0) legOptions = new List<int> { 2, 4 };
+
+            foreach (int d in diameters.OrderBy(x => x))
+            {
+                foreach (int legs in legOptions)
+                {
+                    string res = TryFindSpacing(totalAreaPerLen, d, legs, spacings, minSpacingAcceptable);
+                    if (res != null) return res;
+                }
+            }
+
+            int maxLegs = legOptions.Last();
+            int dMax = diameters.Max();
+            int sMin = spacings.Min();
+            return $"{maxLegs}-d{dMax}a{sMin}*";
         }
 
         private static string TryFindSpacing(double totalAreaPerLen, int d, int legs, List<int> spacings, int minSpacingAcceptable)
@@ -299,51 +345,20 @@ namespace DTS_Engine.Core.Algorithms
             return null;
         }
 
-
-
-        public static string CalculateStirrup(double shearArea, double ttArea, double beamWidthMm, DtsSettings settings)
-        {
-            double totalAreaPerLen = shearArea + 2 * ttArea;
-            if (totalAreaPerLen <= 0.001) return "-";
-            var beamCfg = settings.Beam;
-            var inventory = settings.General?.AvailableDiameters ?? new List<int> { 8, 10 };
-            var diameters = DiameterParser.ParseRange(beamCfg?.StirrupBarRange ?? "8-10", inventory);
-            if (diameters.Count == 0) diameters = new List<int> { 8, 10 };
-            var spacings = beamCfg?.StirrupSpacings;
-            if (spacings == null || spacings.Count == 0) spacings = new List<int> { 100, 150, 200, 250 };
-            int minSpacingAcceptable = 100;
-            int baseLegs = GetAutoLegs(beamWidthMm, settings);
-            var legOptions = new List<int> { baseLegs };
-            if (baseLegs - 1 >= 2) legOptions.Insert(0, baseLegs - 1);
-            legOptions.Add(baseLegs + 1);
-            legOptions.Add(baseLegs + 2);
-            if (beamCfg?.AllowOddLegs != true) legOptions = legOptions.Where(l => l % 2 == 0).ToList();
-            if (legOptions.Count == 0) legOptions = new List<int> { 2, 4 };
-            foreach (int d in diameters.OrderBy(x => x))
-            {
-                foreach (int legs in legOptions)
-                {
-                    string res = TryFindSpacing(totalAreaPerLen, d, legs, spacings, minSpacingAcceptable);
-                    if (res != null) return res;
-                }
-            }
-            int maxLegs = legOptions.Last();
-            int dMax = diameters.Max();
-            int sMin = spacings.Min();
-            return $"{maxLegs}-d{dMax}a{sMin}*";
-        }
-
-
-
+        /// <summary>
+        /// Tính toán thép thành (web bars).
+        /// </summary>
         public static string CalculateWebBars(double torsionTotal, double torsionRatioSide, double heightMm, DtsSettings settings)
         {
             var beamCfg = settings.Beam;
             var inventory = settings.General?.AvailableDiameters ?? new List<int> { 12, 14 };
             var diameters = DiameterParser.ParseRange(beamCfg?.SideBarRange ?? "12-14", inventory);
             if (diameters.Count == 0) diameters = new List<int> { 12, 14 };
+
             double minHeight = beamCfg?.WebBarMinHeight ?? 700;
             double reqArea = torsionTotal * torsionRatioSide;
             bool needConstructive = heightMm >= minHeight;
+
             foreach (int d in diameters.OrderBy(x => x))
             {
                 double as1 = Math.PI * d * d / 400.0;
@@ -354,6 +369,7 @@ namespace DTS_Engine.Core.Algorithms
                 if (nFinal > 0 && nFinal % 2 != 0) nFinal++;
                 if (nFinal > 0 && nFinal <= 6) return $"{nFinal}d{d}";
             }
+
             int dMax = diameters.Max();
             double asMax = Math.PI * dMax * dMax / 400.0;
             int nMax = reqArea > 0.01 ? (int)Math.Ceiling(reqArea / asMax) : (needConstructive ? 2 : 0);
@@ -362,6 +378,9 @@ namespace DTS_Engine.Core.Algorithms
             return $"{nMax}d{dMax}";
         }
 
+        /// <summary>
+        /// Parse rebar string to area.
+        /// </summary>
         public static double ParseRebarArea(string rebarStr)
         {
             if (string.IsNullOrEmpty(rebarStr) || rebarStr == "-") return 0;
@@ -382,6 +401,9 @@ namespace DTS_Engine.Core.Algorithms
             return total;
         }
 
+        /// <summary>
+        /// Parse stirrup string to area per length.
+        /// </summary>
         public static double ParseStirrupAreaPerLen(string stirrupStr, int defaultLegs = 2)
         {
             if (string.IsNullOrEmpty(stirrupStr) || stirrupStr == "-") return 0;

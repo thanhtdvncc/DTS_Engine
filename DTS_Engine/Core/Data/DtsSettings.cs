@@ -1,4 +1,4 @@
-using System;
+﻿using System;
 using System.Collections.Generic;
 using System.IO;
 using System.Linq;
@@ -22,6 +22,14 @@ namespace DTS_Engine.Core.Data
         public BeamConfig Beam { get; set; } = new BeamConfig();
         public ColumnConfig Column { get; set; } = new ColumnConfig();
         public NamingConfig Naming { get; set; } = new NamingConfig();
+
+        /// <summary>
+        /// V4.0: Use V4 Bottom-Up Rebar Calculator as primary.
+        /// When true (default), uses V4RebarCalculator with O(N×M) complexity.
+        /// When false, uses V3 Pipeline as primary.
+        /// Fallback chain: V4 → BeamAwareOptimizer → V3 Pipeline.
+        /// </summary>
+        public bool UseV4Calculator { get; set; } = true;
 
         /// <summary>
         /// V3.5.2: Enable detailed pipeline logging for debugging.
@@ -435,7 +443,22 @@ namespace DTS_Engine.Core.Data
         /// <summary>
         /// Khoảng hở tối đa (để xét chèn kẹp thép)
         /// </summary>
-        public int MaxClearSpacing { get; set; } = 80;
+        public int MaxClearSpacing { get; set; } = 300;
+
+        /// <summary>
+        /// Khoảng hở tối thiểu giữa các lớp thép (mm)
+        /// </summary>
+        public double MinLayerSpacing { get; set; } = 25;
+
+        /// <summary>
+        /// Số thanh tối đa mỗi lớp (giới hạn cứng)
+        /// </summary>
+        public int MaxBarsPerLayer { get; set; } = 8;
+
+        /// <summary>
+        /// Trọng số điểm hiệu suất trong tổng điểm
+        /// </summary>
+        public double EfficiencyScoreWeight { get; set; } = 0.6;
 
         // ===== TORSION DISTRIBUTION (Hệ số phân bổ thép xoắn) =====
         /// <summary>
@@ -503,6 +526,25 @@ namespace DTS_Engine.Core.Data
         /// Ưu tiên ít thanh hơn (đường kính lớn) thay vì nhiều thanh nhỏ
         /// </summary>
         public bool PreferFewerBars { get; set; } = true;
+
+        /// <summary>
+        /// Đường kính thép ưu tiên (mm) cho tính điểm.
+        /// Phương án dùng đường kính này sẽ được cộng điểm.
+        /// Mặc định: 20 (D20)
+        /// </summary>
+        public int PreferredDiameter { get; set; } = 20;
+
+        /// <summary>
+        /// Ưu tiên thép Top và Bot cùng chẵn/lẻ để đai bao đều.
+        /// Khi true, phương án có nTop%2 != nBot%2 sẽ bị trừ điểm.
+        /// </summary>
+        public bool PreferVerticalAlignment { get; set; } = true;
+
+        /// <summary>
+        /// Trọng lượng thép tối đa cho phép trên 1 mét dầm (kg/m).
+        /// 0 = không giới hạn.
+        /// </summary>
+        public double MaxSteelWeightPerMeter { get; set; } = 0;
 
         // ===== CALCULATION RULES =====
         /// <summary>
@@ -1317,23 +1359,23 @@ namespace DTS_Engine.Core.Data
                 new StirrupRuleRow { BarCount = 1, RectangularLinks = "", CrossTies = "1", TotalLegs = 2 },
                 new StirrupRuleRow { BarCount = 2, RectangularLinks = "", CrossTies = "", TotalLegs = 2 },
                 new StirrupRuleRow { BarCount = 3, RectangularLinks = "", CrossTies = "", TotalLegs = 2 },
-                new StirrupRuleRow { BarCount = 4, RectangularLinks = "2-3", CrossTies = "", TotalLegs = 4 },
-                new StirrupRuleRow { BarCount = 5, RectangularLinks = "2-4", CrossTies = "", TotalLegs = 4 },
-                new StirrupRuleRow { BarCount = 6, RectangularLinks = "3-4", CrossTies = "", TotalLegs = 4 },
-                new StirrupRuleRow { BarCount = 7, RectangularLinks = "3-5", CrossTies = "", TotalLegs = 4 },
-                new StirrupRuleRow { BarCount = 8, RectangularLinks = "3-6", CrossTies = "", TotalLegs = 4 },
-                new StirrupRuleRow { BarCount = 9, RectangularLinks = "3-7", CrossTies = "5", TotalLegs = 5 },
-                new StirrupRuleRow { BarCount = 10, RectangularLinks = "3-8; 5-6", CrossTies = "", TotalLegs = 6 },
-                new StirrupRuleRow { BarCount = 11, RectangularLinks = "3-5; 7-9", CrossTies = "", TotalLegs = 6 },
-                new StirrupRuleRow { BarCount = 12, RectangularLinks = "3-5; 8-10", CrossTies = "", TotalLegs = 6 },
-                new StirrupRuleRow { BarCount = 13, RectangularLinks = "3-5; 9-11", CrossTies = "7", TotalLegs = 7 },
-                new StirrupRuleRow { BarCount = 14, RectangularLinks = "3-5; 7-8; 10-12", CrossTies = "", TotalLegs = 8 },
-                new StirrupRuleRow { BarCount = 15, RectangularLinks = "3-5; 7-9; 11-13", CrossTies = "", TotalLegs = 8 },
-                new StirrupRuleRow { BarCount = 16, RectangularLinks = "3-5; 7-10; 12-14", CrossTies = "", TotalLegs = 8 },
-                new StirrupRuleRow { BarCount = 17, RectangularLinks = "3-5; 7-11; 13-15", CrossTies = "9", TotalLegs = 9 },
-                new StirrupRuleRow { BarCount = 18, RectangularLinks = "3-5; 7-12; 9-10; 14-16", CrossTies = "", TotalLegs = 10 },
-                new StirrupRuleRow { BarCount = 19, RectangularLinks = "3-5; 7-9; 11-13; 15-17", CrossTies = "", TotalLegs = 10 },
-                new StirrupRuleRow { BarCount = 20, RectangularLinks = "3-5; 7-9; 12-14; 16-18", CrossTies = "", TotalLegs = 10 }
+                new StirrupRuleRow { BarCount = 4, RectangularLinks = "", CrossTies = "", TotalLegs = 2 },
+                new StirrupRuleRow { BarCount = 5, RectangularLinks = "", CrossTies = "", TotalLegs = 2 },
+                new StirrupRuleRow { BarCount = 6, RectangularLinks = "", CrossTies = "", TotalLegs = 2 },
+                new StirrupRuleRow { BarCount = 7, RectangularLinks = "", CrossTies = "", TotalLegs = 2 },
+                new StirrupRuleRow { BarCount = 8, RectangularLinks = "", CrossTies = "2-6; 4-8", TotalLegs = 4 },
+                new StirrupRuleRow { BarCount = 9, RectangularLinks = "", CrossTies = "2-7; 4-9", TotalLegs = 4 },
+                new StirrupRuleRow { BarCount = 10, RectangularLinks = "", CrossTies = "2-7; 4-9", TotalLegs = 4 },
+                new StirrupRuleRow { BarCount = 11, RectangularLinks = "", CrossTies = "2-8; 5-10", TotalLegs = 4 },
+                new StirrupRuleRow { BarCount = 12, RectangularLinks = "", CrossTies = "2-6; 8-12; 4-10", TotalLegs = 6 },
+                new StirrupRuleRow { BarCount = 13, RectangularLinks = "", CrossTies = "2-6; 8-12; 4-10", TotalLegs = 6 },
+                new StirrupRuleRow { BarCount = 14, RectangularLinks = "", CrossTies = "2-6; 9-13; 13-2; 6-9; 4-11", TotalLegs = 10 },
+                new StirrupRuleRow { BarCount = 15, RectangularLinks = "", CrossTies = "2-6; 9-13; 13-2; 6-9; 4-11", TotalLegs = 10 },
+                new StirrupRuleRow { BarCount = 16, RectangularLinks = "", CrossTies = "", TotalLegs = 2 },
+                new StirrupRuleRow { BarCount = 17, RectangularLinks = "", CrossTies = "", TotalLegs = 2 },
+                new StirrupRuleRow { BarCount = 18, RectangularLinks = "", CrossTies = "", TotalLegs = 2 },
+                new StirrupRuleRow { BarCount = 19, RectangularLinks = "", CrossTies = "", TotalLegs = 2 },
+                new StirrupRuleRow { BarCount = 20, RectangularLinks = "", CrossTies = "2-10; 4-18; 6-16; 8-14; 12-20", TotalLegs = 10 }
             };
         }
     }
