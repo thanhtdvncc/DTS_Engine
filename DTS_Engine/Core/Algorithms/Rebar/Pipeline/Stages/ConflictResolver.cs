@@ -51,9 +51,6 @@ namespace DTS_Engine.Core.Algorithms.Rebar.Pipeline.Stages
             var sol = ctx.CurrentSolution;
             if (sol == null) return;
 
-            int stirrupLegs = ctx.StirrupLegCount;
-            if (stirrupLegs <= 0) stirrupLegs = 2; // Minimum
-
             // Get max bars in Layer 1 from reinforcements
             int maxLayer1Top = sol.BackboneCount_Top;
             int maxLayer1Bot = sol.BackboneCount_Bot;
@@ -72,6 +69,12 @@ namespace DTS_Engine.Core.Algorithms.Rebar.Pipeline.Stages
             }
 
             int maxLayer1 = Math.Max(maxLayer1Top, maxLayer1Bot);
+
+            // V3.5.2: Use StirrupConfig.GetLegCount as SINGLE SOURCE OF TRUTH
+            // Calculate based on max bar count with addon assumption
+            bool hasAddon = sol.Reinforcements?.Any(r => r.Value.Count > 0) ?? false;
+            int stirrupLegs = ctx.Settings?.Stirrup?.GetLegCount(maxLayer1, hasAddon) ?? 2;
+            if (stirrupLegs <= 0) stirrupLegs = 2; // Minimum
 
             // Standard check: stirrup legs should match or exceed layer 1 bars
             // For 2-leg stirrup: max 2 bars at corners

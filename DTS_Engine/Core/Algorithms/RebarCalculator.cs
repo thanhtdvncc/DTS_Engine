@@ -226,39 +226,30 @@ namespace DTS_Engine.Core.Algorithms
             return maxBars < minBars ? minBars : maxBars;
         }
 
-        public static List<(int, int)> ParseAutoLegsRules(string rules)
-        {
-            var result = new List<(int, int)>();
-            if (string.IsNullOrWhiteSpace(rules)) return result;
-            var parts = rules.Split(new[] { ' ', ',' }, StringSplitOptions.RemoveEmptyEntries);
-            foreach (var part in parts)
-            {
-                var kv = part.Split('-');
-                if (kv.Length == 2 && int.TryParse(kv[0], out int w) && int.TryParse(kv[1], out int l))
-                    result.Add((w, l));
-            }
-            return result.OrderBy(x => x.Item1).ToList();
-        }
-
-
-
+        /// <summary>
+        /// V3.5.2: Get stirrup leg count using StirrupConfig as SINGLE SOURCE OF TRUTH.
+        /// Estimates bar count from beam width using density heuristic, then looks up StirrupConfig.
+        /// </summary>
         public static int GetAutoLegs(double beamWidthMm, DtsSettings settings)
         {
-            var beamCfg = settings.Beam;
-            if (beamCfg == null) return 2;
-            var rules = ParseAutoLegsRules(beamCfg.AutoLegsRules);
-            if (rules.Count == 0)
+            // V3.5.2: Use StirrupConfig.GetLegCount as primary source
+            if (settings?.Stirrup?.EnableAdvancedRules == true)
             {
-                if (beamWidthMm <= 250) return 2;
-                if (beamWidthMm <= 400) return 3;
-                if (beamWidthMm <= 600) return 4;
-                return 5;
+                // Estimate bar count from width using density heuristic
+                // Wider beams typically have more bars
+                double density = settings.Beam?.DensityHeuristic ?? 180.0;
+                int estimatedBars = Math.Max(2, (int)Math.Ceiling(beamWidthMm / density));
+
+                // For stirrup calculation, assume backbone only (no addon) as conservative estimate
+                int legs = settings.Stirrup.GetLegCount(estimatedBars, hasAddon: false);
+                if (legs > 0) return legs;
             }
-            foreach (var rule in rules)
-            {
-                if (beamWidthMm <= rule.Item1) return rule.Item2;
-            }
-            return rules.Last().Item2;
+
+            // Fallback: Width-based heuristic (when StirrupConfig unavailable)
+            if (beamWidthMm <= 250) return 2;
+            if (beamWidthMm <= 400) return 3;
+            if (beamWidthMm <= 600) return 4;
+            return 5;
         }
 
         private static string TryFindSpacing(double totalAreaPerLen, int d, int legs, List<int> spacings, int minSpacingAcceptable)

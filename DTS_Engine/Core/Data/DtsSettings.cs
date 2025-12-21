@@ -498,9 +498,12 @@ namespace DTS_Engine.Core.Data
         public bool AllowOddLegs { get; set; } = false;
 
         /// <summary>
-        /// Quy tắc tự động số nhánh theo bề rộng
+        /// DEPRECATED (V3.5.2): Use DtsSettings.Stirrup.GetLegCount() instead.
+        /// Quy tắc tự động số nhánh theo bề rộng - Kept for backward compatibility only.
         /// Format: "250-2 400-3 600-4" (b≤250→2 nhánh, b≤400→3 nhánh...)
         /// </summary>
+        [Obsolete("Use DtsSettings.Stirrup.GetLegCount(barCount, hasAddon) instead")]
+        [JsonIgnore]
         public string AutoLegsRules { get; set; } = "250-2 400-3 600-4";
 
         /// <summary>

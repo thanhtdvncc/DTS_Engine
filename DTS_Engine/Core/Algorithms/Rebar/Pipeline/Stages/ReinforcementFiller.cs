@@ -82,9 +82,8 @@ namespace DTS_Engine.Core.Algorithms.Rebar.Pipeline.Stages
             sol.As_Backbone_Bot = backboneAreaBot;
 
             ctx.CurrentSolution = sol;
-            // V3.3: Initial stirrup leg estimate uses width-based fallback
-            // Will be refined after reinforcement design when bar count is known
-            ctx.StirrupLegCount = GetStirrupLegCountByWidth(ctx.BeamWidth, settings);
+            // V3.5.2: StirrupLegCount is now calculated per-location in DesignLocation
+            // using StirrupConfig.GetLegCount(barCount, hasAddon) - No global init needed
 
             // ═══════════════════════════════════════════════════════════════
             // V3.5: EXPLICIT SPAN VALIDATION (Fail-Fast for Missing Data)
@@ -147,10 +146,16 @@ namespace DTS_Engine.Core.Algorithms.Rebar.Pipeline.Stages
                 // The Envelope Requirement at this Support (apply safety factor)
                 double maxReqTop = Math.Max(reqTopLeft, reqTopRight) * safetyFactor;
 
+                // V3.5: Calculate support width as max of adjacent spans
+                double supportWidth = 0;
+                if (i > 0 && group.Spans[i - 1] != null) supportWidth = Math.Max(supportWidth, NormalizeSpanWidth(group.Spans[i - 1].Width));
+                if (i < numSpans && group.Spans[i] != null) supportWidth = Math.Max(supportWidth, NormalizeSpanWidth(group.Spans[i].Width));
+                if (supportWidth <= 0) supportWidth = ctx.BeamWidth; // Fallback
+
                 // Design the TOP reinforcement for this specific support
                 var topSpec = DesignLocation(
                     ctx, maxReqTop, ctx.TopBackboneDiameter, ctx.TopBackboneCount,
-                    backboneAreaTop, safetyFactor, true
+                    backboneAreaTop, safetyFactor, true, supportWidth
                 );
 
                 if (topSpec == null)
@@ -182,7 +187,7 @@ namespace DTS_Engine.Core.Algorithms.Rebar.Pipeline.Stages
                 {
                     var botSpec = DesignLocation(
                         ctx, maxReqBot, ctx.BotBackboneDiameter, ctx.BotBackboneCount,
-                        backboneAreaBot, safetyFactor, false
+                        backboneAreaBot, safetyFactor, false, supportWidth // V3.5: Use support width
                     );
 
                     if (botSpec == null)
@@ -225,10 +230,14 @@ namespace DTS_Engine.Core.Algorithms.Rebar.Pipeline.Stages
                     AssignSpecToSolution(sol, supportDesignsBot[i + 1], string.Format("{0}_Bot_Right", span.SpanId));
 
                 // C. DESIGN MID-SPAN (BOTTOM - Primary)
+                // V3.5: Use actual span width for per-span stirrup leg count
+                double currentSpanWidth = NormalizeSpanWidth(span.Width);
+                if (currentSpanWidth <= 0) currentSpanWidth = ctx.BeamWidth;
+
                 double reqBotMid = GetReqArea(res, false, 1, settings) * safetyFactor;
                 var midBotSpec = DesignLocation(
                     ctx, reqBotMid, ctx.BotBackboneDiameter, ctx.BotBackboneCount,
-                    backboneAreaBot, safetyFactor, false
+                    backboneAreaBot, safetyFactor, false, currentSpanWidth
                 );
 
                 if (midBotSpec == null)
@@ -249,7 +258,7 @@ namespace DTS_Engine.Core.Algorithms.Rebar.Pipeline.Stages
                 {
                     var midTopSpec = DesignLocation(
                         ctx, reqTopMid, ctx.TopBackboneDiameter, ctx.TopBackboneCount,
-                        backboneAreaTop, safetyFactor, true
+                        backboneAreaTop, safetyFactor, true, currentSpanWidth // V3.5: Use span width
                     );
                     if (midTopSpec != null)
                         AssignSpecToSolution(sol, midTopSpec, string.Format("{0}_Top_Mid", span.SpanId));
@@ -284,7 +293,8 @@ namespace DTS_Engine.Core.Algorithms.Rebar.Pipeline.Stages
             int backboneCount,
             double backboneArea,
             double safetyFactor,
-            bool isTop)
+            bool isTop,
+            double spanWidth = 0) // V3.5: Per-span width for stirrup leg calculation
         {
             // If backbone covers requirement
             if (backboneArea >= reqArea)
@@ -294,6 +304,14 @@ namespace DTS_Engine.Core.Algorithms.Rebar.Pipeline.Stages
 
             var settings = ctx.Settings;
             bool preferSingleDiameter = settings?.Beam?.PreferSingleDiameter ?? true;
+
+            // V3.5.2: Use StirrupConfig lookup table as SINGLE SOURCE OF TRUTH
+            // Calculate estimated addon bars to determine stirrup leg count
+            double deficitArea = reqArea - backboneArea;
+            bool hasAddon = deficitArea > 0;
+            int estimatedAddon = hasAddon ? (int)Math.Ceiling(deficitArea / GetBarArea(backboneDia)) : 0;
+            int totalBarEstimate = backboneCount + Math.Min(estimatedAddon, backboneCount); // Cap at 2x backbone
+            int stirrupLegCount = settings?.Stirrup?.GetLegCount(totalBarEstimate, hasAddon) ?? 2;
 
             // V3.3: Build list of ALL diameters to try (not just larger ones)
             var availableDiameters = settings?.General?.AvailableDiameters ?? new List<int> { 12, 14, 16, 18, 20, 22, 25, 28, 32 };
@@ -390,7 +408,7 @@ namespace DTS_Engine.Core.Algorithms.Rebar.Pipeline.Stages
                         BackboneCount = backboneCount,
                         BackboneDiameter = tryDia,
                         LayerCapacity = capacity,
-                        StirrupLegCount = ctx.StirrupLegCount,
+                        StirrupLegCount = stirrupLegCount, // V3.5: Use per-span leg count
                         MaxLayers = settings?.Beam?.MaxLayers ?? 2,
                         Settings = settings,
                         Constraints = ctx.ExternalConstraints
@@ -671,59 +689,19 @@ namespace DTS_Engine.Core.Algorithms.Rebar.Pipeline.Stages
         }
 
         /// <summary>
-        /// V3.3: Get stirrup leg count using lookup table based on bar count.
-        /// Falls back to width-based rules if EnableAdvancedRules = false.
+        /// V3.5: Normalize span width to mm (handles m, cm, mm units).
         /// </summary>
-        /// <param name="barCount">Total bars in Layer 1 (backbone + addon)</param>
-        /// <param name="hasAddon">True if Layer 1 has addon bars (dense), False if backbone only (sparse)</param>
-        private static int GetStirrupLegCount(int barCount, bool hasAddon, DtsSettings settings)
+        private static double NormalizeSpanWidth(double val)
         {
-            // Use new table lookup if enabled
-            if (settings?.Stirrup?.EnableAdvancedRules == true)
-            {
-                return settings.Stirrup.GetLegCount(barCount, hasAddon);
-            }
-
-            // Fallback: Legacy width-based rules (kept for backward compatibility)
-            return 2; // Default if no rules
+            if (val <= 0) return 0;
+            if (val < 5) return val * 1000; // m -> mm (e.g. 0.4m = 400mm)
+            if (val < 100) return val * 10;  // cm -> mm (e.g. 40cm = 400mm)
+            return val; // Already mm
         }
 
-        /// <summary>
-        /// V3.3: Legacy width-based leg count (fallback only).
-        /// Kept for backward compatibility when EnableAdvancedRules = false.
-        /// </summary>
-        private static int GetStirrupLegCountByWidth(double width, DtsSettings settings)
-        {
-            string rules = settings?.Beam?.AutoLegsRules ?? "250-2 400-4 600-6";
-
-            try
-            {
-                var parsedRules = rules.Split(new[] { ' ' }, StringSplitOptions.RemoveEmptyEntries)
-                    .Select(r =>
-                    {
-                        var parts = r.Split('-');
-                        if (parts.Length == 2 && int.TryParse(parts[0], out int w) && int.TryParse(parts[1], out int l))
-                            return new { Width = w, Legs = l };
-                        return new { Width = 0, Legs = 2 };
-                    })
-                    .Where(r => r.Width > 0)
-                    .OrderBy(r => r.Width)
-                    .ToList();
-
-                foreach (var rule in parsedRules)
-                {
-                    if (width <= rule.Width) return rule.Legs;
-                }
-
-                return parsedRules.LastOrDefault()?.Legs ?? 4;
-            }
-            catch
-            {
-                if (width < 300) return 2;
-                if (width < 500) return 4;
-                return 6;
-            }
-        }
+        // V3.5.2: Removed legacy functions GetStirrupLegCount and GetStirrupLegCountByWidth
+        // StirrupConfig.GetLegCount is now the SINGLE SOURCE OF TRUTH for stirrup leg count
+        // Called directly in DesignLocation() and ConflictResolver.CheckStirrupLegConflicts()
 
         private static void CalculateSolutionMetrics(ContinuousBeamSolution sol, BeamGroup group, DtsSettings settings)
         {
