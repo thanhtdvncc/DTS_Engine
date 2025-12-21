@@ -173,6 +173,7 @@
     <Compile Include="Core\Algorithms\Rebar\Pipeline\Stages\ScenarioGenerator.cs" />
     <Compile Include="Core\Algorithms\Rebar\Pipeline\Stages\StirrupCalculator.cs" />
     <Compile Include="Core\Algorithms\Rebar\Pipeline\Stages\ConflictResolver.cs" />
+    <Compile Include="Core\Algorithms\Rebar\Pipeline\Stages\BeamAwareOptimizer.cs" />
     <Compile Include="Core\Algorithms\Rebar\Rules\IDesignRule.cs" />
     <Compile Include="Core\Algorithms\Rebar\Rules\PreferredDiameterRule.cs" />
     <Compile Include="Core\Algorithms\Rebar\Rules\PyramidRule.cs" />

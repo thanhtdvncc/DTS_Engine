@@ -105,9 +105,32 @@ namespace DTS_Engine.Core.Algorithms
                 Rebar.Utils.RebarLogger.LogPhase($"CALCULATE GROUP: {group?.GroupName ?? "?"}");
             }
 
-            // Always use V3 pipeline
-            var calculator = new RebarCalculator();
-            var results = calculator.Calculate(group, spanResults, settings);
+            List<ContinuousBeamSolution> results = null;
+
+            try
+            {
+                // V4.0: Use BeamAwareOptimizer (Branch & Bound + Local Greedy)
+                var optimizer = new Rebar.Pipeline.Stages.BeamAwareOptimizer();
+                results = optimizer.Optimize(group, spanResults, settings);
+
+                if (results != null && results.Count > 0)
+                {
+                    Rebar.Utils.RebarLogger.LogPhase($"V4.0 OPTIMIZER: Found {results.Count} solutions");
+                }
+            }
+            catch (System.Exception ex)
+            {
+                Rebar.Utils.RebarLogger.LogError($"V4.0 Optimizer failed: {ex.Message}");
+                results = null;
+            }
+
+            // Fallback to V3 pipeline if V4 fails or returns no results
+            if (results == null || results.Count == 0)
+            {
+                Rebar.Utils.RebarLogger.LogPhase("FALLBACK: Using V3 pipeline");
+                var calculator = new RebarCalculator();
+                results = calculator.Calculate(group, spanResults, settings);
+            }
 
             // V3.5.2: Open log file after calculation if enabled
             Rebar.Utils.RebarLogger.OpenLogFile();
