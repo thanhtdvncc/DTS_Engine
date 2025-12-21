@@ -371,18 +371,39 @@ namespace DTS_Engine.Core.Algorithms.Rebar.V4
             candidate.TotalScore = CalculateCandidateScore(candidate, sections, totalLength);
         }
 
+        /// <summary>
+        /// CRITICAL FIX: Tính tổng chiều dài với heuristic unit detection.
+        /// Nếu giá trị < 200, giả định là mét (m) và nhân 1000.
+        /// Nếu giá trị >= 200, giả định đã là milimet (mm).
+        /// </summary>
         private double CalculateTotalLength(BeamGroup group, List<DesignSection> sections)
         {
-            if (group?.TotalLength > 0) return group.TotalLength * 1000; // m to mm
+            double totalLen = 0;
 
-            // Estimate from spans
-            if (group?.Spans?.Count > 0)
+            if (group?.TotalLength > 0)
             {
-                return group.Spans.Sum(s => s.Length) * 1000;
+                totalLen = group.TotalLength;
+            }
+            else if (group?.Spans?.Count > 0)
+            {
+                totalLen = group.Spans.Sum(s => s.Length);
+            }
+            else
+            {
+                // Fallback: estimate 3m per section
+                return sections.Count * 3000;
             }
 
-            // Fallback
-            return sections.Count * 2000;
+            // Heuristic check: If total length is small (< 200), assume it's Meters and convert to MM.
+            // If it is large (e.g. 20000), assume it is already MM.
+            if (totalLen < 200)
+            {
+                Utils.RebarLogger.Log($"  Length unit detected: Meters ({totalLen}m) -> converting to MM");
+                return totalLen * 1000;
+            }
+
+            Utils.RebarLogger.Log($"  Length unit detected: MM ({totalLen}mm)");
+            return totalLen;
         }
 
         private double EstimateAddonWeight(
@@ -537,6 +558,9 @@ namespace DTS_Engine.Core.Algorithms.Rebar.V4
                 var spanSections = spanGroup.ToList();
                 var spanResult = BuildSpanResult(candidate, spanSections, group);
                 solution.SpanResults.Add(spanResult);
+
+                // CRITICAL FIX: Map addons to solution reinforcements
+                AddReinforcementsFromSpanResult(solution, spanResult);
             }
 
             // Calculate final metrics

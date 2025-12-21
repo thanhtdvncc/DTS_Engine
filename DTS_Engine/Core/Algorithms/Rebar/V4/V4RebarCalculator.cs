@@ -80,13 +80,13 @@ namespace DTS_Engine.Core.Algorithms.Rebar.V4
                 // === STEP 0: FAIL-FAST VALIDATION ===
                 Utils.RebarLogger.LogPhase("STEP 0: VALIDATION");
                 var validationResult = FailFastValidator.ValidateCalculatorInput(group, spanResults, _settings);
-                
+
                 if (!validationResult.IsValid)
                 {
                     Utils.RebarLogger.LogError($"Validation failed: {validationResult.Message}");
                     return CreateSingleErrorSolution(validationResult.Message);
                 }
-                
+
                 // Log warnings if any
                 if (validationResult.Warnings.Count > 0)
                 {
@@ -119,12 +119,15 @@ namespace DTS_Engine.Core.Algorithms.Rebar.V4
                 Utils.RebarLogger.LogPhase("STEP 2: LOCAL SOLVE");
                 _sectionSolver.SolveAll(sections);
 
-                // Log section results
+                // Log section results summary
+                Utils.RebarLogger.Log("");
+                Utils.RebarLogger.Log("SECTION SOLVER RESULTS (số phương án khả dụng cho mỗi section):");
                 foreach (var section in sections)
                 {
                     Utils.RebarLogger.Log($"  {section.SectionId}: " +
-                        $"TopOptions={section.ValidArrangementsTop.Count}, " +
-                        $"BotOptions={section.ValidArrangementsBot.Count}");
+                        $"Top={section.ValidArrangementsTop.Count} options, " +
+                        $"Bot={section.ValidArrangementsBot.Count} options | " +
+                        $"ReqTop={section.ReqTop:F2}cm², ReqBot={section.ReqBot:F2}cm²");
                 }
 
                 // Check if any section has no solutions

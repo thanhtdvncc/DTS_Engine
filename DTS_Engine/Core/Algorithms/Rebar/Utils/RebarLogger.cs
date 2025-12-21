@@ -276,7 +276,8 @@ namespace DTS_Engine.Core.Algorithms.Rebar.Utils
             {
                 Log($"  Diameter {group.Key}mm ({group.Count()} arrangements):");
 
-                var sorted = group.OrderByDescending(a => a.Score).Take(5);
+                // SHOW ALL (không giới hạn)
+                var sorted = group.OrderByDescending(a => a.Score);
                 foreach (var arr in sorted)
                 {
                     string config = arr.IsSingleDiameter
@@ -289,11 +290,6 @@ namespace DTS_Engine.Core.Algorithms.Rebar.Utils
                         $"Eff={arr.Efficiency:F2} | " +
                         $"Spacing={arr.ClearSpacing:F0}mm | " +
                         $"Config: {config}");
-                }
-
-                if (group.Count() > 5)
-                {
-                    Log($"    ... and {group.Count() - 5} more");
                 }
             }
         }
