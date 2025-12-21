@@ -2713,6 +2713,15 @@ namespace DTS_Engine.Commands
 
                 string spanId = group?.Spans != null && i < group.Spans.Count ? group.Spans[i].SpanId : $"S{i + 1}";
 
+                // Make sure data arrays are initialized
+                if (data.TopRebarString == null || data.TopRebarString.Length < 3) data.TopRebarString = new string[3];
+                if (data.BotRebarString == null || data.BotRebarString.Length < 3) data.BotRebarString = new string[3];
+                if (data.StirrupString == null || data.StirrupString.Length < 3) data.StirrupString = new string[3];
+                if (data.WebBarString == null || data.WebBarString.Length < 3) data.WebBarString = new string[3]; // Placeholder for SideBars
+
+                if (data.TopAreaProv == null || data.TopAreaProv.Length < 3) data.TopAreaProv = new double[3];
+                if (data.BotAreaProv == null || data.BotAreaProv.Length < 3) data.BotAreaProv = new double[3];
+
                 // Xử lý 3 vị trí: 0=Left/Start, 1=Mid, 2=Right/End
                 for (int pos = 0; pos < 3; pos++)
                 {
@@ -2728,12 +2737,7 @@ namespace DTS_Engine.Commands
                         topStr += $"+{specTop.Count}D{specTop.Diameter}";
                     }
 
-                    if (data.TopRebarString == null || data.TopRebarString.Length < 3)
-                        data.TopRebarString = new string[3];
                     data.TopRebarString[pos] = topStr;
-
-                    if (data.TopAreaProv == null || data.TopAreaProv.Length < 3)
-                        data.TopAreaProv = new double[3];
                     data.TopAreaProv[pos] = RebarCalculator.ParseRebarArea(topStr);
 
                     // --- XỬ LÝ BOT ---
@@ -2747,24 +2751,36 @@ namespace DTS_Engine.Commands
                         botStr += $"+{specBot.Count}D{specBot.Diameter}";
                     }
 
-                    if (data.BotRebarString == null || data.BotRebarString.Length < 3)
-                        data.BotRebarString = new string[3];
                     data.BotRebarString[pos] = botStr;
-
-                    if (data.BotAreaProv == null || data.BotAreaProv.Length < 3)
-                        data.BotAreaProv = new double[3];
                     data.BotAreaProv[pos] = RebarCalculator.ParseRebarArea(botStr);
+
+                    // --- XỬ LÝ STIRRUP [NEW] ---
+                    // Keys: _Stirrup_Left, _Stirrup_Mid, _Stirrup_Right
+                    // Fallback to _Governing or default logic if needed
+                    string keyStir = $"{spanId}_Stirrup_{posName}";
+                    string stirStr = "";
+
+                    if (sol.StirrupDesigns != null)
+                    {
+                        if (sol.StirrupDesigns.TryGetValue(keyStir, out var s))
+                            stirStr = s;
+                        else if (sol.StirrupDesigns.TryGetValue($"{spanId}_Stirrup_Governing", out var gov))
+                            stirStr = gov;
+                    }
+
+                    data.StirrupString[pos] = stirStr;
+                    // WebBarString logic pending (Torsion stage unimplemented) - leaving existing or empty
+                    // data.WebBarString[pos] = ""; 
                 }
 
-                // Update XData
-                // XData-first: update only Top/Bot solution keys (keep existing Stirrup/Web if any)
+                // Update XData (FULL SYNC)
                 XDataUtils.UpdateBeamSolutionXData(
                     obj,
                     tr,
                     data.TopRebarString,
                     data.BotRebarString,
-                    null,
-                    null,
+                    data.StirrupString, // Pass updated StirrupString
+                    data.WebBarString,  // Pass WebBarString (even if empty)
                     group?.GroupName,
                     group?.GroupType);
 
