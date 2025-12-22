@@ -175,6 +175,15 @@ namespace DTS_Engine.Core.Algorithms.Rebar.V4
                 }
 
                 Utils.RebarLogger.LogPhase("V4 COMPLETE");
+
+                // CRITICAL: Apply the best solution to SpanData for Viewer sync
+                // This ensures Requirements and Rebar are correctly populated in SpanData
+                if (solutions.Count > 0 && solutions[0].IsValid)
+                {
+                    ApplySolutionToGroup(group, solutions[0]);
+                    Utils.RebarLogger.Log($"Applied best solution [{solutions[0].OptionName}] to SpanData");
+                }
+
                 return solutions;
             }
             catch (Exception ex)
@@ -214,17 +223,68 @@ namespace DTS_Engine.Core.Algorithms.Rebar.V4
             int backboneDiaTop = solution.BackboneDiameter_Top > 0 ? solution.BackboneDiameter_Top : solution.BackboneDiameter;
             int backboneDiaBot = solution.BackboneDiameter_Bot > 0 ? solution.BackboneDiameter_Bot : solution.BackboneDiameter;
 
+            // DEBUG: Log mapping
+            Utils.RebarLogger.Log($"\n[ApplySolutionToGroup] Mapping {solution.SpanResults?.Count ?? 0} SpanResults to {group.Spans.Count} Spans");
+
             // 2. Iterate through SpanResults if available
             if (solution.SpanResults != null && solution.SpanResults.Count > 0)
             {
                 foreach (var spanResult in solution.SpanResults)
                 {
-                    var span = group.Spans.FirstOrDefault(s => s.SpanId == spanResult.SpanId);
+                    // CRITICAL FIX: Match by SpanId OR by SpanIndex
+                    // SpanId matching takes priority
+                    SpanData span = null;
+                    
+                    // Try match by SpanId first
+                    if (!string.IsNullOrEmpty(spanResult.SpanId))
+                    {
+                        span = group.Spans.FirstOrDefault(s => s.SpanId == spanResult.SpanId);
+                    }
+                    
+                    // Fallback to SpanIndex if SpanId match failed
                     if (span == null && spanResult.SpanIndex >= 0 && spanResult.SpanIndex < group.Spans.Count)
                     {
                         span = group.Spans[spanResult.SpanIndex];
+                        
+                        // DEBUG: Log when using index fallback
+                        Utils.RebarLogger.Log($"  [WARN] SpanId '{spanResult.SpanId}' not found, using index {spanResult.SpanIndex} -> span '{span?.SpanId}'");
                     }
-                    if (span == null) continue;
+                    
+                    if (span == null) 
+                    {
+                        Utils.RebarLogger.Log($"  [ERROR] Could not match SpanResult SpanId='{spanResult.SpanId}' Index={spanResult.SpanIndex}");
+                        continue;
+                    }
+
+                    // DEBUG: Log successful match
+                    Utils.RebarLogger.Log($"  SpanResult[{spanResult.SpanId}] idx={spanResult.SpanIndex} -> Span[{span.SpanId}] idx={span.SpanIndex}");
+
+                    // Initialize arrays if needed
+                    if (span.As_Top == null || span.As_Top.Length < 6) span.As_Top = new double[6];
+                    if (span.As_Bot == null || span.As_Bot.Length < 6) span.As_Bot = new double[6];
+
+                    // SYNC REQUIREMENTS (Critical Fix for Viewer Mismatch)
+                    // Map 3 zones to 6-element array:
+                    // Zones: [0]=Left, [1]=Mid, [2]=Right
+                    // Positions: 0,1=Left; 2,3=Mid; 4,5=Right
+                    if (spanResult.ReqTop != null && spanResult.ReqTop.Length >= 3)
+                    {
+                        span.As_Top[0] = spanResult.ReqTop[0];
+                        span.As_Top[1] = spanResult.ReqTop[0];
+                        span.As_Top[2] = spanResult.ReqTop[1];
+                        span.As_Top[3] = spanResult.ReqTop[1];
+                        span.As_Top[4] = spanResult.ReqTop[2];
+                        span.As_Top[5] = spanResult.ReqTop[2];
+                    }
+                    if (spanResult.ReqBot != null && spanResult.ReqBot.Length >= 3)
+                    {
+                        span.As_Bot[0] = spanResult.ReqBot[0];
+                        span.As_Bot[1] = spanResult.ReqBot[0];
+                        span.As_Bot[2] = spanResult.ReqBot[1];
+                        span.As_Bot[3] = spanResult.ReqBot[1];
+                        span.As_Bot[4] = spanResult.ReqBot[2];
+                        span.As_Bot[5] = spanResult.ReqBot[2];
+                    }
 
                     // Apply backbone
                     span.TopBackbone = spanResult.TopBackbone ?? new RebarInfo
@@ -503,17 +563,16 @@ namespace DTS_Engine.Core.Algorithms.Rebar.V4
             }
             else
             {
-                // Tạo từ spanResults
+                // Lấy từ results
                 for (int i = 0; i < spanResults.Count; i++)
                 {
                     var result = spanResults[i];
-
                     infos.Add(new SpanInfo
                     {
-                        SpanId = $"S{i + 1}",
-                        Length = 5.0, // Default 5m
-                        Width = NormalizeToMm(result?.Width ?? group?.Width ?? 300),
-                        Height = NormalizeToMm(result?.SectionHeight ?? group?.Height ?? 500)
+                        SpanId = $"S{i + 1}", // BeamResultData has no SpanId, use index
+                        Length = 5.0, // Default length
+                        Width = NormalizeToMm(result.Width > 0 ? result.Width : group.Width),
+                        Height = NormalizeToMm(result.SectionHeight > 0 ? result.SectionHeight : group.Height)
                     });
                 }
             }

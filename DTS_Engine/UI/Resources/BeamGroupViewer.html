@@ -1503,7 +1503,7 @@
             if (!currentGroup?.Spans?.length || !opt) return;
 
             // V3.4.2: Dynamic MaxLayers from settings
-            const maxLayers = data.settings?.Beam?.MaxLayers || 3;
+            const maxLayers = data.settings?.MaxLayers || 2;
 
             // V3.4.1: Use separate Top/Bot backbone diameters
             const topDia = opt.BackboneDiameter_Top || opt.BackboneDiameter;
@@ -1603,6 +1603,14 @@
                 const updated = (typeof groupJson === 'string') ? JSON.parse(groupJson) : groupJson;
                 if (!data.groups || groupIndex < 0 || groupIndex >= data.groups.length) return;
                 data.groups[groupIndex] = updated;
+
+                // DEBUG: Inspect Received Data
+                console.log(`[onGroupUpdated] Received Group ${groupIndex}`, updated);
+                if (updated.Spans) {
+                    updated.Spans.forEach((s, i) => {
+                        console.log(`Span[${i}] ID=${s.SpanId} As_Top=${JSON.stringify(s.As_Top)}`);
+                    });
+                }
 
                 if (currentGroupIndex === groupIndex) {
                     currentGroup = updated;
@@ -1978,8 +1986,8 @@
 
             if (!currentGroup?.Spans) return;
 
-            // V3.4.2: Get MaxLayers from settings.Beam.MaxLayers (dynamic)
-            const maxLayers = data.settings?.Beam?.MaxLayers || 3;
+            // V3.4.2: Get MaxLayers from settings
+            const maxLayers = data.settings?.MaxLayers || 2;
 
             currentGroup.Spans.forEach((span, spanIdx) => {
                 // Create n rows for each span (n = maxLayers)

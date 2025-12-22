@@ -231,6 +231,9 @@ namespace DTS_Engine.Core.Algorithms.Rebar.Utils
         /// <summary>
         /// Open the log file in default text editor (Notepad, etc.)
         /// </summary>
+        /// <summary>
+        /// Open the log file in default text editor (Notepad, etc.)
+        /// </summary>
         public static void OpenLogFile()
         {
             if (!IsEnabled || string.IsNullOrEmpty(_logPath) || !File.Exists(_logPath))
@@ -238,13 +241,22 @@ namespace DTS_Engine.Core.Algorithms.Rebar.Utils
 
             try
             {
-                Process.Start(new ProcessStartInfo
-                {
-                    FileName = _logPath,
-                    UseShellExecute = true
-                });
+                // Force open with Notepad to avoid "no association" errors
+                Process.Start("notepad.exe", _logPath);
             }
-            catch { /* Ignore if cannot open */ }
+            catch (Exception ex)
+            {
+                // Fallback to default shell execute if notepad fails
+                try
+                {
+                    Process.Start(new ProcessStartInfo
+                    {
+                        FileName = _logPath,
+                        UseShellExecute = true
+                    });
+                }
+                catch { /* Give up */ }
+            }
         }
 
         public static void Clear()

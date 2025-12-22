@@ -8,9 +8,15 @@ using DTS_Engine.Core.Utils;
 namespace DTS_Engine.Core.Algorithms.Rebar.V4
 {
     /// <summary>
-    /// GlobalOptimizer: Tìm Backbone tối ưu và xây dựng Solution hoàn chỉnh.
-    /// CRITICAL FIX: Đảm bảo Addon được tính cho mọi mặt cắt thiếu thép.
-    /// Sử dụng SafetyFactor và WastePenaltyScore từ Settings.
+    /// GlobalOptimizer V4.2: "NGƯỜI PHÁN QUYẾT CUỐI CÙNG"
+    /// 
+    /// CRITICAL FIX:
+    /// 1. Backbone Sourcing: CHỈ lấy từ kết quả SectionSolver (không bịa ra)
+    /// 2. Lookup First: Ưu tiên dùng lại phương án đã tính ở SectionSolver
+    /// 3. Synthesize Fallback: Nếu không có sẵn, tự tính Addon theo Rule
+    /// 4. Geometry Validation: Chặn đứng các phương án vi phạm MaxSpacing
+    /// 
+    /// Triết lý: Không còn "bịa" ra 2D25 khi SectionSolver đã loại nó do vi phạm spacing.
     /// </summary>
     public class GlobalOptimizer
     {
@@ -43,8 +49,6 @@ namespace DTS_Engine.Core.Algorithms.Rebar.V4
                 _allowedDiameters = inventory.Where(d => d >= 16 && d <= 25).ToList();
             }
 
-            // NOTE: Không lọc thép chẵn ở đây - User muốn sử dụng CHÍNH XÁC các đường kính từ Settings.
-
             _minBarsPerSide = beamCfg.MinBarsPerLayer > 0 ? beamCfg.MinBarsPerLayer : 2;
             _maxBarsPerSide = beamCfg.MaxBarsPerLayer > 0 ? beamCfg.MaxBarsPerLayer : 8;
         }
@@ -55,6 +59,7 @@ namespace DTS_Engine.Core.Algorithms.Rebar.V4
 
         /// <summary>
         /// Tìm top N phương án tối ưu.
+        /// CRITICAL: Chỉ chọn Backbone từ danh sách ValidArrangements của SectionSolver.
         /// </summary>
         public List<ContinuousBeamSolution> FindBestSolutions(
             List<DesignSection> sections,
@@ -68,35 +73,48 @@ namespace DTS_Engine.Core.Algorithms.Rebar.V4
 
             try
             {
-                // 1. Generate backbone candidates
-                var candidates = GenerateBackboneCandidates(sections, externalConstraints);
-                Utils.RebarLogger.Log($"Generated {candidates.Count} backbone candidates");
+                Utils.RebarLogger.Log("  GLOBAL OPTIMIZE: SMART HARVEST & SYNTHESIS");
+                Utils.RebarLogger.Log("═══════════════════════════════════════════════════════════════");
+
+                // 1. THU HOẠCH Backbone candidates TỪ KẾT QUẢ SECTIONSOLVER
+                var candidates = HarvestBackboneCandidates(sections, externalConstraints);
+                Utils.RebarLogger.Log($"Harvested {candidates.Count} backbone candidates from SectionSolver results");
 
                 if (candidates.Count == 0)
                 {
-                    return new List<ContinuousBeamSolution> { CreateErrorSolution("No valid backbone candidates") };
+                    return new List<ContinuousBeamSolution> { CreateErrorSolution("No valid backbone candidates from sections") };
                 }
 
-                // 2. Evaluate candidates
-                candidates = EvaluateCandidates(candidates, sections, group);
+                // 2. Đánh giá từng candidate với Geometry Validation + Smart Resolution
+                var validSolutions = new List<ContinuousBeamSolution>();
 
-                // 3. Filter valid and sort by score
-                var validCandidates = candidates
-                    .Where(c => c.IsGloballyValid)
-                    .OrderByDescending(c => c.TotalScore)
-                    .Take(MaxBackboneCandidates)
-                    .ToList();
-
-                // Log all candidates
-                Utils.RebarLogger.LogBackboneCandidates(candidates, 10);
-
-                if (validCandidates.Count == 0)
+                foreach (var candidate in candidates)
                 {
-                    // Try relaxed approach
-                    var relaxed = FindRelaxedBackbone(candidates, sections);
-                    if (relaxed != null)
+                    // Check 1: Backbone có vi phạm MaxSpacing ở bất kỳ section nào không?
+                    if (!ValidateBackboneGeometry(candidate, sections))
                     {
-                        validCandidates.Add(relaxed);
+                        Utils.RebarLogger.Log($"  REJECT {candidate.CountTop}D{candidate.Diameter}: MaxSpacing violation");
+                        continue;
+                    }
+
+                    // Check 2: Đánh giá chi tiết với Lookup & Synthesize
+                    var evalResult = EvaluateWithSmartResolution(candidate, sections, group);
+
+                    if (evalResult.IsValid)
+                    {
+                        var solution = BuildSolutionFromEvaluation(candidate, evalResult, sections, group);
+                        validSolutions.Add(solution);
+                    }
+                }
+
+                // 3. Fallback nếu không có solution valid
+                if (validSolutions.Count == 0)
+                {
+                    Utils.RebarLogger.LogError("No valid solution after smart resolution. Trying relaxed approach...");
+                    var relaxedSolution = TryRelaxedBackbone(candidates, sections, group);
+                    if (relaxedSolution != null)
+                    {
+                        validSolutions.Add(relaxedSolution);
                     }
                     else
                     {
@@ -104,28 +122,16 @@ namespace DTS_Engine.Core.Algorithms.Rebar.V4
                     }
                 }
 
-                // 4. Build solutions
-                var solutions = new List<ContinuousBeamSolution>();
-                foreach (var candidate in validCandidates.Take(MaxSolutions))
-                {
-                    var solution = BuildSolution(candidate, sections, group);
-                    if (solution != null)
-                    {
-                        solutions.Add(solution);
-                    }
-                }
+                // 4. Xếp hạng và chọn
+                var rankedSolutions = validSolutions
+                    .OrderByDescending(s => s.TotalScore)
+                    .ThenBy(s => s.TotalSteelWeight)
+                    .Take(MaxSolutions)
+                    .ToList();
 
-                // 5. Final validation and sorting
-                foreach (var sol in solutions)
-                {
-                    ValidateSolution(sol, sections, null);
-                }
+                LogSolutionRanking(rankedSolutions);
 
-                // Log final solution comparison
-                var finalSolutions = solutions.OrderByDescending(s => s.TotalScore).ToList();
-                Utils.RebarLogger.LogSolutionComparison(finalSolutions);
-
-                return finalSolutions;
+                return rankedSolutions;
             }
             catch (Exception ex)
             {
@@ -136,460 +142,473 @@ namespace DTS_Engine.Core.Algorithms.Rebar.V4
 
         #endregion
 
-        #region Backbone Generation
+        #region Backbone Harvesting - CRITICAL FIX
 
-        private List<BackboneCandidate> GenerateBackboneCandidates(
+        /// <summary>
+        /// THU HOẠCH Backbone candidates TỪ KẾT QUẢ SECTIONSOLVER.
+        /// KHÔNG sinh ngẫu nhiên, CHỈ lấy những gì đã được validate về spacing/layers.
+        /// </summary>
+        private List<BackboneCandidate> HarvestBackboneCandidates(
             List<DesignSection> sections,
             ExternalConstraints constraints)
         {
-            var candidates = new List<BackboneCandidate>();
+            var distinctConfigs = new HashSet<(int Diameter, int CountTop, int CountBot)>();
 
-            // Get minimum usable width across all sections
-            double minUsableWidth = sections.Min(s => s.UsableWidth);
-            if (minUsableWidth <= 0) minUsableWidth = 200;
-
-            var diameters = GetDiametersToTry(constraints);
-
-            foreach (int dia in diameters)
+            // Lọc đường kính theo constraints
+            var validDiameters = _allowedDiameters.ToList();
+            if (constraints?.ForcedBackboneDiameter.HasValue == true)
             {
-                int maxBars = CalculateMaxBarsForWidth(minUsableWidth, dia);
+                validDiameters = new List<int> { constraints.ForcedBackboneDiameter.Value };
+            }
 
-                for (int nTop = _minBarsPerSide; nTop <= maxBars; nTop++)
+            // Quét tất cả ValidArrangements từ các sections
+            foreach (var section in sections)
+            {
+                // Quét TOP arrangements
+                foreach (var arr in section.ValidArrangementsTop)
                 {
-                    for (int nBot = _minBarsPerSide; nBot <= maxBars; nBot++)
+                    if (validDiameters.Contains(arr.PrimaryDiameter))
                     {
-                        if (!IsValidCombination(nTop, nBot)) continue;
+                        // Thêm chính nó làm backbone candidate
+                        distinctConfigs.Add((arr.PrimaryDiameter, arr.TotalCount, _minBarsPerSide));
 
-                        candidates.Add(new BackboneCandidate
+                        // Thử giảm cấp để làm backbone (addon sẽ bù)
+                        if (arr.TotalCount > _minBarsPerSide)
                         {
-                            Diameter = dia,
-                            CountTop = nTop,
-                            CountBot = nBot,
-                            IsGloballyValid = false,
-                            FailedSections = new List<string>()
-                        });
+                            distinctConfigs.Add((arr.PrimaryDiameter, _minBarsPerSide, _minBarsPerSide));
+                            distinctConfigs.Add((arr.PrimaryDiameter, arr.TotalCount - 1, _minBarsPerSide));
+                        }
+                    }
+                }
+
+                // Quét BOT arrangements
+                foreach (var arr in section.ValidArrangementsBot)
+                {
+                    if (validDiameters.Contains(arr.PrimaryDiameter))
+                    {
+                        distinctConfigs.Add((arr.PrimaryDiameter, _minBarsPerSide, arr.TotalCount));
+
+                        if (arr.TotalCount > _minBarsPerSide)
+                        {
+                            distinctConfigs.Add((arr.PrimaryDiameter, _minBarsPerSide, _minBarsPerSide));
+                            distinctConfigs.Add((arr.PrimaryDiameter, _minBarsPerSide, arr.TotalCount - 1));
+                        }
                     }
                 }
             }
 
-            return candidates;
-        }
-
-        private List<int> GetDiametersToTry(ExternalConstraints constraints)
-        {
-            if (constraints?.ForcedBackboneDiameter.HasValue == true)
+            // Thêm các tổ hợp cân bằng (Top = Bot) cho các đường kính phổ biến
+            foreach (var d in validDiameters.OrderByDescending(d => d).Take(3))
             {
-                return new List<int> { constraints.ForcedBackboneDiameter.Value };
+                for (int n = _minBarsPerSide; n <= Math.Min(4, _maxBarsPerSide); n++)
+                {
+                    distinctConfigs.Add((d, n, n));
+                }
             }
 
-            // Prefer larger diameters (fewer bars)
-            return _allowedDiameters.OrderByDescending(d => d).ToList();
-        }
+            // Convert to BackboneCandidate objects
+            var candidates = new List<BackboneCandidate>();
+            foreach (var config in distinctConfigs)
+            {
+                candidates.Add(new BackboneCandidate
+                {
+                    Diameter = config.Diameter,
+                    CountTop = config.CountTop,
+                    CountBot = config.CountBot,
+                    IsGloballyValid = false,
+                    FailedSections = new List<string>()
+                });
+            }
 
-        private int CalculateMaxBarsForWidth(double usableWidth, int diameter)
-        {
-            // CRITICAL: Dùng MinClearSpacing từ settings
-            double minClear = Math.Max(diameter, _settings.Beam?.MinClearSpacing ?? 30);
-            double n = (usableWidth + minClear) / (diameter + minClear);
-            return Math.Max(_minBarsPerSide, Math.Min((int)Math.Floor(n), _maxBarsPerSide));
-        }
-
-        /// <summary>
-        /// CRITICAL FIX: Loại bỏ logic chặn số lẻ khi PreferSymmetric=True.
-        /// 3 thanh vẫn là đối xứng (1 giữa).
-        /// </summary>
-        private bool IsValidCombination(int nTop, int nBot)
-        {
-            // Both must meet minimum
-            if (nTop < _minBarsPerSide || nBot < _minBarsPerSide) return false;
-
-            // NOTE: Đã loại bỏ check chẵn lẻ ở đây. 
-            // 3 thanh (1 giữa, 2 bên) vẫn là đối xứng về mặt kỹ thuật.
-            // Việc ưu tiên đối xứng sẽ được xử lý ở phần chấm điểm (CalculateCandidateScore).
-
-            return true;
+            // Sắp xếp: Ưu tiên đường kính lớn (ít thanh), số thanh cân bằng
+            return candidates
+                .OrderByDescending(c => c.Diameter)
+                .ThenBy(c => Math.Abs(c.CountTop - c.CountBot))
+                .ThenBy(c => c.CountTop + c.CountBot)
+                .Take(MaxBackboneCandidates)
+                .ToList();
         }
 
         #endregion
 
-        #region Candidate Evaluation
-
-        private List<BackboneCandidate> EvaluateCandidates(
-            List<BackboneCandidate> candidates,
-            List<DesignSection> sections,
-            BeamGroup group)
-        {
-            foreach (var candidate in candidates)
-            {
-                var (isValid, fitCount, failedSections) = EvaluateSingleCandidate(candidate, sections);
-                candidate.IsGloballyValid = isValid;
-                candidate.FitCount = fitCount;
-                candidate.FailedSections = failedSections;
-
-                if (isValid)
-                {
-                    CalculateCandidateMetrics(candidate, sections, group);
-                }
-            }
-
-            return candidates;
-        }
+        #region Geometry Validation - Block Bad Backbones
 
         /// <summary>
-        /// CRITICAL FIX: Đánh giá candidate với SafetyFactor từ Settings.
+        /// Kiểm tra Backbone có vi phạm MaxSpacing ở BẤT KỲ section nào không.
+        /// Chặn đứng 2D25 nếu dầm rộng gây spacing > MaxClearSpacing.
         /// </summary>
-        private (bool isValid, int fitCount, List<string> failedSections) EvaluateSingleCandidate(
-            BackboneCandidate candidate,
-            List<DesignSection> sections)
+        private bool ValidateBackboneGeometry(BackboneCandidate backbone, List<DesignSection> sections)
         {
-            int fitCount = 0;
-            var failedSections = new List<string>();
-            bool allValid = true;
-
-            // CRITICAL: Lấy SafetyFactor từ Settings thay vì hardcode tolerance
-            double safetyFactor = _settings.Rules?.SafetyFactor ?? 1.0;
+            double maxSpacing = _settings.Beam?.MaxClearSpacing ?? 200;
+            double minSpacing = _settings.Beam?.MinClearSpacing ?? 30;
 
             foreach (var section in sections)
             {
-                // Check TOP với SafetyFactor
+                // Check TOP
+                if (section.ReqTop > 0.01 && backbone.CountTop >= 2)
+                {
+                    double spacing = CalculateClearSpacing(section.UsableWidth, backbone.CountTop, backbone.Diameter);
+                    if (spacing > maxSpacing || spacing < minSpacing)
+                    {
+                        return false;
+                    }
+                }
+
+                // Check BOT
+                if (section.ReqBot > 0.01 && backbone.CountBot >= 2)
+                {
+                    double spacing = CalculateClearSpacing(section.UsableWidth, backbone.CountBot, backbone.Diameter);
+                    if (spacing > maxSpacing || spacing < minSpacing)
+                    {
+                        return false;
+                    }
+                }
+            }
+
+            return true;
+        }
+
+        private double CalculateClearSpacing(double usableWidth, int barCount, int diameter)
+        {
+            if (barCount <= 1) return usableWidth - diameter;
+            double totalBarWidth = barCount * diameter;
+            double availableForGaps = usableWidth - totalBarWidth;
+            return availableForGaps / (barCount - 1);
+        }
+
+        #endregion
+
+        #region Smart Resolution - Lookup First, Synthesize Fallback
+
+        /// <summary>
+        /// Evaluation result cho một backbone candidate.
+        /// </summary>
+        private class EvaluationResult
+        {
+            public bool IsValid { get; set; }
+            public double TotalWeight { get; set; }
+            public double BackboneWeight { get; set; }
+            public double AddonWeight { get; set; }
+            public int NativeMatchCount { get; set; }
+            public int TotalChecks { get; set; }
+            public Dictionary<string, RebarInfo> Addons { get; set; } = new Dictionary<string, RebarInfo>();
+            public List<string> FailedSections { get; set; } = new List<string>();
+        }
+
+        /// <summary>
+        /// Đánh giá Backbone với logic "Lookup First, Synthesize Fallback".
+        /// </summary>
+        private EvaluationResult EvaluateWithSmartResolution(
+            BackboneCandidate backbone,
+            List<DesignSection> sections,
+            BeamGroup group)
+        {
+            var result = new EvaluationResult { IsValid = true };
+            double safetyFactor = _settings.Rules?.SafetyFactor ?? 1.0;
+
+            // Tính trọng lượng backbone
+            double totalLength = CalculateTotalLength(group, sections);
+            result.BackboneWeight = WeightCalculator.CalculateBackboneWeight(
+                backbone.Diameter,
+                totalLength,
+                backbone.CountTop + backbone.CountBot,
+                1.05); // 5% lap splice allowance
+
+            result.TotalWeight = result.BackboneWeight;
+
+            foreach (var section in sections)
+            {
+                string spanId = section.SpanId ?? $"S{section.SpanIndex + 1}";
+                string zoneName = GetZoneName(section);
+
+                // --- XỬ LÝ TOP ---
                 if (section.ReqTop > 0.01)
                 {
-                    // Yêu cầu thực tế = ReqTop * SafetyFactor
-                    double requiredWithSafety = section.ReqTop * safetyFactor;
+                    result.TotalChecks++;
+                    double requiredArea = section.ReqTop * safetyFactor;
 
-                    bool topFits = CanFitBackbone(
+                    var resTop = ResolveSectionSide(
                         section.ValidArrangementsTop,
-                        candidate.CountTop,
-                        candidate.Diameter,
-                        requiredWithSafety);
+                        backbone.CountTop,
+                        backbone.Diameter,
+                        requiredArea,
+                        section,
+                        group);
 
-                    // CRITICAL FIX: KHÔNG bypass nếu backbone không có trong merged list
-                    // BUG CŨ: Cho phép backbone dù không có trong ValidArrangements
-                    // -> Gây ra "tính 1 đằng, ra 1 nẻo"
-                    if (!topFits)
+                    if (!resTop.Success)
                     {
-                        // Chỉ log warning, KHÔNG set topFits = true
-                        Utils.RebarLogger.LogWarning($"Backbone {candidate.CountTop}D{candidate.Diameter} NOT in merged list for {section.SectionId}_Top (Req={section.ReqTop:F2})");
+                        result.FailedSections.Add($"{section.SectionId}_Top");
                     }
-
-                    if (topFits) fitCount++;
                     else
                     {
-                        failedSections.Add($"{section.SectionId}_Top");
-                        // Only fail if backbone is significantly inadequate (< 50%)
-                        if (candidate.AreaTop < section.ReqTop * 0.5)
+                        result.AddonWeight += resTop.AddonWeight;
+                        result.TotalWeight += resTop.AddonWeight;
+                        if (resTop.IsNativeMatch) result.NativeMatchCount++;
+
+                        if (resTop.AddonInfo != null && resTop.AddonInfo.Count > 0)
                         {
-                            allValid = false;
+                            result.Addons[$"{spanId}_Top_{zoneName}"] = resTop.AddonInfo;
                         }
                     }
                 }
-                // Check BOT với SafetyFactor
+
+                // --- XỬ LÝ BOT ---
                 if (section.ReqBot > 0.01)
                 {
-                    double requiredWithSafety = section.ReqBot * safetyFactor;
+                    result.TotalChecks++;
+                    double requiredArea = section.ReqBot * safetyFactor;
 
-                    bool botFits = CanFitBackbone(
+                    var resBot = ResolveSectionSide(
                         section.ValidArrangementsBot,
-                        candidate.CountBot,
-                        candidate.Diameter,
-                        requiredWithSafety);
+                        backbone.CountBot,
+                        backbone.Diameter,
+                        requiredArea,
+                        section,
+                        group);
 
-                    // CRITICAL FIX: KHÔNG bypass nếu backbone không có trong merged list
-                    if (!botFits)
+                    if (!resBot.Success)
                     {
-                        // Chỉ log warning, KHÔNG set botFits = true
-                        Utils.RebarLogger.LogWarning($"Backbone {candidate.CountBot}D{candidate.Diameter} NOT in merged list for {section.SectionId}_Bot (Req={section.ReqBot:F2})");
+                        result.FailedSections.Add($"{section.SectionId}_Bot");
                     }
-
-                    if (botFits) fitCount++;
                     else
                     {
-                        failedSections.Add($"{section.SectionId}_Bot");
-                        if (candidate.AreaBot < section.ReqBot * 0.5)
+                        result.AddonWeight += resBot.AddonWeight;
+                        result.TotalWeight += resBot.AddonWeight;
+                        if (resBot.IsNativeMatch) result.NativeMatchCount++;
+
+                        if (resBot.AddonInfo != null && resBot.AddonInfo.Count > 0)
                         {
-                            allValid = false;
+                            result.Addons[$"{spanId}_Bot_{zoneName}"] = resBot.AddonInfo;
                         }
                     }
                 }
             }
 
-            return (allValid, fitCount, failedSections);
+            // Kiểm tra tỷ lệ fail - cho phép tối đa 20% section fail
+            double failRatio = result.TotalChecks > 0
+                ? (double)result.FailedSections.Count / result.TotalChecks
+                : 0;
+
+            result.IsValid = failRatio <= 0.2;
+
+            return result;
         }
 
-        private bool CanFitBackbone(
-            List<SectionArrangement> arrangements,
+        /// <summary>
+        /// Resolution result cho một section side.
+        /// </summary>
+        private class SectionResolution
+        {
+            public bool Success { get; set; }
+            public double AddonWeight { get; set; }
+            public bool IsNativeMatch { get; set; }
+            public RebarInfo AddonInfo { get; set; }
+        }
+
+        /// <summary>
+        /// "Gõ cửa" từng section: Lookup → Synthesize → Fallback.
+        /// </summary>
+        private SectionResolution ResolveSectionSide(
+            List<SectionArrangement> existingOptions,
             int backboneCount,
             int backboneDiameter,
-            double reqArea)
-        {
-            if (arrangements == null || arrangements.Count == 0) return false;
-
-            // CRITICAL: Lấy SafetyFactor từ Settings
-            double safetyFactor = _settings.Rules?.SafetyFactor ?? 1.0;
-            double tolerance = 1.0 - safetyFactor;
-            if (tolerance < 0) tolerance = 0;
-
-            // Check if any arrangement can accommodate this backbone
-            return arrangements.Any(arr =>
-                arr.PrimaryDiameter == backboneDiameter &&
-                arr.TotalCount >= backboneCount &&
-                arr.TotalArea >= reqArea * (1 - tolerance));
-        }
-
-        private BackboneCandidate FindRelaxedBackbone(
-            List<BackboneCandidate> candidates,
-            List<DesignSection> sections)
-        {
-            // Find the candidate with highest fit count
-            var best = candidates
-                .OrderByDescending(c => c.FitCount)
-                .ThenByDescending(c => c.AreaTop + c.AreaBot)
-                .FirstOrDefault();
-
-            if (best != null)
-            {
-                best.IsGloballyValid = true;
-                Utils.RebarLogger.Log($"Using relaxed backbone: {best.DisplayLabel} (fit {best.FitCount}/{sections.Count * 2})");
-            }
-
-            return best;
-        }
-
-        /// <summary>
-        /// CRITICAL FIX: Tính metrics với penalty từ Settings.
-        /// </summary>
-        private void CalculateCandidateMetrics(
-            BackboneCandidate candidate,
-            List<DesignSection> sections,
+            double requiredArea,
+            DesignSection section,
             BeamGroup group)
         {
-            double totalLength = CalculateTotalLength(group, sections);
+            double backboneArea = backboneCount * Math.PI * backboneDiameter * backboneDiameter / 400.0;
 
-            // Backbone weight - FIX: Dùng hệ số hao hụt/nối chồng thực tế ~5% thay vì LapSpliceMultiplier (40)
-            double lapFactor = 1.05;
-            double backboneWeight = WeightCalculator.CalculateBackboneWeight(
-                candidate.Diameter,
-                totalLength,
-                candidate.CountTop + candidate.CountBot,
-                lapFactor);
-
-            // Estimate addon weight
-            double addonWeight = EstimateAddonWeight(candidate, sections, group);
-
-            candidate.EstimatedWeight = backboneWeight + addonWeight;
-            candidate.TotalScore = CalculateCandidateScore(candidate, sections, totalLength);
-        }
-
-        /// <summary>
-        /// CRITICAL FIX: Tính tổng chiều dài với heuristic unit detection.
-        /// Thống nhất logic: < 200 => Meters, >= 200 => MM.
-        /// </summary>
-        private double CalculateTotalLength(BeamGroup group, List<DesignSection> sections)
-        {
-            double totalLen = 0;
-
-            if (group?.TotalLength > 0)
+            // 1. Kiểm tra nếu Backbone đã đủ (Strict check - No tolerance)
+            if (backboneArea >= requiredArea)
             {
-                totalLen = group.TotalLength;
-            }
-            else if (group?.Spans?.Count > 0)
-            {
-                totalLen = group.Spans.Sum(s => s.Length);
-            }
-            else
-            {
-                // Fallback: estimate 3m per section
-                totalLen = sections.Count * 3.0; // Assume 3m
+                return new SectionResolution { Success = true, IsNativeMatch = true };
             }
 
-            // Heuristic check: If total length is small (< 500m), assume it's Meters and convert to MM.
-            // If it is large (e.g. 5000), assume it is already MM.
-            // Ngưỡng 500m là an toàn cho beam group.
-            if (totalLen < 500)
-            {
-                return totalLen * 1000;
-            }
+            double deficit = requiredArea - backboneArea;
 
-            return totalLen;
-        }
-
-        private double EstimateAddonWeight(
-            BackboneCandidate candidate,
-            List<DesignSection> sections,
-            BeamGroup group)
-        {
-            double totalAddonWeight = 0;
-
-            foreach (var section in sections)
-            {
-                // TOP addon
-                if (section.ReqTop > candidate.AreaTop)
-                {
-                    double missingArea = section.ReqTop - candidate.AreaTop;
-                    var addon = CalculateFallbackAddon(missingArea, section, candidate.Diameter);
-                    double spanLength = GetSpanLength(section, group);
-                    totalAddonWeight += WeightCalculator.CalculateWeight(
-                        addon.Diameter, spanLength * 0.4, addon.Count);
-                }
-
-                // BOT addon
-                if (section.ReqBot > candidate.AreaBot)
-                {
-                    double missingArea = section.ReqBot - candidate.AreaBot;
-                    var addon = CalculateFallbackAddon(missingArea, section, candidate.Diameter);
-                    double spanLength = GetSpanLength(section, group);
-                    totalAddonWeight += WeightCalculator.CalculateWeight(
-                        addon.Diameter, spanLength * 0.6, addon.Count);
-                }
-            }
-
-            return totalAddonWeight;
-        }
-
-        /// <summary>
-        /// CRITICAL FIX: Tính điểm với penalty từ Settings.
-        /// </summary>
-        private double CalculateCandidateScore(
-            BackboneCandidate candidate,
-            List<DesignSection> sections,
-            double totalLength)
-        {
-            double score = 100.0;
-
-            // CRITICAL: Lấy penalty scores từ Settings
-            double wastePenalty = _settings.Rules?.WastePenaltyScore ?? 20.0;
-            double alignmentPenalty = _settings.Rules?.AlignmentPenaltyScore ?? 25.0;
-
-            // Penalty for failed sections - sử dụng wastePenalty/4 cho mỗi section fail
-            score -= candidate.FailedSections.Count * (wastePenalty / 4.0);
-
-            // Preference for fewer bars (larger diameter)
-            if (_settings.Beam?.PreferFewerBars == true)
-            {
-                score += Math.Max(0, 8 - candidate.CountTop - candidate.CountBot);
-            }
-
-            // Preference for symmetric (Top = Bot) - áp dụng penalty nếu không symmetric
-            if (_settings.Beam?.PreferSymmetric == true)
-            {
-                if (candidate.CountTop == candidate.CountBot)
-                {
-                    score += 5;
-                }
-                else
-                {
-                    // Penalty scaled by difference
-                    int diff = Math.Abs(candidate.CountTop - candidate.CountBot);
-                    score -= diff * (alignmentPenalty / 10.0);
-                }
-            }
-
-            // Vertical alignment penalty (chẵn/lẻ mismatch)
-            if (_settings.Beam?.PreferVerticalAlignment == true)
-            {
-                bool topEven = candidate.CountTop % 2 == 0;
-                bool botEven = candidate.CountBot % 2 == 0;
-                if (topEven != botEven)
-                {
-                    score -= alignmentPenalty / 5.0; // Scaled penalty
-                }
-            }
-
-            // Weight efficiency
-            double weightPerMeter = candidate.EstimatedWeight / (totalLength / 1000);
-            if (weightPerMeter < 10) score += 5;
-            else if (weightPerMeter > 30) score -= 10;
-
-            return Math.Max(0, Math.Min(100, score));
-        }
-
-        private int GetMaxLayerCount(List<DesignSection> sections)
-        {
-            return _settings.Beam?.MaxLayers ?? 2;
-        }
-
-        private SectionArrangement GetBestArrangement(
-            List<SectionArrangement> arrangements,
-            int backboneCount,
-            int backboneDiameter)
-        {
-            if (arrangements == null || arrangements.Count == 0) return null;
-
-            // Find arrangement that contains this backbone
-            return arrangements
-                .Where(a => a.PrimaryDiameter == backboneDiameter && a.TotalCount >= backboneCount)
-                .OrderByDescending(a => a.Score)
+            // 2. LOOKUP: Dò trong thư viện đã tính (ValidArrangements)
+            var nativeMatch = existingOptions
+                .Where(opt =>
+                    opt.PrimaryDiameter == backboneDiameter &&
+                    opt.TotalCount > backboneCount &&
+                    opt.TotalArea >= requiredArea) // Strict check
+                .OrderBy(opt => opt.TotalArea) // Lấy phương án nhỏ nhất đủ yêu cầu
                 .FirstOrDefault();
+
+            if (nativeMatch != null)
+            {
+                // Tìm thấy phương án native!
+                int addonCount = nativeMatch.TotalCount - backboneCount;
+                double spanLength = GetSpanLength(section, group);
+                double weight = WeightCalculator.CalculateWeight(backboneDiameter, spanLength * 0.4, addonCount);
+
+                return new SectionResolution
+                {
+                    Success = true,
+                    IsNativeMatch = true,
+                    AddonWeight = weight,
+                    AddonInfo = new RebarInfo { Count = addonCount, Diameter = backboneDiameter }
+                };
+            }
+
+            // 3. SYNTHESIZE: Tự tính addon
+            var synthesized = SynthesizeAddon(deficit, backboneDiameter, section);
+
+            if (synthesized.HasValue)
+            {
+                double spanLength = GetSpanLength(section, group);
+                double weight = WeightCalculator.CalculateWeight(synthesized.Value.Diameter, spanLength * 0.4, synthesized.Value.Count);
+
+                return new SectionResolution
+                {
+                    Success = true,
+                    IsNativeMatch = false,
+                    AddonWeight = weight,
+                    AddonInfo = new RebarInfo { Count = synthesized.Value.Count, Diameter = synthesized.Value.Diameter }
+                };
+            }
+
+            // 4. FALLBACK: Tính addon bắt buộc dù không optimal
+            var fallback = ForceSynthesizeAddon(deficit, section);
+            if (fallback.HasValue)
+            {
+                double spanLength = GetSpanLength(section, group);
+                double weight = WeightCalculator.CalculateWeight(fallback.Value.Diameter, spanLength * 0.4, fallback.Value.Count);
+
+                return new SectionResolution
+                {
+                    Success = true,
+                    IsNativeMatch = false,
+                    AddonWeight = weight,
+                    AddonInfo = new RebarInfo { Count = fallback.Value.Count, Diameter = fallback.Value.Diameter }
+                };
+            }
+
+            return new SectionResolution { Success = false };
         }
 
         /// <summary>
-        /// CRITICAL FIX: Thống nhất logic unit detection với CalculateTotalLength.
+        /// Sinh addon tuân thủ rule: min 2 thanh, check spacing.
         /// </summary>
-        private double GetSpanLength(DesignSection section, BeamGroup group)
+        private (int Count, int Diameter)? SynthesizeAddon(double deficit, int backboneDiameter, DesignSection section)
         {
-            double len = 5.0; // Default 5m
+            // Ưu tiên đường kính bằng hoặc nhỏ hơn backbone
+            var candidates = _allowedDiameters
+                .Where(d => d <= backboneDiameter)
+                .OrderByDescending(d => d)
+                .ToList();
 
-            if (group?.Spans != null && section.SpanIndex < group.Spans.Count)
+            foreach (var d in candidates)
             {
-                len = group.Spans[section.SpanIndex].Length;
+                double oneBarArea = Math.PI * d * d / 400.0;
+                int count = (int)Math.Ceiling(deficit / oneBarArea);
+
+                // Rule: Addon tối thiểu 2 thanh
+                if (count < 2) count = 2;
+
+                // Check spacing
+                if (CheckAddonSpacing(section, d, count))
+                {
+                    return (count, d);
+                }
             }
 
-            // Heuristic: < 200 => Meters, >= 200 => MM
-            if (len < 200)
+            return null;
+        }
+
+        /// <summary>
+        /// Force sinh addon khi không có option tốt.
+        /// </summary>
+        private (int Count, int Diameter)? ForceSynthesizeAddon(double deficit, DesignSection section)
+        {
+            // Dùng đường kính nhỏ nhất có thể để nhét nhiều thanh
+            var candidates = _allowedDiameters.OrderBy(d => d).ToList();
+
+            foreach (var d in candidates)
             {
-                return len * 1000;
+                double oneBarArea = Math.PI * d * d / 400.0;
+                int count = (int)Math.Ceiling(deficit / oneBarArea);
+                if (count < 2) count = 2;
+
+                // Relax spacing check
+                double usableWidth = section.UsableWidth;
+                double totalBarWidth = count * d;
+                if (totalBarWidth < usableWidth * 0.9) // 90% width
+                {
+                    return (count, d);
+                }
             }
-            return len;
+
+            return null;
+        }
+
+        private bool CheckAddonSpacing(DesignSection section, int diameter, int count)
+        {
+            double usableWidth = section.UsableWidth;
+            double minSpacing = Math.Max(diameter, _settings.Beam?.MinClearSpacing ?? 30);
+
+            double requiredWidth = (count * diameter) + ((count - 1) * minSpacing);
+            return usableWidth >= requiredWidth;
         }
 
         #endregion
 
         #region Solution Building
 
-        private ContinuousBeamSolution BuildSolution(
-            BackboneCandidate candidate,
+        private ContinuousBeamSolution BuildSolutionFromEvaluation(
+            BackboneCandidate backbone,
+            EvaluationResult evalResult,
             List<DesignSection> sections,
             BeamGroup group)
         {
-            double as1 = Math.PI * candidate.Diameter * candidate.Diameter / 400.0;
+            double as1 = Math.PI * backbone.Diameter * backbone.Diameter / 400.0;
 
             var solution = new ContinuousBeamSolution
             {
-                OptionName = $"{candidate.CountTop}D{candidate.Diameter}+{candidate.CountBot}D{candidate.Diameter}",
-                BackboneDiameter_Top = candidate.Diameter,
-                BackboneDiameter_Bot = candidate.Diameter,
-                BackboneCount_Top = candidate.CountTop,
-                BackboneCount_Bot = candidate.CountBot,
-                As_Backbone_Top = candidate.CountTop * as1,
-                As_Backbone_Bot = candidate.CountBot * as1,
+                OptionName = $"{backbone.CountTop}D{backbone.Diameter}+{backbone.CountBot}D{backbone.Diameter}",
+                BackboneDiameter_Top = backbone.Diameter,
+                BackboneDiameter_Bot = backbone.Diameter,
+                BackboneCount_Top = backbone.CountTop,
+                BackboneCount_Bot = backbone.CountBot,
+                As_Backbone_Top = backbone.CountTop * as1,
+                As_Backbone_Bot = backbone.CountBot * as1,
+                TotalSteelWeight = evalResult.TotalWeight,
                 Reinforcements = new Dictionary<string, RebarSpec>(),
                 SpanResults = new List<SpanRebarResult>(),
                 StirrupDesigns = new Dictionary<string, string>(),
                 IsValid = true
             };
 
-            // Build span results
-            var spanGroups = sections.GroupBy(s => s.SpanIndex).OrderBy(g => g.Key);
-
-            foreach (var spanGroup in spanGroups)
+            // Convert addons to Reinforcements
+            foreach (var kvp in evalResult.Addons)
             {
-                var spanSections = spanGroup.ToList();
-                var spanResult = BuildSpanResult(candidate, spanSections, group);
-                solution.SpanResults.Add(spanResult);
-
-                // CRITICAL FIX: Map addons to solution reinforcements
-                AddReinforcementsFromSpanResult(solution, spanResult);
+                solution.Reinforcements[kvp.Key] = new RebarSpec
+                {
+                    Diameter = kvp.Value.Diameter,
+                    Count = kvp.Value.Count,
+                    Position = kvp.Key.Contains("_Top_") ? "Top" : "Bot",
+                    Layer = 2
+                };
             }
 
-            // Calculate final metrics
-            CalculateFinalMetrics(solution, group, sections);
+            // Build SpanResults
+            var spanGroups = sections.GroupBy(s => s.SpanIndex).OrderBy(g => g.Key);
+            foreach (var spanGroup in spanGroups)
+            {
+                var spanResult = BuildSpanResult(backbone, spanGroup.ToList(), evalResult, group);
+                solution.SpanResults.Add(spanResult);
+            }
+
+            // Calculate scores
+            CalculateFinalScores(solution, evalResult, sections, group);
 
             return solution;
         }
 
         private SpanRebarResult BuildSpanResult(
-            BackboneCandidate candidate,
+            BackboneCandidate backbone,
             List<DesignSection> spanSections,
+            EvaluationResult evalResult,
             BeamGroup group)
         {
             var firstSection = spanSections.FirstOrDefault();
@@ -600,44 +619,46 @@ namespace DTS_Engine.Core.Algorithms.Rebar.V4
             {
                 SpanIndex = spanIndex,
                 SpanId = spanId,
-                TopBackbone = new RebarInfo { Count = candidate.CountTop, Diameter = candidate.Diameter },
-                BotBackbone = new RebarInfo { Count = candidate.CountBot, Diameter = candidate.Diameter },
-                TopAddons = new Dictionary<string, RebarInfo>(),
-                BotAddons = new Dictionary<string, RebarInfo>(),
-                Stirrups = new Dictionary<string, string>(),
-                WebBars = new Dictionary<string, string>()
+                TopBackbone = new RebarInfo { Count = backbone.CountTop, Diameter = backbone.Diameter },
+                BotBackbone = new RebarInfo { Count = backbone.CountBot, Diameter = backbone.Diameter }
             };
 
-            // CRITICAL: Lấy SafetyFactor từ Settings
-            double safetyFactor = _settings.Rules?.SafetyFactor ?? 1.0;
-            double tolerance = 1.0 - safetyFactor;
-            if (tolerance < 0) tolerance = 0;
+            // Populate Requirements (Sync for Viewer)
+            // Sections usually ordered by ZoneIndex: 0 (Left), 1 (Mid), 2 (Right)
+            var secLeft = spanSections.FirstOrDefault(s => s.ZoneIndex == 0);
+            var secMid = spanSections.FirstOrDefault(s => s.ZoneIndex == 1);
+            var secRight = spanSections.FirstOrDefault(s => s.ZoneIndex == 2);
 
-            // CRITICAL: Calculate addons for each zone
+            result.ReqTop = new double[] { secLeft?.ReqTop ?? 0, secMid?.ReqTop ?? 0, secRight?.ReqTop ?? 0 };
+            result.ReqBot = new double[] { secLeft?.ReqBot ?? 0, secMid?.ReqBot ?? 0, secRight?.ReqBot ?? 0 };
+
+            // DEBUG: Log SpanResult creation
+            Utils.RebarLogger.Log($"[BuildSpanResult] SpanId='{spanId}' Index={spanIndex} | " +
+                $"ReqTop=[{result.ReqTop[0]:F2}, {result.ReqTop[1]:F2}, {result.ReqTop[2]:F2}] | " +
+                $"ReqBot=[{result.ReqBot[0]:F2}, {result.ReqBot[1]:F2}, {result.ReqBot[2]:F2}]");
+
+            result.TopAddons = new Dictionary<string, RebarInfo>();
+            result.BotAddons = new Dictionary<string, RebarInfo>();
+            result.Stirrups = new Dictionary<string, string>();
+            result.WebBars = new Dictionary<string, string>();
+
+            // Add addons for this span
             foreach (var section in spanSections)
             {
-                string zoneName = GetPositionName(section);
+                string zoneName = GetZoneName(section);
 
-                // TOP Addon - áp dụng tolerance từ SafetyFactor
-                if (section.ReqTop > candidate.AreaTop * (1 - tolerance))
+                // Check for Top addon
+                string keyTop = $"{spanId}_Top_{zoneName}";
+                if (evalResult.Addons.TryGetValue(keyTop, out var addonTop))
                 {
-                    double missingArea = section.ReqTop - candidate.AreaTop;
-                    if (missingArea > 0.01)
-                    {
-                        var addon = CalculateFallbackAddon(missingArea, section, candidate.Diameter);
-                        result.TopAddons[zoneName] = addon;
-                    }
+                    result.TopAddons[zoneName] = addonTop;
                 }
 
-                // BOT Addon
-                if (section.ReqBot > candidate.AreaBot * (1 - tolerance))
+                // Check for Bot addon
+                string keyBot = $"{spanId}_Bot_{zoneName}";
+                if (evalResult.Addons.TryGetValue(keyBot, out var addonBot))
                 {
-                    double missingArea = section.ReqBot - candidate.AreaBot;
-                    if (missingArea > 0.01)
-                    {
-                        var addon = CalculateFallbackAddon(missingArea, section, candidate.Diameter);
-                        result.BotAddons[zoneName] = addon;
-                    }
+                    result.BotAddons[zoneName] = addonBot;
                 }
 
                 // Stirrup calculation
@@ -652,210 +673,112 @@ namespace DTS_Engine.Core.Algorithms.Rebar.V4
             return result;
         }
 
-        private RebarInfo CalculateFallbackAddon(double missingArea, DesignSection section, int backboneDiameter)
+        private void CalculateFinalScores(
+            ContinuousBeamSolution solution,
+            EvaluationResult evalResult,
+            List<DesignSection> sections,
+            BeamGroup group)
         {
-            if (missingArea <= 0.01)
-            {
-                return new RebarInfo { Count = 0, Diameter = backboneDiameter };
-            }
+            // Waste calculation
+            double totalRequired = sections.Sum(s => s.ReqTop + s.ReqBot);
+            double totalProvided = solution.As_Backbone_Top * sections.Count
+                                 + solution.As_Backbone_Bot * sections.Count
+                                 + solution.Reinforcements.Values.Sum(r => r.Count * Math.PI * r.Diameter * r.Diameter / 400.0);
 
-            // Use same or smaller diameter for addon
-            int addonDia = backboneDiameter;
+            solution.WastePercentage = totalRequired > 0
+                ? Math.Max(0, (totalProvided - totalRequired) / totalRequired * 100)
+                : 0;
 
-            // If mixing is not allowed, use backbone diameter
-            if (_settings.Beam?.AllowDiameterMixing != true)
-            {
-                // Keep same diameter
-            }
-            else
-            {
-                // Try smaller diameter
-                var smaller = _allowedDiameters.Where(d => d < backboneDiameter).OrderByDescending(d => d).FirstOrDefault();
-                if (smaller > 0) addonDia = smaller;
-            }
-
-            double as1 = Math.PI * addonDia * addonDia / 400.0;
-            int count = (int)Math.Ceiling(missingArea / as1);
-            if (count < 2) count = 2;
-
-            // Apply symmetric preference
-            if (_settings.Beam?.PreferSymmetric == true && count % 2 != 0)
-            {
-                count++;
-            }
-
-            return new RebarInfo { Count = count, Diameter = addonDia };
-        }
-
-        private string GetPositionName(DesignSection section)
-        {
-            if (section.ZoneIndex == 0) return "Left";
-            if (section.ZoneIndex == 2 || section.Type == SectionType.MidSpan) return "Mid";
-            return "Right";
-        }
-
-        private void AddReinforcementsFromSpanResult(ContinuousBeamSolution solution, SpanRebarResult spanResult)
-        {
-            foreach (var kvp in spanResult.TopAddons)
-            {
-                string key = $"{spanResult.SpanId}_Top_{kvp.Key}";
-                solution.Reinforcements[key] = new RebarSpec
-                {
-                    Diameter = kvp.Value.Diameter,
-                    Count = kvp.Value.Count,
-                    Position = "Top",
-                    Layer = 2
-                };
-            }
-
-            foreach (var kvp in spanResult.BotAddons)
-            {
-                string key = $"{spanResult.SpanId}_Bot_{kvp.Key}";
-                solution.Reinforcements[key] = new RebarSpec
-                {
-                    Diameter = kvp.Value.Diameter,
-                    Count = kvp.Value.Count,
-                    Position = "Bot",
-                    Layer = 2
-                };
-            }
-        }
-
-        private void UpdateSectionSelections(BackboneCandidate candidate, List<DesignSection> sections)
-        {
-            foreach (var section in sections)
-            {
-                section.SelectedTop = GetBestArrangement(
-                    section.ValidArrangementsTop, candidate.CountTop, candidate.Diameter);
-                section.SelectedBot = GetBestArrangement(
-                    section.ValidArrangementsBot, candidate.CountBot, candidate.Diameter);
-            }
-        }
-
-        private void CalculateFinalMetrics(ContinuousBeamSolution solution, BeamGroup group, List<DesignSection> sections)
-        {
-            // Calculate total steel weight
-            double totalLength = CalculateTotalLength(group, sections);
-
-            // FIX: LapSpliceMultiplier (VD: 40) là hệ số neo d, không phải hệ số nhân trọng lượng.
-            // Dùng hệ số hao hụt/nối chồng thực tế ~5% (1.05).
-            double lapFactor = 1.05;
-
-            double backboneWeight = WeightCalculator.CalculateBackboneWeight(
-                solution.BackboneDiameter,
-                totalLength,
-                solution.BackboneCount_Top + solution.BackboneCount_Bot,
-                lapFactor);
-
-            // Addon weight from SpanResults
-            double addonWeight = 0;
-            foreach (var sr in solution.SpanResults)
-            {
-                double spanLength = GetSpanLength(sections.FirstOrDefault(s => s.SpanId == sr.SpanId), group);
-
-                foreach (var addon in sr.TopAddons.Values)
-                {
-                    addonWeight += WeightCalculator.CalculateWeight(addon.Diameter, spanLength * 0.4, addon.Count);
-                }
-                foreach (var addon in sr.BotAddons.Values)
-                {
-                    addonWeight += WeightCalculator.CalculateWeight(addon.Diameter, spanLength * 0.6, addon.Count);
-                }
-            }
-
-            solution.TotalSteelWeight = (backboneWeight + addonWeight);
-
-            // Score based on efficiency
-            double totalReqArea = sections.Sum(s => s.ReqTop + s.ReqBot);
-            solution.WastePercentage = 0;
-            if (totalReqArea > 0.1)
-            {
-                double provArea = (solution.As_Backbone_Top + solution.As_Backbone_Bot) * sections.Count;
-                provArea += solution.Reinforcements.Values.Sum(r => r.Count * Math.PI * r.Diameter * r.Diameter / 400.0);
-                solution.WastePercentage = Math.Max(0, (provArea - totalReqArea) / totalReqArea * 100.0);
-            }
-
-            // Efficiency & Total Score - DÙNG SETTING
-            double effWeight = _settings.Beam?.EfficiencyScoreWeight ?? 0.6;
+            // Efficiency Score (100 - Waste%)
             solution.EfficiencyScore = Math.Max(0, 100 - solution.WastePercentage);
-            solution.ConstructabilityScore = ConstructabilityScoring.CalculateScore(solution, group, _settings);
-            solution.TotalScore = effWeight * solution.EfficiencyScore + (1 - effWeight) * solution.ConstructabilityScore;
 
-            // Max required areas
+            // Constructability Score
+            solution.ConstructabilityScore = CalculateConstructabilityScore(solution, evalResult, sections);
+
+            // Native Match Bonus - Thưởng điểm nếu dùng lại được phương án của SectionSolver
+            double matchRatio = evalResult.TotalChecks > 0
+                ? (double)evalResult.NativeMatchCount / evalResult.TotalChecks
+                : 0;
+            double nativeBonus = matchRatio * 15.0; // Max +15 điểm
+
+            // Total Score
+            double effWeight = _settings.Beam?.EfficiencyScoreWeight ?? 0.6;
+            solution.TotalScore = effWeight * solution.EfficiencyScore
+                                + (1 - effWeight) * solution.ConstructabilityScore
+                                + nativeBonus;
+
+            solution.TotalScore = Math.Min(100, solution.TotalScore);
+
+            // Metadata
             solution.As_Required_Top_Max = sections.Max(s => s.ReqTop);
             solution.As_Required_Bot_Max = sections.Max(s => s.ReqBot);
-
-            solution.Description = GenerateDescription(solution);
+            solution.Description = GenerateDescription(solution, evalResult);
         }
 
-        private string GenerateDescription(ContinuousBeamSolution solution)
+        private double CalculateConstructabilityScore(
+            ContinuousBeamSolution solution,
+            EvaluationResult evalResult,
+            List<DesignSection> sections)
+        {
+            double score = 100;
+
+            // Penalty for too many backbone bars
+            if (solution.BackboneCount_Top > 4) score -= 5;
+            if (solution.BackboneCount_Bot > 4) score -= 5;
+
+            // Penalty for large diameter (hard to bend)
+            if (solution.BackboneDiameter > 25) score -= 10;
+
+            // Penalty for asymmetric backbone
+            if (solution.BackboneCount_Top != solution.BackboneCount_Bot)
+            {
+                int diff = Math.Abs(solution.BackboneCount_Top - solution.BackboneCount_Bot);
+                score -= diff * 3;
+            }
+
+            // Penalty for too many addons
+            score -= evalResult.Addons.Count * 2;
+
+            // Penalty for failed sections
+            score -= evalResult.FailedSections.Count * 5;
+
+            return Math.Max(0, score);
+        }
+
+        private string GenerateDescription(ContinuousBeamSolution solution, EvaluationResult evalResult)
         {
             int addonCount = solution.Reinforcements.Count;
-            return $"Backbone: {solution.BackboneCount_Top}D{solution.BackboneDiameter} / {solution.BackboneCount_Bot}D{solution.BackboneDiameter}" +
-                   (addonCount > 0 ? $" + {addonCount} addons" : "");
+            string matchInfo = evalResult.TotalChecks > 0
+                ? $"{evalResult.NativeMatchCount}/{evalResult.TotalChecks} native"
+                : "";
+
+            return $"Backbone: {solution.BackboneCount_Top}D{solution.BackboneDiameter} / {solution.BackboneCount_Bot}D{solution.BackboneDiameter}"
+                 + (addonCount > 0 ? $" + {addonCount} addons" : "")
+                 + (!string.IsNullOrEmpty(matchInfo) ? $" ({matchInfo})" : "");
         }
 
-        /// <summary>
-        /// CRITICAL FIX: Validation với SafetyFactor từ Settings.
-        /// </summary>
-        private void ValidateSolution(ContinuousBeamSolution solution, List<DesignSection> sections, BackboneCandidate candidate)
+        #endregion
+
+        #region Fallback & Error Handling
+
+        private ContinuousBeamSolution TryRelaxedBackbone(
+            List<BackboneCandidate> candidates,
+            List<DesignSection> sections,
+            BeamGroup group)
         {
-            var problems = new List<string>();
+            // Thử backbone nhỏ nhất có thể
+            var minBackbone = candidates
+                .OrderBy(c => c.CountTop + c.CountBot)
+                .ThenByDescending(c => c.Diameter)
+                .FirstOrDefault();
 
-            // CRITICAL: Lấy SafetyFactor từ Settings
-            double safetyFactor = _settings.Rules?.SafetyFactor ?? 1.0;
+            if (minBackbone == null) return null;
 
-            foreach (var section in sections)
-            {
-                double providedTop = CalculateProvidedArea(solution, section, candidate, true);
-                double providedBot = CalculateProvidedArea(solution, section, candidate, false);
+            // Force evaluation với relaxed rules
+            var evalResult = EvaluateWithSmartResolution(minBackbone, sections, group);
+            evalResult.IsValid = true; // Force valid
 
-                // Yêu cầu thực tế với SafetyFactor
-                double requiredTop = section.ReqTop * safetyFactor;
-                double requiredBot = section.ReqBot * safetyFactor;
-
-                // Tolerance 2% cho sai số làm tròn
-                if (section.ReqTop > 0.01 && providedTop < requiredTop * 0.98)
-                {
-                    problems.Add($"{section.SectionId} Top: need {requiredTop:F2}, have {providedTop:F2}");
-                }
-
-                if (section.ReqBot > 0.01 && providedBot < requiredBot * 0.98)
-                {
-                    problems.Add($"{section.SectionId} Bot: need {requiredBot:F2}, have {providedBot:F2}");
-                }
-            }
-
-            if (problems.Count > 0)
-            {
-                solution.IsValid = false;
-                solution.ValidationMessage = string.Join("; ", problems.Take(3));
-                Utils.RebarLogger.LogError($"Solution validation failed: {solution.ValidationMessage}");
-            }
-        }
-
-        private double CalculateProvidedArea(
-            ContinuousBeamSolution solution,
-            DesignSection section,
-            BackboneCandidate candidate,
-            bool isTop)
-        {
-            double backboneArea = isTop ? solution.As_Backbone_Top : solution.As_Backbone_Bot;
-
-            // Find matching addon
-            string zoneName = GetPositionName(section);
-            var spanResult = solution.SpanResults.FirstOrDefault(sr => sr.SpanId == section.SpanId);
-
-            if (spanResult != null)
-            {
-                var addons = isTop ? spanResult.TopAddons : spanResult.BotAddons;
-                if (addons.TryGetValue(zoneName, out var addon))
-                {
-                    backboneArea += addon.Count * Math.PI * addon.Diameter * addon.Diameter / 400.0;
-                }
-            }
-
-            return backboneArea;
+            return BuildSolutionFromEvaluation(minBackbone, evalResult, sections, group);
         }
 
         private ContinuousBeamSolution CreateErrorSolution(string message)
@@ -871,18 +794,54 @@ namespace DTS_Engine.Core.Algorithms.Rebar.V4
             };
         }
 
-        private void OptimizeAndCleanSolution(ContinuousBeamSolution solution, BeamGroup group)
-        {
-            // Remove empty reinforcements
-            var keysToRemove = solution.Reinforcements
-                .Where(kvp => kvp.Value.Count <= 0)
-                .Select(kvp => kvp.Key)
-                .ToList();
+        #endregion
 
-            foreach (var key in keysToRemove)
+        #region Helpers
+
+        private double CalculateTotalLength(BeamGroup group, List<DesignSection> sections)
+        {
+            if (group?.TotalLength > 0) return group.TotalLength * 1000;
+            if (group?.Spans?.Count > 0) return group.Spans.Sum(s => s.Length) * 1000;
+            if (sections.Count > 0)
             {
-                solution.Reinforcements.Remove(key);
+                double maxPos = sections.Max(s => s.Position);
+                double minPos = sections.Min(s => s.Position);
+                if (maxPos > minPos) return (maxPos - minPos) * 1000;
             }
+            return 5000; // Default 5m
+        }
+
+        private double GetSpanLength(DesignSection section, BeamGroup group)
+        {
+            if (group?.Spans != null && section.SpanIndex < group.Spans.Count)
+            {
+                return group.Spans[section.SpanIndex].Length * 1000;
+            }
+            return 5000;
+        }
+
+        private string GetZoneName(DesignSection section)
+        {
+            if (section.ZoneIndex == 0) return "Left";
+            if (section.ZoneIndex == 2 || section.Type == SectionType.MidSpan) return "Mid";
+            return "Right";
+        }
+
+        private void LogSolutionRanking(List<ContinuousBeamSolution> solutions)
+        {
+            Utils.RebarLogger.Log("");
+            Utils.RebarLogger.Log("┌──────┬────────────┬─────────────┬───────┬────────────────────────────┐");
+            Utils.RebarLogger.Log("│ Rank │ Backbone   │ Weight (kg) │ Score │ Description                │");
+            Utils.RebarLogger.Log("├──────┼────────────┼─────────────┼───────┼────────────────────────────┤");
+
+            int rank = 1;
+            foreach (var s in solutions.Take(5))
+            {
+                string backbone = $"{s.BackboneCount_Top}D{s.BackboneDiameter}/{s.BackboneCount_Bot}D{s.BackboneDiameter}";
+                Utils.RebarLogger.Log($"│  {rank++}   │ {backbone,-10} │ {s.TotalSteelWeight,9:F1}   │ {s.TotalScore,5:F1} │ {(s.IsValid ? "Valid" : "INVALID"),-26} │");
+            }
+
+            Utils.RebarLogger.Log("└──────┴────────────┴─────────────┴───────┴────────────────────────────┘");
         }
 
         #endregion

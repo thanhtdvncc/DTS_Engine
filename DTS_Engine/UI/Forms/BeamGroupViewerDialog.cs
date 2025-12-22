@@ -30,13 +30,19 @@ namespace DTS_Engine.UI.Forms
 
         public BeamGroupViewerDialog(List<BeamGroup> groups, Action<List<BeamGroup>> onApply = null)
         {
+            DtsSettings.Reload();
             _groups = groups ?? new List<BeamGroup>();
             _onApply = onApply;
+
+            // FIX: STRICTLY enforce Left-to-Right orientation for Viewer consistency
+            EnsureLeftToRightOrientation(_groups);
 
             InitializeComponent();
             this.Shown += Dialog_Shown;
             this.FormClosing += Dialog_FormClosing;
         }
+
+
 
         private void InitializeComponent()
         {
@@ -302,27 +308,27 @@ namespace DTS_Engine.UI.Forms
                 {
                     // Format: LOCK_DESIGN|groupIndex|lockedDesignJson
                     var parts = message.Substring(12).Split(new[] { '|' }, 2);
-                    if (parts.Length >= 2 && int.TryParse(parts[0], out int groupIndex) && 
+                    if (parts.Length >= 2 && int.TryParse(parts[0], out int groupIndex) &&
                         groupIndex >= 0 && groupIndex < _groups.Count)
                     {
                         var group = _groups[groupIndex];
-                        
+
                         // Parse the locked design JSON
                         var jsonSettings = new JsonSerializerSettings
                         {
                             NullValueHandling = NullValueHandling.Ignore,
                             MissingMemberHandling = MissingMemberHandling.Ignore
                         };
-                        
+
                         // Parse as JObject first to extract _capturedSpans
                         var jObj = Newtonsoft.Json.Linq.JObject.Parse(parts[1]);
-                        
+
                         // Deserialize the main design
                         var design = jObj.ToObject<ContinuousBeamSolution>(JsonSerializer.Create(jsonSettings));
                         group.SelectedDesign = design;
                         group.LockedAt = DateTime.Now;
                         group.IsManuallyEdited = true;
-                        
+
                         // CRITICAL: Apply captured spans back to group.Spans
                         var capturedSpans = jObj["_capturedSpans"] as Newtonsoft.Json.Linq.JArray;
                         if (capturedSpans != null && group.Spans != null)
@@ -331,31 +337,31 @@ namespace DTS_Engine.UI.Forms
                             {
                                 string spanId = cs["SpanId"]?.ToString();
                                 int spanIndex = cs["SpanIndex"]?.ToObject<int>() ?? -1;
-                                
+
                                 var span = group.Spans.FirstOrDefault(s => s.SpanId == spanId);
                                 if (span == null && spanIndex >= 0 && spanIndex < group.Spans.Count)
                                 {
                                     span = group.Spans[spanIndex];
                                 }
-                                
+
                                 if (span != null)
                                 {
                                     // Apply captured data back to span
                                     var topBackbone = cs["TopBackbone"]?.ToObject<RebarInfo>();
                                     var botBackbone = cs["BotBackbone"]?.ToObject<RebarInfo>();
-                                    
+
                                     if (topBackbone != null) span.TopBackbone = topBackbone;
                                     if (botBackbone != null) span.BotBackbone = botBackbone;
-                                    
+
                                     span.TopAddLeft = cs["TopAddLeft"]?.ToObject<RebarInfo>();
                                     span.TopAddMid = cs["TopAddMid"]?.ToObject<RebarInfo>();
                                     span.TopAddRight = cs["TopAddRight"]?.ToObject<RebarInfo>();
                                     span.BotAddLeft = cs["BotAddLeft"]?.ToObject<RebarInfo>();
                                     span.BotAddMid = cs["BotAddMid"]?.ToObject<RebarInfo>();
                                     span.BotAddRight = cs["BotAddRight"]?.ToObject<RebarInfo>();
-                                    
+
                                     span.SideBar = cs["SideBar"]?.ToString();
-                                    
+
                                     // Mark as manually modified
                                     bool userEdited = cs["_userEdited"]?.ToObject<bool>() ?? false;
                                     span.IsManualModified = userEdited;
@@ -363,7 +369,7 @@ namespace DTS_Engine.UI.Forms
                                 }
                             }
                         }
-                        
+
                         System.Diagnostics.Debug.WriteLine(
                             $"[BeamGroupViewer] Design locked for group {groupIndex}, " +
                             $"SelectedDesign and Spans updated");
@@ -450,6 +456,29 @@ namespace DTS_Engine.UI.Forms
                 }
 
                 var proposals = RebarCalculator.CalculateProposalsForGroup(group, spanResults, settings);
+
+                // --- DIAGNOSTIC START ---
+                if (group.Spans.Count > 0)
+                {
+                    var s0 = group.Spans[0];
+                    double v0 = (s0.As_Top != null && s0.As_Top.Length > 0) ? s0.As_Top[0] : -999;
+                    DTS_Engine.Core.Algorithms.Rebar.Utils.RebarLogger.Log($"[DIAGNOSTIC] After Calc: Span[0].As_Top[0] = {v0}");
+
+                    // Test Serialization locally
+                    try
+                    {
+                        string testJson = Newtonsoft.Json.JsonConvert.SerializeObject(group);
+                        bool containsValue = testJson.Contains("21.76") || testJson.Contains($"{v0}");
+                        DTS_Engine.Core.Algorithms.Rebar.Utils.RebarLogger.Log($"[DIAGNOSTIC] JSON check: Contains '{v0}'? {containsValue}. Length: {testJson.Length}");
+                        // Dump first 500 chars of Span 0 part if possible or just verifying existence
+                    }
+                    catch (Exception ex)
+                    {
+                        DTS_Engine.Core.Algorithms.Rebar.Utils.RebarLogger.Log($"[DIAGNOSTIC] JSON Serialization Failed: {ex.Message}");
+                    }
+                }
+                // --- DIAGNOSTIC END ---
+
                 if (proposals == null || proposals.Count == 0)
                 {
                     await SendToastSimpleAsync("❌ Không thể tạo phương án.");
@@ -466,21 +495,92 @@ namespace DTS_Engine.UI.Forms
                 group.BackboneOptions = proposals;
                 group.SelectedBackboneIndex = 0;
 
-                // Update displayed span rebar text for preview (do not overwrite manual-modified spans)
-                var bestSolution = proposals.FirstOrDefault(p => p != null && p.IsValid);
+                // NOTE: ApplySolutionToGroup is already called INSIDE V4RebarCalculator.Calculate()
+                // Do NOT call ApplySolutionToSpanData here to avoid overwriting with potentially
+                // mismatched data. The calculator has already synced SpanResults to Spans.
 
-                if (bestSolution != null && group.IsDesignLocked == false)
-                {
-                    ApplySolutionToSpanData(group, bestSolution);
-                }
+                // Only re-apply if we need to force-sync from a different solution
+                // (e.g., user selected a non-best option)
+                // For now, trust the calculator's sync.
 
                 // Push updated group back to WebView
                 await SendGroupUpdatedToWebViewAsync(groupIndex, group);
+
+                // FORCE LOG OPEN
+                DTS_Engine.Core.Algorithms.Rebar.Utils.RebarLogger.OpenLogFile();
             }
             catch (Exception ex)
             {
                 await SendToastSimpleAsync("Lỗi tính thép: " + ex.Message);
             }
+        }
+
+
+
+        private void EnsureLeftToRightOrientation(List<BeamGroup> groups)
+        {
+            if (groups == null) return;
+            foreach (var group in groups)
+            {
+                if (group.Spans == null || group.Spans.Count < 2) continue;
+
+                // 1. Check Overall Group Orientation
+                // Sort Spans by StartPoint.X
+                var sortedSpans = group.Spans.OrderBy(s =>
+                {
+                    var seg = s.Segments?.FirstOrDefault();
+                    if (seg != null && seg.StartPoint != null) return seg.StartPoint[0];
+                    return double.MaxValue;
+                }).ToList();
+
+                // If the original '0' index is NOT the Leftmost one, the group is reversed/mixed.
+                // We compel Strict Left-to-Right Sort.
+                if (group.Spans[0] != sortedSpans[0])
+                {
+                    DTS_Engine.Core.Algorithms.Rebar.Utils.RebarLogger.Log($"[Viewer] Re-sorting Group {group.Name} to Left-to-Right (First Item was X={GetSpanX(group.Spans[0]):F1}, New First is X={GetSpanX(sortedSpans[0]):F1})");
+
+                    // Apply Loop: Reverse Supports/Spans if it looks like a simple reversal
+                    // If it is just mixed up, simple sort is safer.
+                    // But Supports are tricky. If supports define positions 0, L1, L1+L2...
+                    // We must assume the Supports match the Spans order.
+
+                    // Simple Reverse Logic (usually it's just R->L vs L->R)
+                    group.Spans.Reverse();
+                    group.Supports.Reverse();
+
+                    // Fix Support Positions (Mirror)
+                    if (group.Supports.Count > 0)
+                    {
+                        double totalLen = group.Supports.Max(s => s.Position);
+                        foreach (var s in group.Supports)
+                        {
+                            s.Position = Math.Abs(totalLen - s.Position);
+                        }
+                        // Sort supports after recalc just to be sure
+                        group.Supports = group.Supports.OrderBy(s => s.Position).ToList();
+                        for (int i = 0; i < group.Supports.Count; i++) group.Supports[i].SupportIndex = i;
+                    }
+
+                    // Re-Index Spans
+                    for (int i = 0; i < group.Spans.Count; i++)
+                    {
+                        group.Spans[i].SpanIndex = i;
+                        group.Spans[i].SpanId = $"S{i + 1}";
+
+                        // Fix Left/Right Support References (IDs)
+                        if (i < group.Supports.Count - 1)
+                        {
+                            group.Spans[i].LeftSupportId = group.Supports[i].SupportId;
+                            group.Spans[i].RightSupportId = group.Supports[i + 1].SupportId;
+                        }
+                    }
+                }
+            }
+        }
+
+        private double GetSpanX(SpanData span)
+        {
+            return span?.Segments?.FirstOrDefault()?.StartPoint?[0] ?? 0;
         }
 
         private static List<BeamResultData> ExtractSpanResultsForGroup(Autodesk.AutoCAD.DatabaseServices.Transaction tr, BeamGroup group)
@@ -489,60 +589,134 @@ namespace DTS_Engine.UI.Forms
             var db = doc?.Database;
             if (db == null || group == null) return new List<BeamResultData>();
 
-            // Prefer span-based mapping (1 result per span) to keep ordering deterministic
-            var handles = new List<string>();
+            var results = new List<BeamResultData>();
+
             if (group.Spans != null && group.Spans.Count > 0)
             {
                 foreach (var span in group.Spans)
                 {
-                    var h = span?.Segments?.FirstOrDefault()?.EntityHandle;
-                    if (!string.IsNullOrWhiteSpace(h)) handles.Add(h);
-                }
-            }
-
-            // Fallback: use group.EntityHandles if span segments not populated
-            if (handles.Count == 0 && group.EntityHandles != null && group.EntityHandles.Count > 0)
-            {
-                handles.AddRange(group.EntityHandles.Where(h => !string.IsNullOrWhiteSpace(h)));
-            }
-
-            var results = new List<BeamResultData>();
-            foreach (var handle in handles)
-            {
-                try
-                {
-                    var objId = AcadUtils.GetObjectIdFromHandle(handle);
-                    if (objId == Autodesk.AutoCAD.DatabaseServices.ObjectId.Null) continue;
-
-                    var obj = tr.GetObject(objId, Autodesk.AutoCAD.DatabaseServices.OpenMode.ForRead);
-                    if (obj == null) continue;
-
-                    var data = XDataUtils.ReadRebarData(obj);
-                    if (data != null)
+                    try
                     {
-                        results.Add(data);
-                        continue;
-                    }
+                        var seg = span?.Segments?.FirstOrDefault();
+                        var h = seg?.EntityHandle;
 
-                    // Fallback: some drawings may store BeamData instead of BeamResultData
-                    var beamData = XDataUtils.ReadBeamData(obj);
-                    if (beamData != null)
-                    {
-                        results.Add(new BeamResultData
+
+                        DTS_Engine.Core.Algorithms.Rebar.Utils.RebarLogger.Log($"[ExtractSpanResults] SpanId: {span?.SpanId}, Handle: {h}, StartX: {seg?.StartPoint?[0]:F1}, EndX: {seg?.EndPoint?[0]:F1}");
+
+                        // Check direction of this specific span (R->L Geometry Check)
+                        bool isReversedSpan = false;
+                        if (seg != null && seg.StartPoint != null && seg.EndPoint != null)
                         {
-                            // BeamResultData uses cm for Width/SectionHeight in most pipelines
-                            Width = beamData.Width.HasValue ? (beamData.Width.Value / 10.0) : 0,
-                            SectionHeight = beamData.Height.HasValue ? (beamData.Height.Value / 10.0) : 0
-                        });
+                            if (seg.StartPoint[0] > seg.EndPoint[0] + 1.0)
+                            {
+                                isReversedSpan = true;
+                            }
+                        }
+                        if (string.IsNullOrWhiteSpace(h) && group.EntityHandles != null)
+                        {
+                            int idx = group.Spans.IndexOf(span);
+                            if (idx >= 0 && idx < group.EntityHandles.Count)
+                            {
+                                h = group.EntityHandles[idx];
+                            }
+                        }
+
+                        if (string.IsNullOrWhiteSpace(h))
+                        {
+                            results.Add(null);
+                            continue;
+                        }
+
+                        var objId = AcadUtils.GetObjectIdFromHandle(h);
+                        if (objId == Autodesk.AutoCAD.DatabaseServices.ObjectId.Null)
+                        {
+                            results.Add(null);
+                            continue;
+                        }
+
+                        var obj = tr.GetObject(objId, Autodesk.AutoCAD.DatabaseServices.OpenMode.ForRead);
+                        if (obj == null)
+                        {
+                            results.Add(null);
+                            continue;
+                        }
+
+                        var data = XDataUtils.ReadRebarData(obj);
+                        if (data != null)
+                        {
+                            // CRITICAL: If Span is Geometric R->L, Flip Result to match Viewer L->R
+                            if (isReversedSpan) ReverseBeamResultData(data);
+                            results.Add(data);
+                            continue;
+                        }
+
+                        var beamData = XDataUtils.ReadBeamData(obj);
+                        if (beamData != null)
+                        {
+                            results.Add(new BeamResultData
+                            {
+                                Width = beamData.Width.HasValue ? (beamData.Width.Value / 10.0) : 0,
+                                SectionHeight = beamData.Height.HasValue ? (beamData.Height.Value / 10.0) : 0
+                            });
+                            continue;
+                        }
+
+                        results.Add(null);
+                    }
+                    catch
+                    {
+                        results.Add(null);
                     }
                 }
-                catch
+            }
+            // Fallback for groups without spans populated
+            else if (group.EntityHandles != null)
+            {
+                foreach (var handle in group.EntityHandles)
                 {
-                    // ignore individual beam failures
+                    try
+                    {
+                        var objId = AcadUtils.GetObjectIdFromHandle(handle);
+                        if (objId == Autodesk.AutoCAD.DatabaseServices.ObjectId.Null)
+                        {
+                            results.Add(null);
+                            continue;
+                        }
+                        var obj = tr.GetObject(objId, Autodesk.AutoCAD.DatabaseServices.OpenMode.ForRead);
+                        var data = XDataUtils.ReadRebarData(obj);
+                        results.Add(data);
+                    }
+                    catch
+                    {
+                        results.Add(null);
+                    }
                 }
             }
 
             return results;
+        }
+
+        private static void ReverseBeamResultData(BeamResultData data)
+        {
+            if (data == null) return;
+            // Arrays: Start, Mid, End -> End, Mid, Start
+            // Standard length is 3
+            ReverseArray(data.TopArea);
+            ReverseArray(data.BotArea);
+            ReverseArray(data.TorsionArea);
+            ReverseArray(data.ShearArea);
+            ReverseArray(data.TTArea);
+            ReverseArray(data.TopRebarString);
+            ReverseArray(data.BotRebarString);
+            ReverseArray(data.TopAreaProv);
+            ReverseArray(data.BotAreaProv);
+            ReverseArray(data.StirrupString);
+            ReverseArray(data.WebBarString);
+        }
+
+        private static void ReverseArray<T>(T[] arr)
+        {
+            if (arr != null && arr.Length > 0) Array.Reverse(arr);
         }
 
         private static void ApplySolutionToSpanData(BeamGroup group, ContinuousBeamSolution sol)
@@ -556,8 +730,9 @@ namespace DTS_Engine.UI.Forms
             string backboneTopStr = $"{sol.BackboneCount_Top}D{sol.BackboneDiameter}";
             string backboneBotStr = $"{sol.BackboneCount_Bot}D{sol.BackboneDiameter}";
 
-            foreach (var span in group.Spans)
+            for (int spanIdx = 0; spanIdx < group.Spans.Count; spanIdx++)
             {
+                var span = group.Spans[spanIdx];
                 if (span == null) continue;
                 if (span.IsManualModified) continue;
 
@@ -566,8 +741,46 @@ namespace DTS_Engine.UI.Forms
                     span.TopRebarInternal = new string[3, 6];
                 if (span.BotRebarInternal == null || span.BotRebarInternal.GetLength(0) < 1 || span.BotRebarInternal.GetLength(1) < 5)
                     span.BotRebarInternal = new string[3, 6];
+                if (span.As_Top == null || span.As_Top.Length < 6)
+                    span.As_Top = new double[6];
+                if (span.As_Bot == null || span.As_Bot.Length < 6)
+                    span.As_Bot = new double[6];
 
-                string spanId = span.SpanId ?? "S?";
+                // ═══════════════════════════════════════════════════════════════
+                // CRITICAL FIX: Build spanId matching the format used in Discretize
+                // Discretize uses: span.SpanId ?? $"S{i + 1}" (1-based)
+                // ═══════════════════════════════════════════════════════════════
+                string spanId = span.SpanId ?? $"S{spanIdx + 1}";
+
+                // ═══════════════════════════════════════════════════════════════
+                // SYNC As_req FROM SpanResults (Critical for Viewer display)
+                // ═══════════════════════════════════════════════════════════════
+                var spanResult = sol.SpanResults?.FirstOrDefault(sr =>
+                    sr.SpanId == spanId || sr.SpanIndex == spanIdx);
+
+                if (spanResult != null)
+                {
+                    // Map 3 zones [Left, Mid, Right] to 6 positions [0,1,2,3,4,5]
+                    // Position 0,1 = Left; 2,3 = Mid; 4,5 = Right
+                    if (spanResult.ReqTop != null && spanResult.ReqTop.Length >= 3)
+                    {
+                        span.As_Top[0] = spanResult.ReqTop[0];
+                        span.As_Top[1] = spanResult.ReqTop[0];
+                        span.As_Top[2] = spanResult.ReqTop[1];
+                        span.As_Top[3] = spanResult.ReqTop[1];
+                        span.As_Top[4] = spanResult.ReqTop[2];
+                        span.As_Top[5] = spanResult.ReqTop[2];
+                    }
+                    if (spanResult.ReqBot != null && spanResult.ReqBot.Length >= 3)
+                    {
+                        span.As_Bot[0] = spanResult.ReqBot[0];
+                        span.As_Bot[1] = spanResult.ReqBot[0];
+                        span.As_Bot[2] = spanResult.ReqBot[1];
+                        span.As_Bot[3] = spanResult.ReqBot[1];
+                        span.As_Bot[4] = spanResult.ReqBot[2];
+                        span.As_Bot[5] = spanResult.ReqBot[2];
+                    }
+                }
 
                 // ═══════════════════════════════════════════════════════════════
                 // STRUCTURED DATA: Set RebarInfo objects (for Viewer JSON)
@@ -575,7 +788,7 @@ namespace DTS_Engine.UI.Forms
                 span.TopBackbone = backboneTop;
                 span.BotBackbone = backboneBot;
 
-                // TOP Reinforcements
+                // TOP Reinforcements - Lookup with correct spanId
                 span.TopAddLeft = null;
                 span.TopAddMid = null;
                 span.TopAddRight = null;
@@ -587,6 +800,17 @@ namespace DTS_Engine.UI.Forms
                         span.TopAddMid = new RebarInfo { Count = tM.Count, Diameter = tM.Diameter, LayerCounts = tM.LayerBreakdown };
                     if (sol.Reinforcements.TryGetValue($"{spanId}_Top_Right", out var tR))
                         span.TopAddRight = new RebarInfo { Count = tR.Count, Diameter = tR.Diameter, LayerCounts = tR.LayerBreakdown };
+                }
+
+                // Also try from SpanResult.TopAddons (if Reinforcements missed)
+                if (spanResult?.TopAddons != null)
+                {
+                    if (span.TopAddLeft == null && spanResult.TopAddons.TryGetValue("Left", out var tL2))
+                        span.TopAddLeft = tL2;
+                    if (span.TopAddMid == null && spanResult.TopAddons.TryGetValue("Mid", out var tM2))
+                        span.TopAddMid = tM2;
+                    if (span.TopAddRight == null && spanResult.TopAddons.TryGetValue("Right", out var tR2))
+                        span.TopAddRight = tR2;
                 }
 
                 // BOT Reinforcements
@@ -601,6 +825,17 @@ namespace DTS_Engine.UI.Forms
                         span.BotAddMid = new RebarInfo { Count = bM.Count, Diameter = bM.Diameter, LayerCounts = bM.LayerBreakdown };
                     if (sol.Reinforcements.TryGetValue($"{spanId}_Bot_Right", out var bR))
                         span.BotAddRight = new RebarInfo { Count = bR.Count, Diameter = bR.Diameter, LayerCounts = bR.LayerBreakdown };
+                }
+
+                // Also try from SpanResult.BotAddons (if Reinforcements missed)
+                if (spanResult?.BotAddons != null)
+                {
+                    if (span.BotAddLeft == null && spanResult.BotAddons.TryGetValue("Left", out var bL2))
+                        span.BotAddLeft = bL2;
+                    if (span.BotAddMid == null && spanResult.BotAddons.TryGetValue("Mid", out var bM2))
+                        span.BotAddMid = bM2;
+                    if (span.BotAddRight == null && spanResult.BotAddons.TryGetValue("Right", out var bR2))
+                        span.BotAddRight = bR2;
                 }
 
                 // ═══════════════════════════════════════════════════════════════
@@ -635,6 +870,20 @@ namespace DTS_Engine.UI.Forms
             try
             {
                 if (_webView?.CoreWebView2 == null) return;
+
+                // DEBUG: Dump Span Data to check for Mismatch
+                var sb = new System.Text.StringBuilder();
+                sb.AppendLine($"[SendGroupUpdatedToWebViewAsync] Group {groupIndex} ({group.Spans.Count} spans):");
+                for (int i = 0; i < group.Spans.Count; i++)
+                {
+                    var s = group.Spans[i];
+                    string h = s.Segments?.FirstOrDefault()?.EntityHandle ?? "null";
+                    double asTop0 = (s.As_Top != null && s.As_Top.Length > 0) ? s.As_Top[0] : -1;
+                    double asTopLast = (s.As_Top != null && s.As_Top.Length > 0) ? s.As_Top[s.As_Top.Length - 1] : -1;
+                    sb.AppendLine($"  Span[{i}] ID='{s.SpanId}' Handle='{h}' As_Top[0]={asTop0:F2} As_Top[Last]={asTopLast:F2}");
+                }
+                DTS_Engine.Core.Algorithms.Rebar.Utils.RebarLogger.Log(sb.ToString());
+
                 // Pass JSON as a safely-escaped JS string (then JS will JSON.parse it)
                 string json = JsonConvert.SerializeObject(group);
                 string jsStringLiteral = JsonConvert.SerializeObject(json);

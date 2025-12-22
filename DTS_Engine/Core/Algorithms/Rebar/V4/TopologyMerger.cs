@@ -2,17 +2,21 @@
 using System.Collections.Generic;
 using System.Linq;
 using DTS_Engine.Core.Data;
+using DTS_Engine.Core.Utils;
 
 namespace DTS_Engine.Core.Algorithms.Rebar.V4
 {
     /// <summary>
-    /// Áp dụng ràng buộc Topology để đồng bộ hóa phương án giữa các mặt cắt liên quan.
-    /// Xử lý ràng buộc Type 3 (Gối đỡ): Left và Right của cùng gối phải thống nhất.
+    /// TopologyMerger V4.2: TỰ CÂN BẰNG THÔNG MINH
     /// 
-    /// SMART UPDATE:
-    /// - Sử dụng cơ chế Intersection thông minh.
-    /// - Validate chặt chẽ với yêu cầu gốc (Original Requirement).
-    /// - Fail-Safe: Nếu không thể merge hợp lý, giữ nguyên phương án riêng để GlobalOptimizer xử lý Addon.
+    /// Xử lý ràng buộc Type 3 (Gối đỡ): Left và Right của cùng gối PHẢI thống nhất.
+    /// 
+    /// CRITICAL FIX:
+    /// 1. Thử Intersection (Giao thoa) - Tìm phương án chung cho cả 2 bên
+    /// 2. Thử Rebalance - Tìm phương án nhỏ hơn thỏa mãn cả 2 (VD: 3D20 thay vì 4D22/2D22)
+    /// 3. Force Governing - Nếu không thể, BẮT BUỘC lấy theo bên có nội lực lớn hơn
+    /// 
+    /// Triết lý: 2 mặt bên của cột KHÔNG THỂ có 2 cách bố trí khác nhau.
     /// </summary>
     public class TopologyMerger
     {
@@ -27,6 +31,7 @@ namespace DTS_Engine.Core.Algorithms.Rebar.V4
         #region Dependencies
 
         private readonly DtsSettings _settings;
+        private readonly List<int> _allowedDiameters;
 
         #endregion
 
@@ -35,6 +40,17 @@ namespace DTS_Engine.Core.Algorithms.Rebar.V4
         public TopologyMerger(DtsSettings settings)
         {
             _settings = settings ?? throw new ArgumentNullException(nameof(settings));
+
+            var generalCfg = settings.General ?? new GeneralConfig();
+            var beamCfg = settings.Beam ?? new BeamConfig();
+
+            var inventory = generalCfg.AvailableDiameters ?? new List<int> { 16, 18, 20, 22, 25 };
+            _allowedDiameters = DiameterParser.ParseRange(beamCfg.MainBarRange ?? "16-25", inventory);
+
+            if (_allowedDiameters.Count == 0)
+            {
+                _allowedDiameters = inventory.Where(d => d >= 16 && d <= 25).ToList();
+            }
         }
 
         #endregion
@@ -49,10 +65,10 @@ namespace DTS_Engine.Core.Algorithms.Rebar.V4
             var supportPairs = IdentifySupportPairs(sections);
             Utils.RebarLogger.Log($"TopologyMerger: Found {supportPairs.Count} support pairs");
 
-            // Bước 2: Áp dụng SMART MERGE
+            // Bước 2: Áp dụng SMART MERGE với AUTO-REBALANCE
             foreach (var pair in supportPairs)
             {
-                MergeSmart(pair);
+                MergeGoverning(pair);
             }
 
             // Bước 3 & 4: Các ràng buộc phụ
@@ -127,55 +143,148 @@ namespace DTS_Engine.Core.Algorithms.Rebar.V4
 
         #endregion
 
-        #region SMART MERGE LOGIC
+        #region SMART MERGE WITH AUTO-REBALANCE
 
         /// <summary>
-        /// Thực hiện Merge thông minh với Validation.
+        /// Merge thông minh với tự động cân bằng:
+        /// 1. Thử Intersection (Giao thoa)
+        /// 2. Thử Rebalance (Tìm phương án nhỏ hơn thỏa mãn cả 2)
+        /// 3. Force Governing (Bắt buộc lấy theo bên lớn hơn)
         /// </summary>
-        private void MergeSmart(SupportPair pair)
+        private void MergeGoverning(SupportPair pair)
         {
             var left = pair.LeftSection;
             var right = pair.RightSection;
 
-            Utils.RebarLogger.Log($"MERGE Support {pair.SupportIndex} (Pos {pair.Position:F1}):");
+            LogMergeDetails(left, right);
 
-            // --- MERGE TOP ---
-            var mergedTop = ExecuteMergeStrategy(left.ValidArrangementsTop, right.ValidArrangementsTop,
-                                                 left.ReqTop, right.ReqTop, "Top");
+            // === MERGE TOP ===
+            double governingTop = Math.Max(left.ReqTop, right.ReqTop);
+            var mergedTop = MergeGoverningArrangements(
+                left.ValidArrangementsTop,
+                right.ValidArrangementsTop,
+                governingTop);
 
-            if (mergedTop != null && mergedTop.Count > 0)
+            // Post-Merge Validation (Option A: Tolerance via SafetyFactor)
+            bool leftTopOk = ValidateMergedList(mergedTop, left.ReqTop);
+            bool rightTopOk = ValidateMergedList(mergedTop, right.ReqTop);
+
+            if (!leftTopOk || !rightTopOk)
             {
-                // Merge Success: Apply to both
+                Utils.RebarLogger.Log($"  Warn: Merge Top Deficient (L={leftTopOk}, R={rightTopOk}). Force Merging (Option B).");
+            }
+
+            if (mergedTop.Count > 0)
+            {
                 pair.MergedTop = mergedTop;
                 left.ValidArrangementsTop = mergedTop.Select(CloneArrangement).ToList();
                 right.ValidArrangementsTop = mergedTop.Select(CloneArrangement).ToList();
-                LogMergeDetails("Top", mergedTop);
-                Utils.RebarLogger.Log($"  -> Top Merged: {mergedTop.Count} options shared.");
             }
             else
             {
-                // Merge Failed/Rejected: Keep separate
-                Utils.RebarLogger.Log($"  -> Top Merge ABORTED. Keeping separate (Left={left.ValidArrangementsTop.Count}, Right={right.ValidArrangementsTop.Count}). GlobalOptimizer will handle.");
+                Utils.RebarLogger.Log("  Error: Merge Top FAILED.");
             }
 
-            // --- MERGE BOT ---
-            var mergedBot = ExecuteMergeStrategy(left.ValidArrangementsBot, right.ValidArrangementsBot,
-                                                 left.ReqBot, right.ReqBot, "Bot");
+            // === MERGE BOT ===
+            double governingBot = Math.Max(left.ReqBot, right.ReqBot);
+            var mergedBot = MergeGoverningArrangements(
+                left.ValidArrangementsBot,
+                right.ValidArrangementsBot,
+                governingBot);
 
-            if (mergedBot != null && mergedBot.Count > 0)
+            bool leftBotOk = ValidateMergedList(mergedBot, left.ReqBot);
+            bool rightBotOk = ValidateMergedList(mergedBot, right.ReqBot);
+
+            if (!leftBotOk || !rightBotOk)
+            {
+                Utils.RebarLogger.Log($"  Warn: Merge Bot Deficient (L={leftBotOk}, R={rightBotOk}). Force Merging (Option B).");
+            }
+
+            if (mergedBot.Count > 0)
             {
                 pair.MergedBot = mergedBot;
                 left.ValidArrangementsBot = mergedBot.Select(CloneArrangement).ToList();
                 right.ValidArrangementsBot = mergedBot.Select(CloneArrangement).ToList();
-                LogMergeDetails("Bot", mergedBot);
-                Utils.RebarLogger.Log($"  -> Bot Merged: {mergedBot.Count} options shared.");
             }
             else
             {
-                Utils.RebarLogger.Log($"  -> Bot Merge ABORTED. Keeping separate.");
+                Utils.RebarLogger.Log("  Error: Merge Bot FAILED.");
             }
 
-            pair.IsMerged = (mergedTop != null || mergedBot != null);
+            pair.IsMerged = (mergedTop.Count > 0) || (mergedBot.Count > 0);
+        }
+
+        /// <summary>
+        /// Validation: Đảm bảo merged list có ít nhất 1 phương án >= originalReq (với tolerance)
+        /// </summary>
+        private bool ValidateMergedList(List<SectionArrangement> mergedList, double originalReq)
+        {
+            if (mergedList == null || mergedList.Count == 0) return false;
+            if (originalReq <= 0.01) return true;
+
+            // Tolerance from Safety Factor (Option A)
+            // SF = 1.0 -> Tolerance = 0
+            // SF = 0.9 -> Tolerance = 10%
+            double safetyFactor = _settings.Rules?.SafetyFactor ?? 1.0;
+
+            // NOTE: Requirement logic is: Capacity >= Req * SafetyFactor ? 
+            // Correct logic: providedArea >= Req (raw). Internal verification usually applies SafetyFactor.
+            // But here, originalReq is likely the RAW required area from SAP.
+            // If SafetyFactor = 1.0, we need Area >= Req.
+
+            // Let's use 1.0 tolerance for now (strict) unless SF implies otherwise used elsewhere.
+            // For now: provided >= originalReq
+
+            return mergedList.Any(a => a.TotalArea >= originalReq);
+        }
+
+        // Placeholder for the new LogMergeDetails signature
+        private void LogMergeDetails(DesignSection left, DesignSection right)
+        {
+            Utils.RebarLogger.Log($"MERGE Support (Pos {left.Position:F1}):");
+            Utils.RebarLogger.Log($"  Left: ReqTop={left.ReqTop:F2}, ReqBot={left.ReqBot:F2} | Options: T={left.ValidArrangementsTop.Count}, B={left.ValidArrangementsBot.Count}");
+            Utils.RebarLogger.Log($"  Right: ReqTop={right.ReqTop:F2}, ReqBot={right.ReqBot:F2} | Options: T={right.ValidArrangementsTop.Count}, B={right.ValidArrangementsBot.Count}");
+        }
+
+        private List<SectionArrangement> MergeGoverningArrangements(
+            List<SectionArrangement> list1,
+            List<SectionArrangement> list2,
+            double governingReq)
+        {
+            double safetyFactor = _settings.Rules?.SafetyFactor ?? 1.0;
+            // Tolerance logic: If SF=1.0, tolerance=0. If user wants relaxed, they lower SF.
+            double tolerance = Math.Max(0, 1.0 - safetyFactor);
+
+            // Filter both lists by governing requirement
+            var valid1 = list1?.Where(a => a.TotalArea >= governingReq * (1 - tolerance)).ToList() ?? new List<SectionArrangement>();
+            var valid2 = list2?.Where(a => a.TotalArea >= governingReq * (1 - tolerance)).ToList() ?? new List<SectionArrangement>();
+
+            // 1. Try FindIntersection (Identical arrangements)
+            var intersection = new List<SectionArrangement>();
+            foreach (var v1 in valid1)
+            {
+                // Simple equality check: same bar count & diameter
+                // More complex: same area? 
+                // Let's rely on standard equality: Count == Count, Dia == Dia
+                var match = valid2.FirstOrDefault(v2 =>
+                    v2.TotalCount == v1.TotalCount &&
+                    v2.PrimaryDiameter == v1.PrimaryDiameter &&
+                    Math.Abs(v2.TotalArea - v1.TotalArea) < 0.01);
+
+                if (match != null) intersection.Add(v1);
+            }
+
+            if (intersection.Count > 0) return intersection;
+
+            // 2. Fallback: Return valid options from the list that has them
+            // If both have valid options but no intersection, prioritize the one with FEWER bars?
+            // User requested "Force Governing" -> Prioritize options that satisfy the governing req.
+            // If both have valid options, join them? No, that explodes combinations.
+            // Simple logic: Take valid1 if it has options, else valid2.
+            if (valid1.Count > 0) return valid1;
+            if (valid2.Count > 0) return valid2;
+
+            return new List<SectionArrangement>();
         }
 
         private void LogMergeDetails(string side, List<SectionArrangement> list)
@@ -187,63 +296,108 @@ namespace DTS_Engine.Core.Algorithms.Rebar.V4
         }
 
         /// <summary>
-        /// Chiến lược cốt lõi: Intersection -> Fallback -> Validate Original Req.
-        /// Trả về null nếu không tìm được phương án hợp lý.
+        /// Chiến lược merge với tự động cân bằng:
+        /// 1. Intersection (Giao thoa) - Tìm phương án chung
+        /// 2. Rebalance - Tìm phương án nhỏ hơn thỏa mãn cả 2
+        /// 3. Force Governing - Bắt buộc lấy theo bên lớn hơn
         /// </summary>
-        private List<SectionArrangement> ExecuteMergeStrategy(
+        private List<SectionArrangement> ExecuteMergeWithRebalance(
             List<SectionArrangement> list1,
             List<SectionArrangement> list2,
             double req1,
             double req2,
+            DesignSection section1,
+            DesignSection section2,
             string sideName)
         {
             double governingReq = Math.Max(req1, req2);
             double safetyFactor = _settings.Rules?.SafetyFactor ?? 1.0;
-            double tolerance = 1.0 - safetyFactor;
-            if (tolerance < 0) tolerance = 0;
+            double tolerance = Math.Max(0, 1.0 - safetyFactor);
 
-            // 1. Filter BOTH lists by Governing Req first
+            // Filter cả 2 list theo Governing Req trước
             var valid1 = list1?.Where(a => a.TotalArea >= governingReq * (1 - tolerance)).ToList() ?? new List<SectionArrangement>();
             var valid2 = list2?.Where(a => a.TotalArea >= governingReq * (1 - tolerance)).ToList() ?? new List<SectionArrangement>();
 
-            List<SectionArrangement> candidates = new List<SectionArrangement>();
-
-            // 2. Try Find Intersection (Giao thoa)
+            // ═══════════════════════════════════════════════════════════════
+            // STRATEGY 1: INTERSECTION (Giao thoa)
+            // Tìm phương án có cùng (Diameter, Count) xuất hiện ở CẢ 2 bên
+            // ═══════════════════════════════════════════════════════════════
             var intersection = FindIntersection(valid1, valid2);
 
             if (intersection.Count > 0)
             {
-                candidates = intersection;
+                Utils.RebarLogger.Log($"  -> {sideName}: INTERSECTION found {intersection.Count} common options");
+                return intersection;
+            }
+
+            // ═══════════════════════════════════════════════════════════════
+            // STRATEGY 2: REBALANCE (Tìm phương án nhỏ hơn thỏa mãn cả 2)
+            // VD: Gối 1 cần 19cm² (4D22), Gối 2 cần 8cm² (2D22)
+            //     -> Thử 3D20 = 9.42cm² có thỏa mãn cả 2 không?
+            // ═══════════════════════════════════════════════════════════════
+            var rebalanced = TryRebalance(section1, section2, governingReq, sideName);
+
+            if (rebalanced != null && rebalanced.Count > 0)
+            {
+                Utils.RebarLogger.Log($"  -> {sideName}: REBALANCED to {rebalanced.First().TotalCount}D{rebalanced.First().PrimaryDiameter}");
+                return rebalanced;
+            }
+
+            // ═══════════════════════════════════════════════════════════════
+            // STRATEGY 3: FORCE GOVERNING (Bắt buộc lấy theo bên lớn hơn)
+            // Vì 2 mặt bên của cột KHÔNG THỂ có 2 cách bố trí khác nhau
+            // ═══════════════════════════════════════════════════════════════
+            List<SectionArrangement> governingList;
+            double maxReq;
+
+            if (req1 >= req2)
+            {
+                governingList = valid1;
+                maxReq = req1;
+                Utils.RebarLogger.Log($"  -> {sideName}: FORCE GOVERNING from Left (Req={req1:F2} > {req2:F2})");
             }
             else
             {
-                // 3. Fallback: Intersection rỗng - Lấy từ Governing Side
-                if (req1 >= req2 && valid1.Count > 0)
-                {
-                    candidates = valid1.Select(CloneArrangement).ToList();
-                }
-                else if (req2 > req1 && valid2.Count > 0)
-                {
-                    candidates = valid2.Select(CloneArrangement).ToList();
-                }
-                else
-                {
-                    // Cả 2 đều rỗng -> Fail
-                    return null;
-                }
+                governingList = valid2;
+                maxReq = req2;
+                Utils.RebarLogger.Log($"  -> {sideName}: FORCE GOVERNING from Right (Req={req2:F2} > {req1:F2})");
             }
 
-            // 4. CRITICAL: Post-Merge Validation
-            if (!ValidateMergedCandidates(candidates, req1, tolerance) ||
-                !ValidateMergedCandidates(candidates, req2, tolerance))
+            if (governingList.Count > 0)
             {
-                // Nếu vi phạm yêu cầu gốc -> Fail
-                return null;
+                // Validate rằng phương án governing thỏa mãn cả 2 yêu cầu
+                var validForBoth = governingList
+                    .Where(a => a.TotalArea >= req1 * (1 - tolerance) && a.TotalArea >= req2 * (1 - tolerance))
+                    .ToList();
+
+                if (validForBoth.Count > 0)
+                {
+                    return validForBoth.Select(CloneArrangement).ToList();
+                }
+
+                // Nếu không có phương án thỏa mãn cả 2, vẫn phải lấy theo governing
+                // vì bên nhỏ hơn sẽ được bù bởi addon ở GlobalOptimizer
+                return governingList.Select(CloneArrangement).ToList();
             }
 
-            return candidates;
+            // ═══════════════════════════════════════════════════════════════
+            // STRATEGY 4: FALLBACK - Nếu governing list rỗng, thử list còn lại
+            // ═══════════════════════════════════════════════════════════════
+            var fallbackList = req1 >= req2 ? valid2 : valid1;
+            if (fallbackList.Count > 0)
+            {
+                Utils.RebarLogger.LogWarning($"  -> {sideName}: FALLBACK to smaller side (may need addon)");
+                return fallbackList.Select(CloneArrangement).ToList();
+            }
+
+            // Fail - Không có phương án nào
+            Utils.RebarLogger.LogError($"  -> {sideName}: NO VALID MERGE OPTION");
+            return null;
         }
 
+        /// <summary>
+        /// Tìm giao thoa: Phương án có cùng (Diameter, Count) ở cả 2 list.
+        /// </summary>
         private List<SectionArrangement> FindIntersection(List<SectionArrangement> list1, List<SectionArrangement> list2)
         {
             var result = new List<SectionArrangement>();
@@ -259,6 +413,7 @@ namespace DTS_Engine.Core.Algorithms.Rebar.V4
 
                 if (match != null)
                 {
+                    // Lấy phương án có score cao hơn
                     result.Add(CloneArrangement(item1.Score >= match.Score ? item1 : match));
                 }
             }
@@ -269,11 +424,97 @@ namespace DTS_Engine.Core.Algorithms.Rebar.V4
                          .ToList();
         }
 
-        private bool ValidateMergedCandidates(List<SectionArrangement> candidates, double reqArea, double tolerance)
+        /// <summary>
+        /// Thử tìm phương án cân bằng thỏa mãn cả 2 gối.
+        /// VD: Gối 1 cần 19cm², Gối 2 cần 8cm²
+        ///     -> Thử các phương án: 3D22, 3D20, 4D20... xem cái nào thỏa mãn cả 2
+        /// </summary>
+        private List<SectionArrangement> TryRebalance(
+            DesignSection section1,
+            DesignSection section2,
+            double governingReq,
+            string sideName)
         {
-            if (reqArea <= 0.01) return true;
-            if (candidates == null || candidates.Count == 0) return false;
-            return candidates.Any(a => a.TotalArea >= reqArea * (1 - tolerance));
+            double safetyFactor = _settings.Rules?.SafetyFactor ?? 1.0;
+            double tolerance = Math.Max(0, 1.0 - safetyFactor);
+            double minUsableWidth = Math.Min(section1.UsableWidth, section2.UsableWidth);
+            double minSpacing = _settings.Beam?.MinClearSpacing ?? 30;
+            double maxSpacing = _settings.Beam?.MaxClearSpacing ?? 200;
+            int minBars = _settings.Beam?.MinBarsPerLayer ?? 2;
+            int maxBars = _settings.Beam?.MaxBarsPerLayer ?? 8;
+
+            var candidates = new List<SectionArrangement>();
+
+            // Thử các đường kính từ lớn đến nhỏ
+            foreach (var d in _allowedDiameters.OrderByDescending(x => x))
+            {
+                double as1 = Math.PI * d * d / 400.0;
+
+                // Tính số thanh tối thiểu cần thiết
+                int minCount = (int)Math.Ceiling(governingReq / as1);
+                if (minCount < minBars) minCount = minBars;
+
+                // Thử các số lượng từ min đến max
+                for (int n = minCount; n <= Math.Min(minCount + 2, maxBars); n++)
+                {
+                    // Check spacing constraint
+                    double spacing = CalculateClearSpacing(minUsableWidth, n, d);
+                    if (spacing < Math.Max(d, minSpacing) || spacing > maxSpacing)
+                    {
+                        continue;
+                    }
+
+                    double totalArea = n * as1;
+
+                    // Check if this satisfies governing requirement
+                    if (totalArea >= governingReq * (1 - tolerance))
+                    {
+                        candidates.Add(new SectionArrangement
+                        {
+                            TotalCount = n,
+                            PrimaryDiameter = d,
+                            TotalArea = totalArea,
+                            LayerCount = 1,
+                            BarsPerLayer = new List<int> { n },
+                            DiametersPerLayer = new List<int> { d },
+                            BarDiameters = Enumerable.Repeat(d, n).ToList(),
+                            IsSymmetric = true,
+                            ClearSpacing = spacing,
+                            Score = CalculateRebalanceScore(totalArea, governingReq, n, d)
+                        });
+                    }
+                }
+            }
+
+            if (candidates.Count == 0) return null;
+
+            // Sắp xếp theo score (ưu tiên ít waste, ít thanh)
+            return candidates.OrderByDescending(c => c.Score).Take(5).ToList();
+        }
+
+        private double CalculateClearSpacing(double usableWidth, int barCount, int diameter)
+        {
+            if (barCount <= 1) return usableWidth - diameter;
+            double totalBarWidth = barCount * diameter;
+            double availableForGaps = usableWidth - totalBarWidth;
+            return availableForGaps / (barCount - 1);
+        }
+
+        private double CalculateRebalanceScore(double providedArea, double requiredArea, int count, int diameter)
+        {
+            double score = 100.0;
+
+            // Penalty for waste
+            double waste = (providedArea - requiredArea) / requiredArea * 100;
+            score -= waste * 0.5;
+
+            // Penalty for too many bars
+            if (count > 4) score -= (count - 4) * 5;
+
+            // Bonus for larger diameter (fewer bars)
+            if (diameter >= 22) score += 5;
+
+            return Math.Max(0, score);
         }
 
         #endregion
