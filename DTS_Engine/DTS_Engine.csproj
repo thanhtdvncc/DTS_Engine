@@ -145,6 +145,7 @@
     <Compile Include="Core\Algorithms\Rebar\V4\SectionSolver.cs" />
     <Compile Include="Core\Algorithms\Rebar\V4\TopologyMerger.cs" />
     <Compile Include="Core\Algorithms\Rebar\V4\V4RebarCalculator.cs" />
+    <Compile Include="Core\Algorithms\TopologyBuilder.cs" />
     <Compile Include="DtsInitializer.cs" />
     <Compile Include="Commands\AuditCommands.cs" />
     <Compile Include="Commands\CommandBase.cs" />
@@ -270,6 +271,7 @@
   <ItemGroup>
     <None Include="app.config" />
     <None Include="packages.config" />
+    <None Include="REFACTOR_V5_SUMMARY.md" />
   </ItemGroup>
   <ItemGroup>
     <EmbeddedResource Include="UI\Resources\RebarConfig.html" />

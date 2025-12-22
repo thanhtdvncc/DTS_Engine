@@ -461,7 +461,7 @@ namespace DTS_Engine.Commands
         {
             ExecuteSafe(() =>
             {
-                WriteMessage("\n=== GỠ LIÊN KẾT CỤ THỂ ===");
+                WriteMessage("\n=== GỬ LIÊN KẾT CỤ THỂ ===");
 
                 VisualUtils.ClearAll();
 
@@ -750,6 +750,489 @@ namespace DTS_Engine.Commands
             }
 
             WriteMessage("\n(Sử dụng DTS_CLEAR_VISUAL để xóa hiển thị tạm thời)");
+        }
+
+        #endregion
+
+        #region V5: DTS_REBAR_LINK (Beam Group Star Topology)
+
+        /// <summary>
+        /// V5: Tạo Star Topology cho nhóm dầm.
+        /// Chọn nhiều dầm → Phần tử bên trái nhất (S1) trở thành "Mother".
+        /// </summary>
+        [CommandMethod("DTS_REBAR_LINK")]
+        public void DTS_REBAR_LINK()
+        {
+            ExecuteSafe(() =>
+            {
+                WriteMessage("\n=== LIÊN KẾT NHÓM DẦM (STAR TOPOLOGY) ===");
+                WriteMessage("Chọn các dầm cần gom nhóm (S1 = dầm trái nhất sẽ là Mother):");
+
+                var ids = AcadUtils.SelectObjectsOnScreen("LINE,LWPOLYLINE,POLYLINE");
+                if (ids.Count < 2)
+                {
+                    WriteMessage("Cần chọn ít nhất 2 dầm để tạo liên kết nhóm.");
+                    return;
+                }
+
+                VisualUtils.ClearAll();
+
+                var topologyBuilder = new Core.Algorithms.TopologyBuilder();
+                int linkCount = 0;
+
+                UsingTransaction(tr =>
+                {
+                    // BuildGraph sẽ tự động sắp xếp L->R và thiết lập Star Topology
+                    var sortedTopologies = topologyBuilder.BuildGraph(ids, tr, autoEstablishLinks: true);
+
+                    if (sortedTopologies.Count < 2)
+                    {
+                        WriteMessage("Không tìm thấy đủ dầm hợp lệ.");
+                        return;
+                    }
+
+                    // Mother = S1 (left-most)
+                    var mother = sortedTopologies[0];
+                    var children = sortedTopologies.Skip(1).ToList();
+
+                    WriteMessage($"Mother (S1): {mother.Handle} tại X={mother.StartPoint.X:F0}");
+
+                    foreach (var child in children)
+                    {
+                        WriteMessage($"  → Child {child.SpanId}: {child.Handle} tại X={child.StartPoint.X:F0}");
+                        linkCount++;
+                    }
+
+                    // Highlight
+                    var motherObjId = mother.ObjectId;
+                    var childObjIds = children.Select(c => c.ObjectId).ToList();
+
+                    VisualUtils.HighlightObject(motherObjId, 4); // Cyan for Mother
+                    VisualUtils.HighlightObjects(childObjIds, 3); // Green for Children
+                    VisualUtils.DrawLinkLines(motherObjId, childObjIds, 3);
+                });
+
+                WriteSuccess($"Đã tạo Star Topology với {linkCount} liên kết.");
+                WriteMessage("Chạy DTS_REBAR_CALCULATE để tính thép cho nhóm này.");
+                WriteMessage("\n(Sử dụng DTS_CLEAR_VISUAL để xóa hiển thị tạm thời)");
+            });
+        }
+
+        #endregion
+
+        #region V5: DTS_REBAR_UNLINK (Break Beam Group)
+
+        /// <summary>
+        /// V5: Tách dầm ra khỏi nhóm. Có option để downstream beams follow.
+        /// </summary>
+        [CommandMethod("DTS_REBAR_UNLINK")]
+        public void DTS_REBAR_UNLINK()
+        {
+            ExecuteSafe(() =>
+            {
+                WriteMessage("\n=== TÁCH DẦM KHỎI NHÓM ===");
+                WriteMessage("Chọn dầm cần tách ra khỏi nhóm:");
+
+                var peo = new PromptEntityOptions("\nChọn dầm: ");
+                peo.SetRejectMessage("\nChỉ chọn LINE hoặc POLYLINE.");
+                peo.AddAllowedClass(typeof(Line), false);
+                peo.AddAllowedClass(typeof(Polyline), false);
+
+                var per = Ed.GetEntity(peo);
+                if (per.Status != PromptStatus.OK) return;
+
+                ObjectId childId = per.ObjectId;
+
+                // Hỏi user về downstream behavior
+                var pko = new PromptKeywordOptions(
+                    "\nCác dầm phía sau có follow theo dầm này không? [Yes/No]: ");
+                pko.Keywords.Add("Yes");
+                pko.Keywords.Add("No");
+                pko.Keywords.Default = "No";
+
+                var resKw = Ed.GetKeywords(pko);
+                bool followDownstream = resKw.Status == PromptStatus.OK && resKw.StringResult == "Yes";
+
+                int unlinkCount = 0;
+                string motherHandle = null;
+
+                UsingTransaction(tr =>
+                {
+                    var childObj = tr.GetObject(childId, OpenMode.ForWrite);
+                    if (childObj == null) return;
+
+                    var elemData = XDataUtils.ReadElementData(childObj);
+                    if (elemData == null || string.IsNullOrEmpty(elemData.OriginHandle))
+                    {
+                        WriteMessage("Dầm này không thuộc nhóm nào.");
+                        return;
+                    }
+
+                    motherHandle = elemData.OriginHandle;
+
+                    // Get Mother
+                    var motherId = AcadUtils.GetObjectIdFromHandle(motherHandle);
+                    if (motherId == ObjectId.Null)
+                    {
+                        WriteMessage("Không tìm thấy Mother.");
+                        return;
+                    }
+
+                    var motherObj = tr.GetObject(motherId, OpenMode.ForWrite);
+
+                    if (followDownstream)
+                    {
+                        // Get all children of the same mother
+                        var motherData = XDataUtils.ReadElementData(motherObj);
+                        var allChildHandles = motherData?.ChildHandles ?? new List<string>();
+
+                        // Build topology to find order
+                        var allChildIds = allChildHandles
+                            .Select(h => AcadUtils.GetObjectIdFromHandle(h))
+                            .Where(id => id != ObjectId.Null)
+                            .ToList();
+                        allChildIds.Add(motherId);
+
+                        var topologyBuilder = new Core.Algorithms.TopologyBuilder();
+                        var sortedTopologies = topologyBuilder.BuildGraph(allChildIds, tr, autoEstablishLinks: false);
+
+                        // Find index of selected child
+                        var selectedHandle = childId.Handle.ToString();
+                        int selectedIdx = sortedTopologies.FindIndex(t => t.Handle == selectedHandle);
+
+                        if (selectedIdx < 0)
+                        {
+                            WriteMessage("Không tìm thấy dầm trong topology.");
+                            return;
+                        }
+
+                        // Unlink selected + all to the right
+                        var toUnlink = sortedTopologies.Skip(selectedIdx).ToList();
+
+                        foreach (var topo in toUnlink)
+                        {
+                            var unlinkObj = tr.GetObject(topo.ObjectId, OpenMode.ForWrite);
+                            XDataUtils.ClearAllLinks(unlinkObj, tr);
+                            unlinkCount++;
+                        }
+
+                        // Re-link downstream beams to selected child as new Mother
+                        if (toUnlink.Count > 1)
+                        {
+                            var newMotherObj = tr.GetObject(toUnlink[0].ObjectId, OpenMode.ForWrite);
+                            for (int i = 1; i < toUnlink.Count; i++)
+                            {
+                                var downstreamObj = tr.GetObject(toUnlink[i].ObjectId, OpenMode.ForWrite);
+                                XDataUtils.RegisterLink(downstreamObj, newMotherObj, isReference: false, tr);
+                            }
+                            WriteMessage($"Dầm [{selectedHandle}] trở thành Mother mới cho {toUnlink.Count - 1} dầm downstream.");
+                        }
+                    }
+                    else
+                    {
+                        // Just unlink the selected child
+                        XDataUtils.UnregisterLink(childObj, motherHandle, tr);
+                        unlinkCount = 1;
+                    }
+                });
+
+                if (unlinkCount > 0)
+                {
+                    WriteSuccess($"Đã tách {unlinkCount} dầm khỏi nhóm [Mother: {motherHandle}].");
+                }
+            });
+        }
+
+        #endregion
+
+        #region V5: DTS_SHOW_REBAR_LINK (Hiển thị Star Topology)
+
+        /// <summary>
+        /// V5: Hiển thị Star Topology của nhóm dầm được chọn.
+        /// </summary>
+        [CommandMethod("DTS_SHOW_REBAR_LINK")]
+        public void DTS_SHOW_REBAR_LINK()
+        {
+            ExecuteSafe(() =>
+            {
+                WriteMessage("\n=== HIỂN THỊ LIÊN KẾT NHÓM DẦM ===");
+                WriteMessage("Chọn một hoặc nhiều dầm để xem liên kết:");
+
+                var ids = AcadUtils.SelectObjectsOnScreen("LINE,LWPOLYLINE,POLYLINE");
+                if (ids.Count == 0) return;
+
+                VisualUtils.ClearAll();
+
+                var topologyBuilder = new Core.Algorithms.TopologyBuilder();
+                int totalGroups = 0;
+
+                UsingTransaction(tr =>
+                {
+                    // BuildGraph tự động expand selection theo links
+                    var allTopologies = topologyBuilder.BuildGraph(ids, tr, autoEstablishLinks: false);
+
+                    if (allTopologies.Count == 0)
+                    {
+                        WriteMessage("Không tìm thấy dầm có liên kết.");
+                        return;
+                    }
+
+                    // Split into groups
+                    var groups = topologyBuilder.SplitIntoGroups(allTopologies);
+
+                    foreach (var group in groups)
+                    {
+                        if (group.Count == 0) continue;
+                        totalGroups++;
+
+                        // Mother = first (left-most)
+                        var mother = group[0];
+                        var children = group.Skip(1).ToList();
+
+                        WriteMessage($"\nNhóm {totalGroups}: {group.Count} dầm");
+                        WriteMessage($"  Mother: {mother.Handle} (X={mother.StartPoint.X:F0})");
+
+                        foreach (var child in children)
+                        {
+                            WriteMessage($"  → {child.SpanId}: {child.Handle} (X={child.StartPoint.X:F0})");
+                        }
+
+                        // Highlight
+                        var motherObjId = mother.ObjectId;
+                        var childObjIds = children.Select(c => c.ObjectId).ToList();
+
+                        int colorIndex = 3 + (totalGroups % 5); // Cycle colors: 3,4,5,6,7
+                        VisualUtils.HighlightObject(motherObjId, 4); // Cyan for Mother
+                        VisualUtils.HighlightObjects(childObjIds, colorIndex);
+                        VisualUtils.DrawLinkLines(motherObjId, childObjIds, colorIndex);
+                    }
+                });
+
+                if (totalGroups == 0)
+                {
+                    WriteMessage("Không tìm thấy nhóm dầm liên kết nào.");
+                }
+                else
+                {
+                    WriteSuccess($"Đã hiển thị {totalGroups} nhóm dầm.");
+                }
+
+                WriteMessage("\n(Sử dụng DTS_CLEAR_VISUAL để xóa hiển thị tạm thời)");
+            });
+        }
+
+        #endregion
+
+        #region V5: DTS_CLEANUP_LEGACY (Dọn dẹp dữ liệu cũ)
+
+        /// <summary>
+        /// V5: Dọn dẹp dữ liệu BeamGroup từ NOD (legacy V4).
+        /// Chuyển đổi sang XData-only mode.
+        /// </summary>
+        [CommandMethod("DTS_CLEANUP_LEGACY")]
+        public void DTS_CLEANUP_LEGACY()
+        {
+            ExecuteSafe(() =>
+            {
+                WriteMessage("\n=== DỌN DẸP DỮ LIỆU LEGACY (V4 → V5) ===");
+                
+                bool nodCleared = false;
+                int repairedLinks = 0;
+
+                UsingTransaction(tr =>
+                {
+                    // 1. Clear BeamGroups from NOD
+#pragma warning disable CS0618 // Obsolete warning
+                    string existingNod = XDataUtils.LoadBeamGroupsFromNOD(AcadUtils.Db, tr);
+#pragma warning restore CS0618
+
+                    if (!string.IsNullOrEmpty(existingNod))
+                    {
+                        WriteMessage("Tìm thấy dữ liệu BeamGroup trong NOD...");
+                        nodCleared = XDataUtils.ClearBeamGroupsFromNOD(AcadUtils.Db, tr);
+                        
+                        if (nodCleared)
+                            WriteMessage("  ✅ Đã xóa BeamGroup từ NOD.");
+                        else
+                            WriteMessage("  ⚠️ Không thể xóa BeamGroup từ NOD.");
+                    }
+                    else
+                    {
+                        WriteMessage("Không có dữ liệu NOD cần dọn dẹp.");
+                    }
+
+                    // 2. Validate and repair Star Topology
+                    WriteMessage("Đang kiểm tra Star Topology...");
+                    
+                    var topologyBuilder = new Core.Algorithms.TopologyBuilder();
+                    var allIds = new List<ObjectId>();
+                    
+                    // Scan all beams
+                    var btr = tr.GetObject(AcadUtils.Db.CurrentSpaceId, OpenMode.ForRead) as BlockTableRecord;
+                    foreach (ObjectId id in btr)
+                    {
+                        if (id.IsErased) continue;
+                        var ent = tr.GetObject(id, OpenMode.ForRead) as Entity;
+                        if (ent == null) continue;
+
+                        if (XDataUtils.HasAppXData(ent))
+                        {
+                            var rebarData = XDataUtils.ReadRebarData(ent);
+                            if (rebarData != null)
+                            {
+                                allIds.Add(id);
+                            }
+                        }
+                    }
+
+                    if (allIds.Count > 0)
+                    {
+                        var allTopologies = topologyBuilder.BuildGraph(allIds, tr, autoEstablishLinks: false);
+                        var groups = topologyBuilder.SplitIntoGroups(allTopologies);
+
+                        foreach (var group in groups)
+                        {
+                            if (group.Count > 1)
+                            {
+                                bool wasValid = topologyBuilder.ValidateAndRepairStarTopology(group, tr);
+                                if (!wasValid)
+                                {
+                                    repairedLinks += group.Count - 1;
+                                }
+                            }
+                        }
+                    }
+                });
+
+                // Summary
+                WriteMessage("\n--- KẾT QUẢ ---");
+                if (nodCleared)
+                    WriteSuccess("✅ Đã xóa dữ liệu BeamGroup từ NOD.");
+                
+                if (repairedLinks > 0)
+                    WriteSuccess($"✅ Đã sửa chữa {repairedLinks} liên kết Star Topology.");
+                else
+                    WriteMessage("Star Topology đã đúng.");
+
+                WriteMessage("\nV5 Migration hoàn tất. Sử dụng DTS_REBAR_CALCULATE để tính thép.");
+            });
+        }
+
+        #endregion
+
+        #region V5: DTS_VALIDATE_TOPOLOGY (Kiểm tra tính toàn vẹn)
+
+        /// <summary>
+        /// V5: Kiểm tra và báo cáo tình trạng Star Topology của tất cả nhóm dầm.
+        /// </summary>
+        [CommandMethod("DTS_VALIDATE_TOPOLOGY")]
+        public void DTS_VALIDATE_TOPOLOGY()
+        {
+            ExecuteSafe(() =>
+            {
+                WriteMessage("\n=== KIỂM TRA STAR TOPOLOGY ===");
+
+                var topologyBuilder = new Core.Algorithms.TopologyBuilder();
+                int totalGroups = 0;
+                int validGroups = 0;
+                int invalidGroups = 0;
+                int orphanBeams = 0;
+
+                UsingTransaction(tr =>
+                {
+                    // Scan all beams
+                    var allIds = new List<ObjectId>();
+                    var btr = tr.GetObject(AcadUtils.Db.CurrentSpaceId, OpenMode.ForRead) as BlockTableRecord;
+                    
+                    foreach (ObjectId id in btr)
+                    {
+                        if (id.IsErased) continue;
+                        var ent = tr.GetObject(id, OpenMode.ForRead) as Entity;
+                        if (ent == null) continue;
+
+                        if (XDataUtils.HasAppXData(ent))
+                        {
+                            var rebarData = XDataUtils.ReadRebarData(ent);
+                            if (rebarData != null)
+                            {
+                                allIds.Add(id);
+                            }
+                        }
+                    }
+
+                    if (allIds.Count == 0)
+                    {
+                        WriteMessage("Không tìm thấy dầm có dữ liệu DTS.");
+                        return;
+                    }
+
+                    WriteMessage($"Tìm thấy {allIds.Count} dầm, đang phân tích...");
+
+                    var allTopologies = topologyBuilder.BuildGraph(allIds, tr, autoEstablishLinks: false);
+                    var groups = topologyBuilder.SplitIntoGroups(allTopologies);
+
+                    foreach (var group in groups)
+                    {
+                        totalGroups++;
+
+                        if (group.Count == 1)
+                        {
+                            // Single beam - check if it has orphan link
+                            var beam = group[0];
+                            if (!string.IsNullOrEmpty(beam.OriginHandle))
+                            {
+                                // Has link but alone in group - orphan
+                                orphanBeams++;
+                                WriteMessage($"  ⚠️ Dầm đơn có link mồ côi: {beam.Handle}");
+                            }
+                            else
+                            {
+                                validGroups++;
+                            }
+                        }
+                        else
+                        {
+                            // Multi-beam group - validate Star Topology
+                            var mother = group[0];
+                            bool isValid = true;
+
+                            for (int i = 1; i < group.Count; i++)
+                            {
+                                if (group[i].OriginHandle != mother.Handle)
+                                {
+                                    isValid = false;
+                                    WriteMessage($"  ❌ Nhóm [{mother.Handle}]: Beam {group[i].Handle} không link đúng về Mother.");
+                                    break;
+                                }
+                            }
+
+                            if (isValid)
+                            {
+                                validGroups++;
+                                WriteMessage($"  ✅ Nhóm [{mother.Handle}]: {group.Count} dầm, Star Topology OK");
+                            }
+                            else
+                            {
+                                invalidGroups++;
+                            }
+                        }
+                    }
+                });
+
+                // Summary
+                WriteMessage("\n--- TỔNG KẾT ---");
+                WriteMessage($"  Tổng số nhóm: {totalGroups}");
+                WriteSuccess($"  Nhóm hợp lệ: {validGroups}");
+                if (invalidGroups > 0)
+                    WriteError($"  Nhóm không hợp lệ: {invalidGroups}");
+                if (orphanBeams > 0)
+                    WriteMessage($"  Dầm mồ côi: {orphanBeams}");
+
+                if (invalidGroups > 0 || orphanBeams > 0)
+                {
+                    WriteMessage("\nChạy DTS_CLEANUP_LEGACY để sửa chữa tự động.");
+                }
+            });
         }
 
         #endregion

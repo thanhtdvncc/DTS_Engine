@@ -20,7 +20,7 @@ namespace DTS_Engine.Commands
         public void DTS_HELP()
         {
             WriteMessage("================================================================");
-            WriteMessage("   DTS TOOL - DANH SÁCH LỆNH v2.5.0                            ");
+            WriteMessage("   DTS TOOL - DANH SÁCH LỆNH v5.0 (STAR TOPOLOGY)              ");
             WriteMessage("================================================================");
             WriteMessage(" THIẾT LẬP:                                                    ");
             WriteMessage("   DTS_SET_ORIGIN  - Thiết lập Origin cho tầng                 ");
@@ -29,6 +29,19 @@ namespace DTS_Engine.Commands
             WriteMessage("   DTS_UNLINK      - Gỡ liên kết cụ thể giữa Con và Cha        ");
             WriteMessage("   DTS_CLEAR_LINK  - Xóa toàn bộ liên kết của phần tử          ");
             WriteMessage("   DTS_SHOW_LINK   - Hiển thị và kiểm tra liên kết             ");
+            WriteMessage("----------------------------------------------------------------");
+            WriteMessage(" BỐ TRÍ CỐT THÉP DẦM (V5 STAR TOPOLOGY):                       ");
+            WriteMessage("   DTS_REBAR_IMPORT_SAP - Lấy kết quả thiết kế từ SAP2000      ");
+            WriteMessage("   DTS_REBAR_CALCULATE  - Tính toán bố trí thép (V5 Topology)  ");
+            WriteMessage("   DTS_REBAR_VIEWER     - Mở Beam Group Viewer (V5)            ");
+            WriteMessage("   DTS_REBAR_CALCULATE_SETTING - Thiết lập tham số tính toán   ");
+            WriteMessage("   DTS_REBAR_LINK       - Tạo Star Topology cho nhóm dầm       ");
+            WriteMessage("   DTS_REBAR_UNLINK     - Tách dầm khỏi nhóm (có option follow)");
+            WriteMessage("   DTS_SHOW_REBAR_LINK  - Hiển thị Star Topology nhóm dầm      ");
+            WriteMessage("----------------------------------------------------------------");
+            WriteMessage(" V5 MAINTENANCE:                                               ");
+            WriteMessage("   DTS_CLEANUP_LEGACY   - Dọn dẹp dữ liệu NOD cũ (V4 -> V5)    ");
+            WriteMessage("   DTS_VALIDATE_TOPOLOGY- Kiểm tra tính toàn vẹn Star Topology ");
             WriteMessage("----------------------------------------------------------------");
             WriteMessage(" SAP2000:                                                      ");
             WriteMessage("   DTS_TEST_SAP    - Kiểm tra kết nối SAP2000                  ");
@@ -43,17 +56,6 @@ namespace DTS_Engine.Commands
             WriteMessage("   DTS_CHECK_REACTIONS- Kiểm tra phản lực đáy                  ");
             WriteMessage("   DTS_LIST_LOADED_ELEMENTS - Liệt kê phần tử có tải           ");
             WriteMessage("   DTS_EXPORT_LOADS_CSV - Xuất tải ra file CSV                 ");
-            WriteMessage("----------------------------------------------------------------");
-            WriteMessage(" BỐ TRÍ CỐT THÉP DẦM (MỚI v2.5):                               ");
-            WriteMessage("   DTS_REBAR_SAP_RESULT - Lấy kết quả thiết kế từ SAP2000      ");
-            WriteMessage("       Mode: 0=Tổng hợp | 1=Thép dọc | 2=Xoắn | 3=Đai/Sườn    ");
-            WriteMessage("   DTS_REBAR_CALCULATE  - Tính toán bố trí thép               ");
-            WriteMessage("   DTS_REBAR_CALCULATE_SETTING - Thiết lập tham số tính toán  ");
-            WriteMessage("       + Zone Ratios: Chia vùng dầm (Start/Mid/End)           ");
-            WriteMessage("       + Torsion Factor: Hệ số phân bổ xoắn (Top/Bot/Side)    ");
-            WriteMessage("   DTS_REBAR_BEAM_NAME  - Đặt tên dầm theo quy tắc tầng       ");
-            WriteMessage("   DTS_REBAR_UPDATE     - Đồng bộ ngược kết quả về SAP2000    ");
-            WriteMessage("   DTS_REBAR_SHOW       - Chuyển đổi chế độ hiển thị          ");
             WriteMessage("----------------------------------------------------------------");
             WriteMessage(" TÍNH TOÁN:                                                    ");
             WriteMessage("   DTS_CALC_LOAD   - Tính tải trọng tường                      ");
@@ -75,17 +77,17 @@ namespace DTS_Engine.Commands
         public void DTS_VERSION()
         {
             WriteMessage("================================================================");
-            WriteMessage("  DTS ENGINE v2.4.0 - Load Audit & Verification                ");
+            WriteMessage("  DTS ENGINE v5.0.0 - STAR TOPOLOGY REFACTOR                   ");
             WriteMessage("  BY THANHTDVNCC / CTCI VIETNAM                                ");
             WriteMessage("  ISO/IEC 25010 & ISO/IEC 12207 Compliant                      ");
             WriteMessage("                                                               ");
-            WriteMessage("  New in v2.4.0:                                               ");
-            WriteMessage("  - SAP2000 Load Audit: Kiểm toán tải trọng tự động            ");
-            WriteMessage("  - Multi-pattern Support: DL, SDL, LL, WX, WY...              ");
-            WriteMessage("  - Area/Frame/Point Load Reading từ SAP2000                   ");
-            WriteMessage("  - Base Reaction Verification: So sánh với phản lực           ");
-            WriteMessage("  - CSV Export: Xuất dữ liệu để xử lý trong Excel              ");
-            WriteMessage("  - NetTopologySuite: Union/Slice geometry                     ");
+            WriteMessage("  New in v5.0.0:                                               ");
+            WriteMessage("  - Star Topology: Loại bỏ NOD, XData là Single Source         ");
+            WriteMessage("  - TopologyBuilder: L->R sorting, auto geometry flip          ");
+            WriteMessage("  - DTS_REBAR_VIEWER: Runtime groups, no NOD load              ");
+            WriteMessage("  - DTS_REBAR_LINK/UNLINK: Downstream tracking                 ");
+            WriteMessage("  - DTS_CLEANUP_LEGACY: Migrate V4 -> V5                       ");
+            WriteMessage("  - DTS_VALIDATE_TOPOLOGY: Check Star integrity                ");
             WriteMessage("================================================================");
         }
 

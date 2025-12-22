@@ -453,26 +453,30 @@ namespace DTS_Engine.Core.Utils
 
         #endregion
 
-        #region BeamGroup NOD Persistence (Data travels with DWG)
+        #region BeamGroup NOD Persistence (DEPRECATED V5)
 
         /// <summary>
-        /// Lưu danh sách BeamGroup vào NOD của bản vẽ.
-        /// Data đi theo file DWG, không dùng file cache bên ngoài.
+        /// [DEPRECATED V5] Lưu danh sách BeamGroup vào NOD của bản vẽ.
+        /// V5: Sử dụng XData trên từng entity thay vì NOD.
+        /// Kept for backward compatibility only.
         /// </summary>
+        [Obsolete("V5: Use XData on individual entities. BeamGroups are now runtime-only. Call SyncGroupSpansToXData() instead.")]
         public static void SaveBeamGroupsToNOD(Database db, Transaction tr, string jsonData)
         {
+            // V5: No-op - kept for backward compatibility
+            // Data is now stored in XData on each entity
+            System.Diagnostics.Debug.WriteLine("[V5 WARNING] SaveBeamGroupsToNOD called - this is deprecated. Data should be in XData.");
+            
+            // Keep original implementation for backward compatibility
             if (db == null || tr == null || string.IsNullOrEmpty(jsonData)) return;
 
-            // Get or create NOD
             DBDictionary nod = (DBDictionary)tr.GetObject(db.NamedObjectsDictionaryId, OpenMode.ForWrite);
 
-            // Remove existing entry if present
             if (nod.Contains(NOD_BEAM_GROUPS))
             {
                 nod.Remove(NOD_BEAM_GROUPS);
             }
 
-            // Create XRecord to store JSON data
             var xrec = new Xrecord();
             var resBuf = CreateResultBufferFromJson(jsonData);
             xrec.Data = resBuf;
@@ -482,10 +486,14 @@ namespace DTS_Engine.Core.Utils
         }
 
         /// <summary>
-        /// Đọc danh sách BeamGroup từ NOD của bản vẽ.
+        /// [DEPRECATED V5] Đọc danh sách BeamGroup từ NOD của bản vẽ.
+        /// V5: Sử dụng TopologyBuilder.BuildGraph() để tạo runtime groups từ XData.
         /// </summary>
+        [Obsolete("V5: Use TopologyBuilder.BuildGraph() to create runtime groups from XData. NOD is no longer the source of truth.")]
         public static string LoadBeamGroupsFromNOD(Database db, Transaction tr)
         {
+            System.Diagnostics.Debug.WriteLine("[V5 WARNING] LoadBeamGroupsFromNOD called - this is deprecated. Use TopologyBuilder instead.");
+            
             if (db == null || tr == null) return null;
 
             try
@@ -506,6 +514,31 @@ namespace DTS_Engine.Core.Utils
             catch
             {
                 return null;
+            }
+        }
+
+        /// <summary>
+        /// [NEW V5] Xóa BeamGroup data từ NOD (dọn dẹp legacy data).
+        /// Call this to clean up old NOD-based data after migrating to V5.
+        /// </summary>
+        public static bool ClearBeamGroupsFromNOD(Database db, Transaction tr)
+        {
+            if (db == null || tr == null) return false;
+
+            try
+            {
+                DBDictionary nod = (DBDictionary)tr.GetObject(db.NamedObjectsDictionaryId, OpenMode.ForWrite);
+
+                if (nod.Contains(NOD_BEAM_GROUPS))
+                {
+                    nod.Remove(NOD_BEAM_GROUPS);
+                    return true;
+                }
+                return false;
+            }
+            catch
+            {
+                return false;
             }
         }
 
