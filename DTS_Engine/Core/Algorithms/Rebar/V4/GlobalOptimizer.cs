@@ -194,16 +194,18 @@ namespace DTS_Engine.Core.Algorithms.Rebar.V4
             return Math.Max(_minBarsPerSide, Math.Min((int)Math.Floor(n), _maxBarsPerSide));
         }
 
+        /// <summary>
+        /// CRITICAL FIX: Loại bỏ logic chặn số lẻ khi PreferSymmetric=True.
+        /// 3 thanh vẫn là đối xứng (1 giữa).
+        /// </summary>
         private bool IsValidCombination(int nTop, int nBot)
         {
             // Both must meet minimum
             if (nTop < _minBarsPerSide || nBot < _minBarsPerSide) return false;
 
-            // Prefer symmetric if configured
-            if (_settings.Beam?.PreferSymmetric == true)
-            {
-                if (nTop % 2 != 0 || nBot % 2 != 0) return false;
-            }
+            // NOTE: Đã loại bỏ check chẵn lẻ ở đây. 
+            // 3 thanh (1 giữa, 2 bên) vẫn là đối xứng về mặt kỹ thuật.
+            // Việc ưu tiên đối xứng sẽ được xử lý ở phần chấm điểm (CalculateCandidateScore).
 
             return true;
         }
