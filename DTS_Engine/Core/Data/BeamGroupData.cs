@@ -418,6 +418,22 @@ namespace DTS_Engine.Core.Data
         /// </summary>
         public int SelectedBackboneIndex { get; set; } = 0;
 
+        /// <summary>
+        /// [V5.0] Unique identifier for this group. Used for NOD registry and XData.
+        /// </summary>
+        public string GroupId { get; set; }
+
+        /// <summary>
+        /// [V5.0] True if design is locked and should not be auto-overwritten
+        /// </summary>
+        public bool IsLocked { get; set; } = false;
+
+        /// <summary>
+        /// [V5.0] True if geometry has changed since last calculation.
+        /// Indicates that stored rebar options may be outdated and recalc is recommended.
+        /// </summary>
+        public bool HasStaleGeometry { get; set; } = false;
+
         // ===== SELECTED DESIGN (Phương án CHỐT) =====
         /// <summary>
         /// Phương án CHỐT (User Selected/Official Design)

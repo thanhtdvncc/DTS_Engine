@@ -479,6 +479,183 @@ namespace DTS_Engine.Core.Engines
 
         #endregion
 
+        #region V5.0: Lazy Healing Support
+
+        /// <summary>
+        /// [V5.0] Lookup beam group by GroupId (GroupName).
+        /// Unlike LookupBeamGroup which uses MotherHandle, this searches by GroupName.
+        /// Returns null if not found.
+        /// </summary>
+        public static BeamGroupRegistryInfo LookupByGroupId(string groupId, Transaction tr)
+        {
+            if (string.IsNullOrEmpty(groupId)) return null;
+
+            var catDict = GetCategoryDictionary(CATEGORY_BEAM_GROUPS, tr);
+            if (catDict == null) return null;
+
+            // Search all groups for matching GroupName
+            foreach (var entry in catDict)
+            {
+                try
+                {
+                    var xRec = (Xrecord)tr.GetObject(entry.Value, OpenMode.ForRead);
+                    var info = ParseBeamGroupXrecord(entry.Key, xRec);
+                    if (info != null && info.GroupName == groupId)
+                    {
+                        return info;
+                    }
+                }
+                catch { }
+            }
+
+            return null;
+        }
+
+        /// <summary>
+        /// [V5.0] Resurrect (re-create) a beam group in NOD from XData.
+        /// Called when NOD is missing but XData exists (WBLOCK scenario).
+        /// 
+        /// IMPORTANT: Sorts members by SpanIndex from XData before assigning mother.
+        /// This ensures correct span ordering even when handles are in random order.
+        /// </summary>
+        /// <param name="groupId">GroupId from XData</param>
+        /// <param name="memberHandles">List of handles found with same GroupId</param>
+        /// <param name="tr">Transaction</param>
+        /// <returns>True if resurrect succeeded</returns>
+        public static bool ResurrectGroup(string groupId, List<string> memberHandles, Transaction tr)
+        {
+            if (string.IsNullOrEmpty(groupId) || memberHandles == null || memberHandles.Count == 0)
+                return false;
+
+            // Filter to valid handles only
+            var validHandles = memberHandles.Where(h => IsValidHandle(h, tr)).ToList();
+            if (validHandles.Count == 0) return false;
+
+            // CRITICAL: Sort by SpanIndex from XData to ensure correct order
+            var sortedHandles = SortHandlesBySpanIndex(validHandles, tr);
+
+            // First handle (lowest SpanIndex) becomes mother
+            string motherHandle = sortedHandles[0];
+            var childHandles = sortedHandles.Skip(1).ToList();
+
+            // Register to NOD
+            RegisterBeamGroup(
+                motherHandle: motherHandle,
+                groupName: groupId,
+                name: "", // Will be set by NamingEngine later
+                groupType: "Beam",
+                direction: "",
+                axisName: "",
+                levelZ: 0,
+                width: 0,
+                height: 0,
+                childHandles: childHandles,
+                tr: tr);
+
+            return true;
+        }
+
+        /// <summary>
+        /// [V5.0] Sort handles by SpanIndex from XData.
+        /// Handles without SpanIndex are placed at the end.
+        /// Invalid/erased handles are skipped entirely.
+        /// </summary>
+        private static List<string> SortHandlesBySpanIndex(List<string> handles, Transaction tr)
+        {
+            var db = Autodesk.AutoCAD.ApplicationServices.Application.DocumentManager.MdiActiveDocument.Database;
+            var result = new List<(string Handle, int SpanIndex)>();
+
+            foreach (var handle in handles)
+            {
+                try
+                {
+                    var objId = db.GetObjectId(false, new Handle(Convert.ToInt64(handle, 16)), 0);
+                    if (objId.IsNull || objId.IsErased) continue;  // Skip, don't add
+
+                    var obj = tr.GetObject(objId, OpenMode.ForRead);
+                    var (_, spanIndex) = Utils.XDataUtils.ReadGroupIdentity(obj);
+
+                    result.Add((handle, spanIndex >= 0 ? spanIndex : int.MaxValue));
+                }
+                catch
+                {
+                    // Handle invalid - skip entirely (don't add to result)
+                    continue;
+                }
+            }
+
+            return result.OrderBy(x => x.SpanIndex).Select(x => x.Handle).ToList();
+        }
+
+        /// <summary>
+        /// [V5.0] Update member handles of an existing group (purge dead handles).
+        /// Called during Lazy Healing to remove deleted entities.
+        /// </summary>
+        /// <param name="motherHandle">Current mother handle</param>
+        /// <param name="validHandles">List of valid handles (first is mother, rest are children)</param>
+        /// <param name="tr">Transaction</param>
+        public static void UpdateMembers(string motherHandle, List<string> validHandles, Transaction tr)
+        {
+            if (string.IsNullOrEmpty(motherHandle) || validHandles == null) return;
+
+            var catDict = GetCategoryDictionary(CATEGORY_BEAM_GROUPS, tr);
+            if (catDict == null || !catDict.Contains(motherHandle)) return;
+
+            // Get existing info
+            var xRec = (Xrecord)tr.GetObject(catDict.GetAt(motherHandle), OpenMode.ForRead);
+            var info = ParseBeamGroupXrecord(motherHandle, xRec);
+            if (info == null) return;
+
+            // Check if mother is still valid
+            bool motherValid = validHandles.Contains(motherHandle);
+
+            if (!motherValid && validHandles.Count > 0)
+            {
+                // Mother died, elect new mother
+                ElectNewMother(motherHandle, tr);
+                return;
+            }
+
+            // Update child list
+            var newChildren = validHandles.Where(h => h != motherHandle).ToList();
+
+            // Re-register with updated children
+            RegisterBeamGroup(
+                motherHandle: motherHandle,
+                groupName: info.GroupName,
+                name: info.Name,
+                groupType: info.GroupType,
+                direction: info.Direction,
+                axisName: info.AxisName,
+                levelZ: info.LevelZ,
+                width: info.Width,
+                height: info.Height,
+                childHandles: newChildren,
+                tr: tr);
+        }
+
+        /// <summary>
+        /// [V5.0] Check if a GroupId already exists in NOD.
+        /// Used to detect Copy scenarios where GroupId is duplicated.
+        /// </summary>
+        public static bool GroupIdExists(string groupId, Transaction tr)
+        {
+            return LookupByGroupId(groupId, tr) != null;
+        }
+
+        /// <summary>
+        /// [V5.0] Get members of a group by GroupId.
+        /// Returns empty list if not found.
+        /// </summary>
+        public static List<string> GetMembersByGroupId(string groupId, Transaction tr)
+        {
+            var info = LookupByGroupId(groupId, tr);
+            if (info == null) return new List<string>();
+            return info.GetAllMembers();
+        }
+
+        #endregion // V5.0: Lazy Healing Support
+
         #region Mother Election (Self-Healing)
 
         /// <summary>

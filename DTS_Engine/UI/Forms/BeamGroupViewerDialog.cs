@@ -469,6 +469,46 @@ namespace DTS_Engine.UI.Forms
                 catch { }
                 return;
             }
+
+            // V5.0: DETACH handler - Tách 1 entity khỏi group (spec Section 6.1)
+            if (message.StartsWith("DETACH|"))
+            {
+                try
+                {
+                    string handleStr = message.Substring(7);
+                    this.BeginInvoke(new Action(() => HandleDetach(handleStr)));
+                }
+                catch { }
+                return;
+            }
+
+            // V5.0: UNGROUP handler - Xóa group, tất cả thành dầm đơn (spec Section 6.2)
+            if (message.StartsWith("UNGROUP|"))
+            {
+                try
+                {
+                    string groupId = message.Substring(8);
+                    this.BeginInvoke(new Action(() => HandleUngroup(groupId)));
+                }
+                catch { }
+                return;
+            }
+
+            // V5.0: REGROUP handler - Gom các dầm thành group mới (spec Section 6.3)
+            if (message.StartsWith("REGROUP|"))
+            {
+                try
+                {
+                    string json = message.Substring(8);
+                    var handles = JsonConvert.DeserializeObject<List<string>>(json);
+                    if (handles != null && handles.Count > 0)
+                    {
+                        this.BeginInvoke(new Action(() => HandleRegroup(handles)));
+                    }
+                }
+                catch { }
+                return;
+            }
         }
 
         private async Task RunQuickCalcAndRefreshAsync(int groupIndex)
@@ -1105,6 +1145,161 @@ namespace DTS_Engine.UI.Forms
                     MessageBoxButtons.OK, MessageBoxIcon.Warning);
             }
         }
+
+        #region V5.0 Group Operations (DETACH/UNGROUP/REGROUP)
+
+        /// <summary>
+        /// V5.0: Tách 1 entity khỏi group (spec Section 6.1)
+        /// </summary>
+        private void HandleDetach(string handleStr)
+        {
+            try
+            {
+                var db = Autodesk.AutoCAD.ApplicationServices.Application.DocumentManager.MdiActiveDocument.Database;
+                using (var tr = db.TransactionManager.StartTransaction())
+                {
+                    var objId = Core.Utils.AcadUtils.GetObjectIdFromHandle(handleStr);
+                    if (objId == ObjectId.Null || objId.IsErased)
+                    {
+                        _ = SendToastToWebView("error", "Không tìm thấy entity!");
+                        return;
+                    }
+
+                    var obj = tr.GetObject(objId, OpenMode.ForWrite);
+                    var (oldGroupId, _) = Core.Utils.XDataUtils.ReadGroupIdentity(obj);
+
+                    // 1. Tạo GroupId mới cho entity này
+                    string newGroupId = Guid.NewGuid().ToString().Substring(0, 8).ToUpperInvariant();
+                    Core.Utils.XDataUtils.WriteGroupIdentity(obj, newGroupId, 0, tr);
+                    Core.Utils.XDataUtils.WriteGroupState(obj, 0, false, tr);
+
+                    // 2. Update NOD cũ (loại bỏ entity này)
+                    if (!string.IsNullOrEmpty(oldGroupId))
+                    {
+                        Core.Engines.RegistryEngine.RemoveChildFromBeamGroup(handleStr, handleStr, tr);
+                    }
+
+                    // 3. Tạo NOD mới cho entity đơn
+                    Core.Engines.RegistryEngine.ResurrectGroup(newGroupId, new List<string> { handleStr }, tr);
+
+                    tr.Commit();
+                    _ = SendToastToWebView("success", "Đã tách dầm khỏi group!");
+                }
+            }
+            catch (Exception ex)
+            {
+                _ = SendToastToWebView("error", $"Lỗi detach: {ex.Message}");
+            }
+        }
+
+        /// <summary>
+        /// V5.0: Xóa group, tất cả thành dầm đơn (spec Section 6.2)
+        /// </summary>
+        private void HandleUngroup(string groupId)
+        {
+            try
+            {
+                var db = Autodesk.AutoCAD.ApplicationServices.Application.DocumentManager.MdiActiveDocument.Database;
+                using (var tr = db.TransactionManager.StartTransaction())
+                {
+                    var members = Core.Engines.RegistryEngine.GetMembersByGroupId(groupId, tr);
+                    if (members == null || members.Count == 0)
+                    {
+                        _ = SendToastToWebView("error", "Group không có thành viên!");
+                        return;
+                    }
+
+                    foreach (var handleStr in members)
+                    {
+                        var objId = Core.Utils.AcadUtils.GetObjectIdFromHandle(handleStr);
+                        if (objId == ObjectId.Null || objId.IsErased) continue;
+
+                        var obj = tr.GetObject(objId, OpenMode.ForWrite);
+
+                        // Mỗi entity thành group riêng
+                        string newGroupId = Guid.NewGuid().ToString().Substring(0, 8).ToUpperInvariant();
+                        Core.Utils.XDataUtils.WriteGroupIdentity(obj, newGroupId, 0, tr);
+                        Core.Utils.XDataUtils.WriteGroupState(obj, 0, false, tr);
+                        Core.Engines.RegistryEngine.ResurrectGroup(newGroupId, new List<string> { handleStr }, tr);
+                    }
+
+                    // Xóa NOD cũ (by looking up and unregistering)
+                    var info = Core.Engines.RegistryEngine.LookupByGroupId(groupId, tr);
+                    if (info != null)
+                    {
+                        Core.Engines.RegistryEngine.UnregisterBeamGroup(info.MotherHandle, tr);
+                    }
+
+                    tr.Commit();
+                    _ = SendToastToWebView("success", $"Đã xóa group ({members.Count} dầm)!");
+                }
+            }
+            catch (Exception ex)
+            {
+                _ = SendToastToWebView("error", $"Lỗi ungroup: {ex.Message}");
+            }
+        }
+
+        /// <summary>
+        /// V5.0: Gom các dầm thành group mới (spec Section 6.3)
+        /// </summary>
+        private void HandleRegroup(List<string> handleStrings)
+        {
+            try
+            {
+                if (handleStrings == null || handleStrings.Count < 2)
+                {
+                    _ = SendToastToWebView("error", "Cần chọn ít nhất 2 dầm để tạo group!");
+                    return;
+                }
+
+                var db = Autodesk.AutoCAD.ApplicationServices.Application.DocumentManager.MdiActiveDocument.Database;
+                using (var tr = db.TransactionManager.StartTransaction())
+                {
+                    // Xóa GroupId cũ của từng entity
+                    foreach (var handleStr in handleStrings)
+                    {
+                        var objId = Core.Utils.AcadUtils.GetObjectIdFromHandle(handleStr);
+                        if (objId == ObjectId.Null || objId.IsErased) continue;
+
+                        var obj = tr.GetObject(objId, OpenMode.ForRead);
+                        var (oldGroupId, _) = Core.Utils.XDataUtils.ReadGroupIdentity(obj);
+                        if (!string.IsNullOrEmpty(oldGroupId))
+                        {
+                            Core.Engines.RegistryEngine.RemoveChildFromBeamGroup(handleStr, handleStr, tr);
+                        }
+                    }
+
+                    // Tạo GroupId mới
+                    string groupId = Guid.NewGuid().ToString().Substring(0, 8).ToUpperInvariant();
+                    string motherHandle = handleStrings[0];
+                    var childHandles = handleStrings.Skip(1).ToList();
+
+                    // Write GroupIdentity to all entities
+                    for (int i = 0; i < handleStrings.Count; i++)
+                    {
+                        var objId = Core.Utils.AcadUtils.GetObjectIdFromHandle(handleStrings[i]);
+                        if (objId == ObjectId.Null || objId.IsErased) continue;
+
+                        var obj = tr.GetObject(objId, OpenMode.ForWrite);
+                        Core.Utils.XDataUtils.WriteGroupIdentity(obj, groupId, i, tr);
+                        Core.Utils.XDataUtils.WriteGroupState(obj, 0, false, tr);
+                    }
+
+                    // Register new group
+                    Core.Engines.RegistryEngine.ResurrectGroup(groupId, handleStrings, tr);
+
+                    tr.Commit();
+                    _ = SendToastToWebView("success", $"Đã tạo group mới ({handleStrings.Count} dầm)!");
+                }
+            }
+            catch (Exception ex)
+            {
+                _ = SendToastToWebView("error", $"Lỗi regroup: {ex.Message}");
+            }
+        }
+
+        #endregion // V5.0 Group Operations
 
         private void Dialog_FormClosing(object sender, FormClosingEventArgs e)
         {

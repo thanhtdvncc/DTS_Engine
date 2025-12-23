@@ -244,7 +244,7 @@ namespace DTS_Engine.Core.Algorithms.Rebar.Utils
                 // Force open with Notepad to avoid "no association" errors
                 Process.Start("notepad.exe", _logPath);
             }
-            catch (Exception ex)
+            catch
             {
                 // Fallback to default shell execute if notepad fails
                 try

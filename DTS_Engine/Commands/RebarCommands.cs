@@ -533,6 +533,12 @@ namespace DTS_Engine.Commands
                     group.BackboneOptions = proposals;
                     group.SelectedBackboneIndex = 0;
 
+                    // V5.0: Ensure all entities have GroupIdentity (handles orphan beams)
+                    EnsureGroupIdentity(tr, topoGroup);
+
+                    // V5.0: Write all 5 options to ALL entities (per spec Section 4.2)
+                    WriteOptionsToAllEntities(tr, topoGroup, proposals);
+
                     // Check if already locked (from XData)
                     bool isLocked = CheckIfGroupLocked(topoGroup, tr);
 
@@ -725,7 +731,7 @@ namespace DTS_Engine.Commands
                         stirrupStrings = FlipArray(stirrupStrings);
                 }
 
-                // Update XData
+                // Update XData (legacy format - backward compatible)
                 XDataUtils.UpdateBeamSolutionXData(
                     obj,
                     tr,
@@ -735,6 +741,45 @@ namespace DTS_Engine.Commands
                     null, // WebBarString - placeholder
                     group?.GroupName,
                     group?.GroupType);
+
+                // V5.0: Write current state in separated layer format per spec Section 4.2
+                // This stores backbone (L0) and addon (L1) separately for easier manipulation
+                var topL0 = new string[3] { backboneTop, backboneTop, backboneTop };
+                var botL0 = new string[3] { backboneBot, backboneBot, backboneBot };
+                var topL1 = new string[3];
+                var botL1 = new string[3];
+
+                if (sol.Reinforcements != null)
+                {
+                    if (sol.Reinforcements.TryGetValue($"{spanId}_Top_Left", out var tl1))
+                        topL1[0] = $"{tl1.Count}D{tl1.Diameter}";
+                    if (sol.Reinforcements.TryGetValue($"{spanId}_Top_Mid", out var tm1))
+                        topL1[1] = $"{tm1.Count}D{tm1.Diameter}";
+                    if (sol.Reinforcements.TryGetValue($"{spanId}_Top_Right", out var tr1))
+                        topL1[2] = $"{tr1.Count}D{tr1.Diameter}";
+                    if (sol.Reinforcements.TryGetValue($"{spanId}_Bot_Left", out var bl1))
+                        botL1[0] = $"{bl1.Count}D{bl1.Diameter}";
+                    if (sol.Reinforcements.TryGetValue($"{spanId}_Bot_Mid", out var bm1))
+                        botL1[1] = $"{bm1.Count}D{bm1.Diameter}";
+                    if (sol.Reinforcements.TryGetValue($"{spanId}_Bot_Right", out var br1))
+                        botL1[2] = $"{br1.Count}D{br1.Diameter}";
+                }
+
+                if (topo.IsGeometryReversed)
+                {
+                    topL0 = FlipArray(topL0);
+                    botL0 = FlipArray(botL0);
+                    topL1 = FlipArray(topL1);
+                    botL1 = FlipArray(botL1);
+                }
+
+                XDataUtils.WriteCurrentRebar(obj, topL0, topL1, botL0, botL1, tr);
+
+                // V5.0: Write GroupState to ALL entities for self-sufficiency
+                // This ensures state redundancy - each entity knows the current selection
+                int bestIdx = group?.BackboneOptions?.FindIndex(o => o == sol) ?? 0;
+                if (bestIdx < 0) bestIdx = 0;
+                XDataUtils.WriteGroupState(obj, bestIdx, isLocked: false, tr);
 
                 // Reset color to ByLayer
                 if (obj is Entity ent) ent.ColorIndex = 256;
@@ -753,8 +798,98 @@ namespace DTS_Engine.Commands
         }
 
         /// <summary>
+        /// [V5.0] Write all 5 rebar options to ALL entities in group.
+        /// Per spec Section 4.2 - ensures options are available when Viewer reopens.
+        /// </summary>
+        private void WriteOptionsToAllEntities(
+            Transaction tr,
+            List<BeamTopology> topoGroup,
+            List<ContinuousBeamSolution> proposals)
+        {
+            if (topoGroup == null || proposals == null || proposals.Count == 0) return;
+
+            // Convert proposals to RebarOptionData format for each span
+            for (int spanIdx = 0; spanIdx < topoGroup.Count; spanIdx++)
+            {
+                var topo = topoGroup[spanIdx];
+                var obj = tr.GetObject(topo.ObjectId, OpenMode.ForWrite);
+                string spanId = $"S{spanIdx + 1}";
+
+                var options = new List<XDataUtils.RebarOptionData>();
+
+                // Build up to 5 options
+                for (int optIdx = 0; optIdx < Math.Min(5, proposals.Count); optIdx++)
+                {
+                    var sol = proposals[optIdx];
+                    if (sol == null) continue;
+
+                    var optData = new XDataUtils.RebarOptionData
+                    {
+                        TopL0 = $"{sol.BackboneCount_Top}D{sol.BackboneDiameter}",
+                        BotL0 = $"{sol.BackboneCount_Bot}D{sol.BackboneDiameter}"
+                    };
+
+                    // Add addons if present - check all positions (Left, Mid, Right)
+                    // Per spec, option stores ONE addon representative (backbone is continuous)
+                    if (sol.Reinforcements != null)
+                    {
+                        // Try Left, then Mid, then Right to find top addon
+                        if (sol.Reinforcements.TryGetValue($"{spanId}_Top_Left", out var tl))
+                            optData.TopL1 = $"{tl.Count}D{tl.Diameter}";
+                        else if (sol.Reinforcements.TryGetValue($"{spanId}_Top_Mid", out var tm))
+                            optData.TopL1 = $"{tm.Count}D{tm.Diameter}";
+                        else if (sol.Reinforcements.TryGetValue($"{spanId}_Top_Right", out var trRight))
+                            optData.TopL1 = $"{trRight.Count}D{trRight.Diameter}";
+
+                        // Try Left, then Mid, then Right to find bot addon
+                        if (sol.Reinforcements.TryGetValue($"{spanId}_Bot_Left", out var bl))
+                            optData.BotL1 = $"{bl.Count}D{bl.Diameter}";
+                        else if (sol.Reinforcements.TryGetValue($"{spanId}_Bot_Mid", out var bm))
+                            optData.BotL1 = $"{bm.Count}D{bm.Diameter}";
+                        else if (sol.Reinforcements.TryGetValue($"{spanId}_Bot_Right", out var br))
+                            optData.BotL1 = $"{br.Count}D{br.Diameter}";
+                    }
+
+                    options.Add(optData);
+                }
+
+                // Write options to entity
+                XDataUtils.WriteRebarOptions(obj, options, tr);
+            }
+        }
+
+        /// <summary>
+        /// [V5.0] Ensure all entities in group have GroupIdentity.
+        /// Creates new GroupId for orphan beams that were never linked.
+        /// </summary>
+        private void EnsureGroupIdentity(Transaction tr, List<BeamTopology> topoGroup)
+        {
+            if (topoGroup == null || topoGroup.Count == 0) return;
+
+            // Check if first entity has GroupIdentity
+            var firstObj = tr.GetObject(topoGroup[0].ObjectId, OpenMode.ForRead);
+            var (existingGroupId, _) = XDataUtils.ReadGroupIdentity(firstObj);
+
+            // If no existing GroupId, create new one for this group
+            if (string.IsNullOrEmpty(existingGroupId))
+            {
+                string newGroupId = Guid.NewGuid().ToString();
+
+                for (int i = 0; i < topoGroup.Count; i++)
+                {
+                    var obj = tr.GetObject(topoGroup[i].ObjectId, OpenMode.ForWrite);
+                    XDataUtils.WriteGroupIdentity(obj, newGroupId, i, tr);
+                    XDataUtils.WriteGroupState(obj, selectedIdx: 0, isLocked: false, tr);
+                }
+            }
+        }
+
+        /// <summary>
         /// V5 PUBLIC: Sync BeamGroup spans to XData on entities.
         /// Called by Viewer after Apply/Save.
+        /// 
+        /// [V5.0] Now uses WriteGroupState for state redundancy,
+        /// SetIsManual for edit flag, and removes JSON serialization.
         /// </summary>
         public static void SyncGroupSpansToXData(List<BeamGroup> groups)
         {
@@ -771,6 +906,12 @@ namespace DTS_Engine.Commands
                     foreach (var group in groups)
                     {
                         if (group.Spans == null || group.EntityHandles == null) continue;
+
+                        // V5.0: Get SelectedIdx from group
+                        int selectedIdx = group.SelectedBackboneIndex >= 0
+                            ? group.SelectedBackboneIndex
+                            : 0;
+                        bool isLocked = group.IsLocked;
 
                         for (int i = 0; i < group.Spans.Count && i < group.EntityHandles.Count; i++)
                         {
@@ -811,30 +952,7 @@ namespace DTS_Engine.Commands
                                 webStrings = FlipArrayStatic(webStrings);
                             }
 
-                            // Serialize SelectedDesign (only for first span - it's group-level data)
-                            string selectedDesignJson = null;
-                            if (i == 0 && group.SelectedDesign != null)
-                            {
-                                try
-                                {
-                                    selectedDesignJson = Newtonsoft.Json.JsonConvert.SerializeObject(group.SelectedDesign);
-                                }
-                                catch { /* Ignore serialization errors */ }
-                            }
-
-                            // FIX: Serialize BackboneOptions (only for first span - it's group-level data)
-                            // This ensures Viewer shows calculation results when reopening
-                            string backboneOptionsJson = null;
-                            if (i == 0 && group.BackboneOptions != null && group.BackboneOptions.Count > 0)
-                            {
-                                try
-                                {
-                                    backboneOptionsJson = Newtonsoft.Json.JsonConvert.SerializeObject(group.BackboneOptions);
-                                }
-                                catch { /* Ignore serialization errors */ }
-                            }
-
-                            // Write to XData
+                            // Write to XData (legacy format - backward compatible)
                             XDataUtils.UpdateBeamSolutionXData(
                                 obj,
                                 tr,
@@ -843,18 +961,45 @@ namespace DTS_Engine.Commands
                                 stirrupStrings,
                                 webStrings,
                                 group.GroupName,
-                                group.GroupType,
-                                selectedDesignJson,
-                                backboneOptionsJson);  // Add new parameter
+                                group.GroupType);
 
-                            // Mark as manually modified if applicable
+                            // V5.0: Write GroupState to ALL entities (state redundancy)
+                            XDataUtils.WriteGroupState(obj, selectedIdx, isLocked, tr);
+
+                            // V5.0: Write current state in separated layer format for consistency
+                            // Convert RebarInfo to string format "nDd" (e.g., "2D16")
+                            string backboneTopStr = span.TopBackbone != null && span.TopBackbone.Count > 0
+                                ? $"{span.TopBackbone.Count}D{span.TopBackbone.Diameter}" : "";
+                            string backboneBotStr = span.BotBackbone != null && span.BotBackbone.Count > 0
+                                ? $"{span.BotBackbone.Count}D{span.BotBackbone.Diameter}" : "";
+
+                            var topL0 = new string[3] { backboneTopStr, backboneTopStr, backboneTopStr };
+                            var botL0 = new string[3] { backboneBotStr, backboneBotStr, backboneBotStr };
+                            var topL1 = new string[3] {
+                                span.TopAddLeft != null && span.TopAddLeft.Count > 0 ? $"{span.TopAddLeft.Count}D{span.TopAddLeft.Diameter}" : "",
+                                span.TopAddMid != null && span.TopAddMid.Count > 0 ? $"{span.TopAddMid.Count}D{span.TopAddMid.Diameter}" : "",
+                                span.TopAddRight != null && span.TopAddRight.Count > 0 ? $"{span.TopAddRight.Count}D{span.TopAddRight.Diameter}" : ""
+                            };
+                            var botL1 = new string[3] {
+                                span.BotAddLeft != null && span.BotAddLeft.Count > 0 ? $"{span.BotAddLeft.Count}D{span.BotAddLeft.Diameter}" : "",
+                                span.BotAddMid != null && span.BotAddMid.Count > 0 ? $"{span.BotAddMid.Count}D{span.BotAddMid.Diameter}" : "",
+                                span.BotAddRight != null && span.BotAddRight.Count > 0 ? $"{span.BotAddRight.Count}D{span.BotAddRight.Diameter}" : ""
+                            };
+
+                            if (isReversed)
+                            {
+                                topL0 = FlipArrayStatic(topL0);
+                                botL0 = FlipArrayStatic(botL0);
+                                topL1 = FlipArrayStatic(topL1);
+                                botL1 = FlipArrayStatic(botL1);
+                            }
+
+                            XDataUtils.WriteCurrentRebar(obj, topL0, topL1, botL0, botL1, tr);
+
+                            // V5.0: Use SetIsManual instead of merge raw data
                             if (span.IsManualModified)
                             {
-                                XDataUtils.MergeRawData(obj, tr, new Dictionary<string, object>
-                                {
-                                    ["IsManualModified"] = true,
-                                    ["LastManualEdit"] = DateTime.Now.ToString("yyyy-MM-dd HH:mm:ss")
-                                });
+                                XDataUtils.SetIsManual(obj, true, tr);
                             }
                         }
                     }
@@ -922,6 +1067,9 @@ namespace DTS_Engine.Commands
                             // Refresh requirements from XData
                             RefreshGroupFromXDataV5(group, topoGroup, tr, dtsSettings);
 
+                            // V5.0: Heal group from NOD (lazy healing per spec Section 5.1)
+                            HealGroupFromNOD(group, topoGroup, tr);
+
                             // Load existing solution from XData if available
                             LoadExistingSolutionFromXData(group, topoGroup, tr);
 
@@ -980,6 +1128,190 @@ namespace DTS_Engine.Commands
             }
 
             return builder.BuildGraph(allIds, tr, autoEstablishLinks: false);
+        }
+
+        /// <summary>
+        /// V5.0: Heal group from NOD per spec Section 5.1 (Lazy Healing).
+        /// 1. Lookup NOD by GroupId
+        /// 2. If NOD missing: Register from current topology
+        /// 3. If NOD has zombies: Purge dead handles
+        /// 4. Update NOD with alive members
+        /// </summary>
+        private void HealGroupFromNOD(BeamGroup group, List<BeamTopology> topoGroup, Transaction tr)
+        {
+            if (group == null || topoGroup == null || topoGroup.Count == 0) return;
+
+            // Get GroupId from first entity's XData
+            var firstObj = tr.GetObject(topoGroup[0].ObjectId, OpenMode.ForRead);
+            var (groupId, _) = XDataUtils.ReadGroupIdentity(firstObj);
+
+            if (string.IsNullOrEmpty(groupId))
+            {
+                // No GroupId - this is a legacy or newly created group
+                // Generate new GroupId and register
+                groupId = Guid.NewGuid().ToString().Substring(0, 8).ToUpperInvariant();
+
+                // Write GroupIdentity to all entities
+                for (int i = 0; i < topoGroup.Count; i++)
+                {
+                    var obj = tr.GetObject(topoGroup[i].ObjectId, OpenMode.ForWrite);
+                    XDataUtils.WriteGroupIdentity(obj, groupId, i, tr);
+                    XDataUtils.WriteGroupState(obj, 0, false, tr);
+                }
+
+                // Register with NOD - convert Handle to string
+                var handleStrings = topoGroup.Select(t => t.ObjectId.Handle.ToString()).ToList();
+                RegistryEngine.ResurrectGroup(groupId, handleStrings, tr);
+                return;
+            }
+
+            // Check NOD for this GroupId
+            bool nodExists = RegistryEngine.GroupIdExists(groupId, tr);
+
+            if (!nodExists)
+            {
+                // NOD missing -> Resurrect (register current topology)
+                var handleStrings = topoGroup.Select(t => t.ObjectId.Handle.ToString()).ToList();
+                RegistryEngine.ResurrectGroup(groupId, handleStrings, tr);
+                return;
+            }
+
+            // NOD exists -> Validate members and purge zombies
+            var nodHandleStrings = RegistryEngine.GetMembersByGroupId(groupId, tr);
+            if (nodHandleStrings == null || nodHandleStrings.Count == 0)
+            {
+                // NOD empty -> Register current
+                var handleStrings = topoGroup.Select(t => t.ObjectId.Handle.ToString()).ToList();
+                RegistryEngine.UpdateMembers(groupId, handleStrings, tr);
+                return;
+            }
+
+            // Check for zombie handles (deleted entities)
+            var aliveHandleStrings = new List<string>();
+            var deadCount = 0;
+
+            foreach (var handleStr in nodHandleStrings)
+            {
+                var objId = AcadUtils.GetObjectIdFromHandle(handleStr);
+                if (objId == ObjectId.Null || objId.IsErased)
+                {
+                    deadCount++;
+                    continue;
+                }
+
+                // Verify entity still exists and can be opened
+                try
+                {
+                    var obj = tr.GetObject(objId, OpenMode.ForRead);
+                    if (obj != null && !obj.IsErased)
+                    {
+                        aliveHandleStrings.Add(handleStr);
+                    }
+                    else
+                    {
+                        deadCount++;
+                    }
+                }
+                catch
+                {
+                    deadCount++;
+                }
+            }
+
+            // Update NOD if zombies found
+            if (deadCount > 0)
+            {
+                RegistryEngine.UpdateMembers(groupId, aliveHandleStrings, tr);
+            }
+
+            // V5.0 Spec Section 2.1: Detect Duplicate GroupId (copied entities)
+            // If current topology has handles NOT in NOD, they may be COPIES
+            var currentHandleStrings = topoGroup.Select(t => t.ObjectId.Handle.ToString()).ToList();
+            var orphanHandles = currentHandleStrings.Except(aliveHandleStrings).ToList();
+
+            if (orphanHandles.Count > 0)
+            {
+                // These handles have same GroupId but are NOT in NOD
+                // This means they are COPIES of original group -> Create NEW GroupId
+
+                // Check if ALL current handles are orphans (entire group is a copy)
+                bool isEntireGroupCopy = orphanHandles.Count == currentHandleStrings.Count;
+
+                if (isEntireGroupCopy)
+                {
+                    // All entities in topology are copies -> Generate new GroupId for entire group
+                    var newGroupId = Guid.NewGuid().ToString().Substring(0, 8).ToUpperInvariant();
+
+                    for (int i = 0; i < topoGroup.Count; i++)
+                    {
+                        var obj = tr.GetObject(topoGroup[i].ObjectId, OpenMode.ForWrite);
+                        XDataUtils.WriteGroupIdentity(obj, newGroupId, i, tr);
+                        XDataUtils.WriteGroupState(obj, 0, false, tr);
+                    }
+
+                    // Register new group in NOD
+                    RegistryEngine.ResurrectGroup(newGroupId, currentHandleStrings, tr);
+
+                    // Update group object with new GroupId
+                    group.GroupId = newGroupId;
+                }
+                else
+                {
+                    // Mixed case: some are copies, some are original
+                    // Split orphans into their own new group
+                    var newGroupId = Guid.NewGuid().ToString().Substring(0, 8).ToUpperInvariant();
+
+                    for (int idx = 0; idx < orphanHandles.Count; idx++)
+                    {
+                        var objId = AcadUtils.GetObjectIdFromHandle(orphanHandles[idx]);
+                        if (objId != ObjectId.Null && !objId.IsErased)
+                        {
+                            var obj = tr.GetObject(objId, OpenMode.ForWrite);
+                            XDataUtils.WriteGroupIdentity(obj, newGroupId, idx, tr);
+                            XDataUtils.WriteGroupState(obj, 0, false, tr);
+                        }
+                    }
+
+                    // Register orphans as new group
+                    RegistryEngine.ResurrectGroup(newGroupId, orphanHandles, tr);
+                }
+            }
+
+            // V5.0: Check for stale geometry
+            CheckStaleGeometry(group, topoGroup, tr);
+        }
+
+        /// <summary>
+        /// V5.0: Check if geometry has changed since last calculation.
+        /// Compares current entity length with stored span length.
+        /// </summary>
+        private void CheckStaleGeometry(BeamGroup group, List<BeamTopology> topoGroup, Transaction tr)
+        {
+            if (group?.Spans == null || topoGroup == null) return;
+
+            const double tolerance = 50; // mm tolerance for geometry change
+
+            for (int i = 0; i < group.Spans.Count && i < topoGroup.Count; i++)
+            {
+                var span = group.Spans[i];
+                var topo = topoGroup[i];
+
+                // Get current entity length
+                double currentLength = topo.Length;
+
+                // Compare with stored span length
+                if (span.Length > 0 && Math.Abs(currentLength - span.Length) > tolerance)
+                {
+                    group.HasStaleGeometry = true;
+                    return;
+                }
+            }
+
+            // Also check if span count changed
+            if (group.Spans.Count != topoGroup.Count)
+            {
+                group.HasStaleGeometry = true;
+            }
         }
 
         /// <summary>
@@ -1136,8 +1468,58 @@ namespace DTS_Engine.Commands
                     catch { /* Ignore deserialization errors */ }
                 }
 
-                // Check if design is locked (legacy check)
-                if (rawData.TryGetValue("DesignLocked", out var lockedObj))
+                // V5.0: Read GroupState for SelectedIdx and IsLocked
+                if (i == 0)
+                {
+                    var (selectedIdx, isLocked) = XDataUtils.ReadGroupState(obj);
+                    if (selectedIdx >= 0)
+                    {
+                        group.SelectedBackboneIndex = selectedIdx;
+                        group.IsLocked = isLocked;
+                    }
+                }
+
+                // V5.0: Read rebar options from Opt0-4 format if available
+                // This is the new compact format that replaces BackboneOptionsJson
+                if (i == 0 && group.BackboneOptions == null)
+                {
+                    var optionsV5 = XDataUtils.ReadRebarOptionsV5(obj);
+                    if (optionsV5 != null && optionsV5.Count > 0 && optionsV5.Any(o => !string.IsNullOrEmpty(o.TopL0)))
+                    {
+                        // Convert RebarOptionData to ContinuousBeamSolution format
+                        // Note: This is a simplified conversion - full solution data requires recalculation
+                        group.BackboneOptions = new List<ContinuousBeamSolution>();
+                        for (int optIdx = 0; optIdx < optionsV5.Count && optIdx < 5; optIdx++)
+                        {
+                            var optData = optionsV5[optIdx];
+                            if (string.IsNullOrEmpty(optData.TopL0) && string.IsNullOrEmpty(optData.BotL0)) continue;
+
+                            // Parse backbone count and diameter from "nDd" format
+                            var topInfo = ParseRebarString(optData.TopL0);
+                            var botInfo = ParseRebarString(optData.BotL0);
+
+                            var sol = new ContinuousBeamSolution
+                            {
+                                OptionName = $"Option {optIdx + 1}",
+                                BackboneCount_Top = topInfo?.Count ?? 0,
+                                BackboneCount_Bot = botInfo?.Count ?? 0,
+                                BackboneDiameter_Top = topInfo?.Diameter ?? 20,
+                                BackboneDiameter_Bot = botInfo?.Diameter ?? 20
+                            };
+                            group.BackboneOptions.Add(sol);
+                        }
+                    }
+                }
+
+                // V5.0: Read IsManual flag (replaces legacy DesignLocked check)
+                bool isManualV5 = XDataUtils.ReadIsManual(obj);
+                if (isManualV5)
+                {
+                    span.IsManualModified = true;
+                }
+
+                // Legacy check for old DesignLocked key (backward compat)
+                if (!span.IsManualModified && rawData.TryGetValue("DesignLocked", out var lockedObj))
                 {
                     bool isLocked = lockedObj?.ToString() == "True" || lockedObj?.ToString() == "1";
                     if (isLocked)

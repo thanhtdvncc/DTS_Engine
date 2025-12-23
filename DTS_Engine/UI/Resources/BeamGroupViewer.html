@@ -139,6 +139,23 @@
                         </div>
                     </div>
                 </label>
+                <!-- V5.0: Group Toolbar (Detach/Ungroup/Regroup) -->
+                <div class="w-px h-4 bg-slate-600"></div>
+                <div class="flex items-center gap-1">
+                    <span class="text-xs text-slate-500">Group:</span>
+                    <button onclick="sendDetachSelected()" title="Tách dầm đang chọn khỏi group"
+                        class="px-2 py-1 bg-orange-600 hover:bg-orange-500 text-white rounded text-xs">
+                        <i class="fa-solid fa-scissors"></i>
+                    </button>
+                    <button onclick="sendUngroupCurrent()" title="Xóa group hiện tại (tất cả thành dầm đơn)"
+                        class="px-2 py-1 bg-red-600 hover:bg-red-500 text-white rounded text-xs">
+                        <i class="fa-solid fa-unlink"></i>
+                    </button>
+                    <button onclick="sendRegroupSelected()" title="Gom các dầm đang chọn thành group mới"
+                        class="px-2 py-1 bg-blue-600 hover:bg-blue-500 text-white rounded text-xs">
+                        <i class="fa-solid fa-link"></i>
+                    </button>
+                </div>
                 <button class="px-2 py-1 bg-slate-700 hover:bg-slate-600 text-white rounded text-xs"
                     onclick="copyFormat()"><i class="fa-solid fa-paintbrush"></i></button>
             </div>
@@ -198,7 +215,72 @@
                 <span class="text-slate-500">Score:</span>
                 <span class="font-bold text-green-600" id="metricScore">-</span>
             </div>
+            <!-- V5.0: Visual Indicators (per spec Section 9.6) -->
+            <div id="visualIndicators" class="flex items-center gap-2">
+                <span id="motherIndicator" class="hidden text-yellow-500 text-xs" title="Mother beam (Span 0)">👑</span>
+                <span id="lockedIndicator" class="hidden text-red-500 text-xs" title="Design locked">🔒</span>
+                <span id="brokenChainIndicator" class="hidden text-orange-500 text-xs"
+                    title="SpanIndex gap detected">🔗❌</span>
+                <span id="manualEditIndicator" class="hidden text-yellow-400 text-xs" title="Manually edited">⚠️</span>
+            </div>
+            <!-- V5.0: Stale Geometry Warning -->
+            <div id="staleGeometryBanner"
+                class="hidden flex items-center gap-2 px-2 py-1 bg-amber-100 text-amber-800 rounded text-xs border border-amber-300">
+                <i class="fa-solid fa-triangle-exclamation"></i>
+                <span>Geometry đã thay đổi - Cần tính lại!</span>
+                <button onclick="quickCalc()"
+                    class="px-2 py-0.5 bg-amber-600 hover:bg-amber-500 text-white rounded text-xs">Tính lại</button>
+            </div>
             <div id="warningsContainer" class="flex gap-2"></div>
+        </div>
+
+        <!-- V5.0: Floating Properties Panel (per spec Section 9.2) -->
+        <div id="propertiesPanel" class="hidden absolute right-4 top-20 w-72 bg-white shadow-lg rounded border z-30">
+            <div class="p-3 bg-slate-100 border-b font-bold text-xs flex justify-between items-center">
+                <span>🏗️ Span Properties</span>
+                <button onclick="closePropertiesPanel()" class="text-slate-500 hover:text-red-500">&times;</button>
+            </div>
+            <div class="p-3 space-y-2 text-xs">
+                <!-- Beam Info -->
+                <div class="grid grid-cols-2 gap-2">
+                    <div>
+                        <label class="text-slate-500">Handle</label>
+                        <input id="propHandle" readonly class="w-full px-2 py-1 border rounded bg-slate-50 text-xs">
+                    </div>
+                    <div>
+                        <label class="text-slate-500">SpanId</label>
+                        <input id="propSpanId" readonly class="w-full px-2 py-1 border rounded bg-slate-50 text-xs">
+                    </div>
+                </div>
+                <div class="grid grid-cols-3 gap-2">
+                    <div>
+                        <label class="text-slate-500">Width</label>
+                        <input id="propWidth" readonly class="w-full px-2 py-1 border rounded bg-slate-50 text-xs">
+                    </div>
+                    <div>
+                        <label class="text-slate-500">Height</label>
+                        <input id="propHeight" readonly class="w-full px-2 py-1 border rounded bg-slate-50 text-xs">
+                    </div>
+                    <div>
+                        <label class="text-slate-500">Length</label>
+                        <input id="propLength" readonly class="w-full px-2 py-1 border rounded bg-slate-50 text-xs">
+                    </div>
+                </div>
+                <!-- Group State -->
+                <div class="border-t pt-2">
+                    <div class="font-bold text-slate-600 mb-1">Group State</div>
+                    <div class="flex items-center gap-2">
+                        <label class="text-slate-500">Option</label>
+                        <select id="propOption" onchange="onPropOptionChange(this.value)"
+                            class="flex-1 px-2 py-1 border rounded text-xs"></select>
+                    </div>
+                    <div class="flex items-center gap-2 mt-2">
+                        <label class="text-slate-500">Locked</label>
+                        <input type="checkbox" id="propLocked" onchange="onPropLockedChange(this.checked)">
+                        <span id="propLockedLabel" class="text-slate-400 text-xs">Chưa chốt</span>
+                    </div>
+                </div>
+            </div>
         </div>
 
         <!-- COLLAPSIBLE TABLE SECTION - Overlay at bottom -->
@@ -524,6 +606,10 @@
             // Avoid heavy table re-render during canvas-first workflow when panel is collapsed.
             // When user expands the panel, we'll re-render once.
             if (!tablePanelCollapsed) renderTable();
+            // V5.0: Update stale geometry warning banner
+            updateStaleGeometryBanner();
+            // V5.0: Update visual indicators (👑🔒🔗❌)
+            updateVisualIndicators();
         }
 
         function toggleTablePanel() {
@@ -2671,6 +2757,175 @@
             renderCanvas();
         }
 
+        // ============ V5.0 GROUP OPERATIONS ============
+        // Send DETACH message to C# for selected/highlighted span
+        function sendDetachSelected() {
+            const span = currentGroup?.Spans?.[highlightedSpanIndex];
+            if (!span?.Segments?.length) {
+                showToast('❌ Chọn 1 span để tách khỏi group!', 'error');
+                return;
+            }
+            const handle = span.Segments[0]?.EntityHandle;
+            if (!handle) {
+                showToast('❌ Không tìm thấy EntityHandle!', 'error');
+                return;
+            }
+            window.chrome.webview.postMessage('DETACH|' + handle);
+        }
+
+        // Send UNGROUP message to C# for current group
+        function sendUngroupCurrent() {
+            if (!currentGroup) {
+                showToast('❌ Không có group hiện tại!', 'error');
+                return;
+            }
+            // Get GroupId from first span's handle (C# will get GroupId from XData)
+            const handle = currentGroup.Spans?.[0]?.Segments?.[0]?.EntityHandle;
+            if (!handle) {
+                showToast('❌ Không tìm thấy EntityHandle!', 'error');
+                return;
+            }
+            // Read GroupId from currentGroup if available, fallback to handle
+            const groupId = currentGroup.GroupId || handle;
+            window.chrome.webview.postMessage('UNGROUP|' + groupId);
+        }
+
+        // Send REGROUP message to C# for selected spans
+        function sendRegroupSelected() {
+            const handles = [];
+            currentGroup?.Spans?.forEach(span => {
+                if (span.IsActive && span.Segments?.length > 0) {
+                    span.Segments.forEach(seg => {
+                        if (seg.EntityHandle) handles.push(seg.EntityHandle);
+                    });
+                }
+            });
+            if (handles.length < 2) {
+                showToast('❌ Chọn ít nhất 2 span để tạo group mới!', 'error');
+                return;
+            }
+            window.chrome.webview.postMessage('REGROUP|' + JSON.stringify(handles));
+        }
+
+        // V5.0: Update stale geometry warning banner
+        function updateStaleGeometryBanner() {
+            const banner = document.getElementById('staleGeometryBanner');
+            if (!banner) return;
+            if (currentGroup?.HasStaleGeometry) {
+                banner.classList.remove('hidden');
+            } else {
+                banner.classList.add('hidden');
+            }
+        }
+
+        // V5.0: Properties Panel Functions (per spec Section 9.2)
+        function showPropertiesPanel(spanIndex) {
+            const panel = document.getElementById('propertiesPanel');
+            const span = currentGroup?.Spans?.[spanIndex];
+            if (!panel || !span) return;
+
+            // Populate fields
+            document.getElementById('propHandle').value = span.Segments?.[0]?.EntityHandle || '-';
+            document.getElementById('propSpanId').value = span.SpanId || '-';
+            document.getElementById('propWidth').value = span.Width ? `${span.Width}mm` : '-';
+            document.getElementById('propHeight').value = span.Height ? `${span.Height}mm` : '-';
+            document.getElementById('propLength').value = span.Length ? `${(span.Length / 1000).toFixed(2)}m` : '-';
+
+            // Populate Option select
+            const optSelect = document.getElementById('propOption');
+            optSelect.innerHTML = '';
+            if (currentGroup.BackboneOptions?.length > 0) {
+                currentGroup.BackboneOptions.forEach((opt, i) => {
+                    const optEl = document.createElement('option');
+                    optEl.value = i;
+                    optEl.textContent = opt.OptionName || `Option ${i}`;
+                    optEl.selected = (i === currentGroup.SelectedBackboneIndex);
+                    optSelect.appendChild(optEl);
+                });
+            }
+
+            // Locked checkbox
+            const lockedCb = document.getElementById('propLocked');
+            const lockedLabel = document.getElementById('propLockedLabel');
+            lockedCb.checked = currentGroup.IsLocked || false;
+            lockedLabel.textContent = lockedCb.checked ? 'Đã chốt' : 'Chưa chốt';
+
+            panel.classList.remove('hidden');
+        }
+
+        function closePropertiesPanel() {
+            document.getElementById('propertiesPanel')?.classList.add('hidden');
+        }
+
+        function onPropOptionChange(value) {
+            const idx = parseInt(value, 10);
+            if (!isNaN(idx) && currentGroup) {
+                selectOption(idx);
+            }
+        }
+
+        function onPropLockedChange(checked) {
+            if (currentGroup) {
+                currentGroup.IsLocked = checked;
+                document.getElementById('propLockedLabel').textContent = checked ? 'Đã chốt' : 'Chưa chốt';
+                if (checked) {
+                    toggleLock();
+                }
+            }
+        }
+
+        // V5.0: Update visual indicators based on group state
+        function updateVisualIndicators() {
+            const motherEl = document.getElementById('motherIndicator');
+            const lockedEl = document.getElementById('lockedIndicator');
+            const brokenChainEl = document.getElementById('brokenChainIndicator');
+            const manualEditEl = document.getElementById('manualEditIndicator');
+
+            if (!motherEl || !currentGroup) return;
+
+            // Show 👑 if viewing first span (Mother)
+            if (highlightedSpanIndex === 0) {
+                motherEl.classList.remove('hidden');
+            } else {
+                motherEl.classList.add('hidden');
+            }
+
+            // Show 🔒 if design is locked
+            if (currentGroup.IsLocked || currentGroup.SelectedDesign?.IsLocked) {
+                lockedEl.classList.remove('hidden');
+            } else {
+                lockedEl.classList.add('hidden');
+            }
+
+            // Show 🔗❌ if SpanIndex has gaps
+            const hasGap = detectSpanIndexGap();
+            if (hasGap) {
+                brokenChainEl.classList.remove('hidden');
+            } else {
+                brokenChainEl.classList.add('hidden');
+            }
+
+            // Show ⚠️ if manually edited
+            if (currentGroup.IsManuallyEdited) {
+                manualEditEl.classList.remove('hidden');
+            } else {
+                manualEditEl.classList.add('hidden');
+            }
+        }
+
+        // Helper: Check if SpanIndex has gaps
+        function detectSpanIndexGap() {
+            if (!currentGroup?.Spans) return false;
+            // Check for missing spans in sequence 0, 1, 2...
+            for (let i = 0; i < currentGroup.Spans.length; i++) {
+                const span = currentGroup.Spans[i];
+                if (span.SpanIndex !== undefined && span.SpanIndex !== i) {
+                    return true;
+                }
+            }
+            return false;
+        }
+
         // ============ MATERIAL GRADE SELECTION ============
         function setGroupConcrete(grade) {
             if (currentGroup) {
@@ -2799,7 +3054,14 @@
             resizeCanvas,
             selectAllSpans,
             selectNoneSpans,
-            applyStirrupPattern
+            applyStirrupPattern,
+
+            // V5.0 Group Operations
+            sendDetachSelected,
+            sendUngroupCurrent,
+            sendRegroupSelected,
+            updateStaleGeometryBanner,
+            updateVisualIndicators
         });
 
         // Sync state to namespace

@@ -257,33 +257,49 @@ namespace DTS_Engine.Core.Algorithms
         #region Step C: Establish Star Topology
 
         /// <summary>
-        /// Thiết lập Star Topology: S1 (Left-most) là Mother, các entity khác link về S1.
+        /// [V5.0] Thiết lập Star Topology: S1 (Left-most) là Mother, các entity khác link về S1.
+        /// Now also writes GroupIdentity and GroupState to ALL entities for self-sufficiency.
         /// </summary>
         private void EstablishStarTopology(List<BeamTopology> sortedList, Transaction tr)
         {
-            if (sortedList.Count < 2) return;
+            if (sortedList.Count < 1) return;
+
+            // V5.0: Generate unique GroupId for this group
+            string groupId = Guid.NewGuid().ToString();
 
             var motherTopology = sortedList[0]; // S1 = Left-most = Mother
             var motherObj = tr.GetObject(motherTopology.ObjectId, OpenMode.ForWrite);
 
-            for (int i = 1; i < sortedList.Count; i++)
+            // V5.0: Write GroupIdentity/GroupState to ALL entities
+            for (int i = 0; i < sortedList.Count; i++)
             {
-                var childTopology = sortedList[i];
+                var topology = sortedList[i];
+                var obj = tr.GetObject(topology.ObjectId, OpenMode.ForWrite);
 
-                // Kiểm tra xem đã link chưa
-                if (childTopology.OriginHandle == motherTopology.Handle)
-                    continue;
+                // Write GroupIdentity: GroupId + SpanIndex
+                XDataUtils.WriteGroupIdentity(obj, groupId, i, tr);
 
-                var childObj = tr.GetObject(childTopology.ObjectId, OpenMode.ForWrite);
+                // Write GroupState: SelectedIdx=0, IsLocked=false (initial state)
+                XDataUtils.WriteGroupState(obj, selectedIdx: 0, isLocked: false, tr);
 
-                // Sử dụng XDataUtils.RegisterLink để thiết lập liên kết 2 chiều
-                var result = XDataUtils.RegisterLink(childObj, motherObj, isReference: false, tr);
-
-                if (result == LinkRegistrationResult.Primary)
+                // Establish star topology links for children
+                if (i > 0)
                 {
-                    // Cập nhật topology
-                    childTopology.OriginHandle = motherTopology.Handle;
+                    if (topology.OriginHandle != motherTopology.Handle)
+                    {
+                        var result = XDataUtils.RegisterLink(obj, motherObj, isReference: false, tr);
+                        if (result == LinkRegistrationResult.Primary)
+                        {
+                            topology.OriginHandle = motherTopology.Handle;
+                        }
+                    }
                 }
+            }
+
+            // Store GroupId in topology for later use
+            if (sortedList.Count > 0)
+            {
+                sortedList[0].GroupId = groupId;
             }
         }
 
@@ -828,6 +844,142 @@ namespace DTS_Engine.Core.Algorithms
         }
 
         #endregion
+
+        #region V5.0: Geometric Sort for Regroup/Resurrect
+
+        /// <summary>
+        /// [V5.0] Sort beams geometrically for correct SpanIndex assignment.
+        /// Critical for Regroup/Resurrect operations where selection order is random.
+        /// 
+        /// ALGORITHM:
+        /// 1. Get center point of each beam
+        /// 2. Determine dominant axis (X or Y)
+        /// 3. Sort by dominant axis
+        /// </summary>
+        /// <param name="unsortedIds">List of ObjectIds in random order</param>
+        /// <param name="tr">Transaction</param>
+        /// <returns>Sorted list with correct geometric order</returns>
+        public List<ObjectId> SortBeamsGeometrically(List<ObjectId> unsortedIds, Transaction tr)
+        {
+            if (unsortedIds == null || unsortedIds.Count <= 1)
+                return unsortedIds ?? new List<ObjectId>();
+
+            // Extract center points
+            var beamCenters = new List<(ObjectId Id, Point3d Center)>();
+
+            foreach (var id in unsortedIds)
+            {
+                if (id.IsErased) continue;
+
+                try
+                {
+                    var ent = tr.GetObject(id, OpenMode.ForRead) as Entity;
+                    if (ent == null) continue;
+
+                    Point3d center;
+                    if (ent is Line line)
+                    {
+                        center = new Point3d(
+                            (line.StartPoint.X + line.EndPoint.X) / 2,
+                            (line.StartPoint.Y + line.EndPoint.Y) / 2,
+                            (line.StartPoint.Z + line.EndPoint.Z) / 2);
+                    }
+                    else if (ent is Polyline pline && pline.NumberOfVertices >= 2)
+                    {
+                        var first = pline.GetPoint3dAt(0);
+                        var last = pline.GetPoint3dAt(pline.NumberOfVertices - 1);
+                        center = new Point3d(
+                            (first.X + last.X) / 2,
+                            (first.Y + last.Y) / 2,
+                            (first.Z + last.Z) / 2);
+                    }
+                    else
+                    {
+                        // Fallback: use Geometric Extents center
+                        var ext = ent.GeometricExtents;
+                        center = new Point3d(
+                            (ext.MinPoint.X + ext.MaxPoint.X) / 2,
+                            (ext.MinPoint.Y + ext.MaxPoint.Y) / 2,
+                            (ext.MinPoint.Z + ext.MaxPoint.Z) / 2);
+                    }
+
+                    beamCenters.Add((id, center));
+                }
+                catch { }
+            }
+
+            if (beamCenters.Count == 0)
+                return new List<ObjectId>();
+
+            // Determine dominant axis
+            double minX = beamCenters.Min(b => b.Center.X);
+            double maxX = beamCenters.Max(b => b.Center.X);
+            double minY = beamCenters.Min(b => b.Center.Y);
+            double maxY = beamCenters.Max(b => b.Center.Y);
+
+            double deltaX = maxX - minX;
+            double deltaY = maxY - minY;
+
+            // Sort by dominant axis
+            List<(ObjectId Id, Point3d Center)> sorted;
+            if (deltaX > deltaY)
+            {
+                // Horizontal alignment - sort by X
+                sorted = beamCenters.OrderBy(b => b.Center.X).ThenBy(b => b.Center.Y).ToList();
+            }
+            else
+            {
+                // Vertical alignment - sort by Y
+                sorted = beamCenters.OrderBy(b => b.Center.Y).ThenBy(b => b.Center.X).ToList();
+            }
+
+            return sorted.Select(b => b.Id).ToList();
+        }
+
+        /// <summary>
+        /// [V5.0] Get center point of a beam entity.
+        /// </summary>
+        public Point3d? GetBeamCenter(ObjectId id, Transaction tr)
+        {
+            try
+            {
+                if (id.IsErased) return null;
+
+                var ent = tr.GetObject(id, OpenMode.ForRead) as Entity;
+                if (ent == null) return null;
+
+                if (ent is Line line)
+                {
+                    return new Point3d(
+                        (line.StartPoint.X + line.EndPoint.X) / 2,
+                        (line.StartPoint.Y + line.EndPoint.Y) / 2,
+                        (line.StartPoint.Z + line.EndPoint.Z) / 2);
+                }
+                else if (ent is Polyline pline && pline.NumberOfVertices >= 2)
+                {
+                    var first = pline.GetPoint3dAt(0);
+                    var last = pline.GetPoint3dAt(pline.NumberOfVertices - 1);
+                    return new Point3d(
+                        (first.X + last.X) / 2,
+                        (first.Y + last.Y) / 2,
+                        (first.Z + last.Z) / 2);
+                }
+                else
+                {
+                    var ext = ent.GeometricExtents;
+                    return new Point3d(
+                        (ext.MinPoint.X + ext.MaxPoint.X) / 2,
+                        (ext.MinPoint.Y + ext.MaxPoint.Y) / 2,
+                        (ext.MinPoint.Z + ext.MaxPoint.Z) / 2);
+                }
+            }
+            catch
+            {
+                return null;
+            }
+        }
+
+        #endregion // V5.0: Geometric Sort
     }
 
     #region BeamTopology DTO
@@ -862,6 +1014,9 @@ namespace DTS_Engine.Core.Algorithms
         // Link info
         public string OriginHandle { get; set; }
         public string SapElementName { get; set; }
+
+        // V5.0: Group identification
+        public string GroupId { get; set; }
 
         // XData references
         public ElementData ElementData { get; set; }
