@@ -1023,102 +1023,7 @@ namespace DTS_Engine.Commands
 
         #endregion
 
-        #region V5: DTS_CLEANUP_LEGACY (Dọn dẹp dữ liệu cũ)
-
-        /// <summary>
-        /// V5: Dọn dẹp dữ liệu BeamGroup từ NOD (legacy V4).
-        /// Chuyển đổi sang XData-only mode.
-        /// </summary>
-        [CommandMethod("DTS_CLEANUP_LEGACY")]
-        public void DTS_CLEANUP_LEGACY()
-        {
-            ExecuteSafe(() =>
-            {
-                WriteMessage("\n=== DỌN DẸP DỮ LIỆU LEGACY (V4 → V5) ===");
-                
-                bool nodCleared = false;
-                int repairedLinks = 0;
-
-                UsingTransaction(tr =>
-                {
-                    // 1. Clear BeamGroups from NOD
-#pragma warning disable CS0618 // Obsolete warning
-                    string existingNod = XDataUtils.LoadBeamGroupsFromNOD(AcadUtils.Db, tr);
-#pragma warning restore CS0618
-
-                    if (!string.IsNullOrEmpty(existingNod))
-                    {
-                        WriteMessage("Tìm thấy dữ liệu BeamGroup trong NOD...");
-                        nodCleared = XDataUtils.ClearBeamGroupsFromNOD(AcadUtils.Db, tr);
-                        
-                        if (nodCleared)
-                            WriteMessage("  ✅ Đã xóa BeamGroup từ NOD.");
-                        else
-                            WriteMessage("  ⚠️ Không thể xóa BeamGroup từ NOD.");
-                    }
-                    else
-                    {
-                        WriteMessage("Không có dữ liệu NOD cần dọn dẹp.");
-                    }
-
-                    // 2. Validate and repair Star Topology
-                    WriteMessage("Đang kiểm tra Star Topology...");
-                    
-                    var topologyBuilder = new Core.Algorithms.TopologyBuilder();
-                    var allIds = new List<ObjectId>();
-                    
-                    // Scan all beams
-                    var btr = tr.GetObject(AcadUtils.Db.CurrentSpaceId, OpenMode.ForRead) as BlockTableRecord;
-                    foreach (ObjectId id in btr)
-                    {
-                        if (id.IsErased) continue;
-                        var ent = tr.GetObject(id, OpenMode.ForRead) as Entity;
-                        if (ent == null) continue;
-
-                        if (XDataUtils.HasAppXData(ent))
-                        {
-                            var rebarData = XDataUtils.ReadRebarData(ent);
-                            if (rebarData != null)
-                            {
-                                allIds.Add(id);
-                            }
-                        }
-                    }
-
-                    if (allIds.Count > 0)
-                    {
-                        var allTopologies = topologyBuilder.BuildGraph(allIds, tr, autoEstablishLinks: false);
-                        var groups = topologyBuilder.SplitIntoGroups(allTopologies);
-
-                        foreach (var group in groups)
-                        {
-                            if (group.Count > 1)
-                            {
-                                bool wasValid = topologyBuilder.ValidateAndRepairStarTopology(group, tr);
-                                if (!wasValid)
-                                {
-                                    repairedLinks += group.Count - 1;
-                                }
-                            }
-                        }
-                    }
-                });
-
-                // Summary
-                WriteMessage("\n--- KẾT QUẢ ---");
-                if (nodCleared)
-                    WriteSuccess("✅ Đã xóa dữ liệu BeamGroup từ NOD.");
-                
-                if (repairedLinks > 0)
-                    WriteSuccess($"✅ Đã sửa chữa {repairedLinks} liên kết Star Topology.");
-                else
-                    WriteMessage("Star Topology đã đúng.");
-
-                WriteMessage("\nV5 Migration hoàn tất. Sử dụng DTS_REBAR_CALCULATE để tính thép.");
-            });
-        }
-
-        #endregion
+        // V5: DTS_CLEANUP_LEGACY removed - NOD no longer supported
 
         #region V5: DTS_VALIDATE_TOPOLOGY (Kiểm tra tính toàn vẹn)
 
@@ -1143,7 +1048,7 @@ namespace DTS_Engine.Commands
                     // Scan all beams
                     var allIds = new List<ObjectId>();
                     var btr = tr.GetObject(AcadUtils.Db.CurrentSpaceId, OpenMode.ForRead) as BlockTableRecord;
-                    
+
                     foreach (ObjectId id in btr)
                     {
                         if (id.IsErased) continue;
@@ -1232,6 +1137,339 @@ namespace DTS_Engine.Commands
                 {
                     WriteMessage("\nChạy DTS_CLEANUP_LEGACY để sửa chữa tự động.");
                 }
+            });
+        }
+
+        #endregion
+
+        #region V5: DTS_REBAR_GROUP_AUTO (Tự động gom nhóm dầm)
+
+        /// <summary>
+        /// V5: Tự động quét chọn và gom nhóm dầm dựa trên collinearity.
+        /// Các dầm thẳng hàng (cùng trục Y hoặc X trong phạm vi tolerance) 
+        /// và liên tục (khoảng cách đầu-đuôi nhỏ) sẽ được gom thành 1 nhóm.
+        /// Mỗi nhóm sử dụng Star Topology: dầm trái nhất là Mother.
+        /// </summary>
+        [CommandMethod("DTS_REBAR_GROUP_AUTO")]
+        public void DTS_REBAR_GROUP_AUTO()
+        {
+            ExecuteSafe(() =>
+            {
+                WriteMessage("\n=== TỰ ĐỘNG GOM NHÓM DẦM (STAR TOPOLOGY) ===");
+                WriteMessage("Chọn vùng chứa các dầm cần gom nhóm:");
+
+                var ids = AcadUtils.SelectObjectsOnScreen("LINE,LWPOLYLINE,POLYLINE");
+                if (ids.Count < 2)
+                {
+                    WriteMessage("Cần chọn ít nhất 2 dầm để gom nhóm.");
+                    return;
+                }
+
+                VisualUtils.ClearAll();
+
+                const double AXIS_TOLERANCE = 500; // mm - tolerance để coi là cùng trục
+                const double GAP_TOLERANCE = 1000; // mm - khoảng cách tối đa giữa 2 dầm liên tiếp
+
+                int groupCount = 0;
+                int totalLinks = 0;
+                var detectedGroups = new List<Core.Data.BeamGroup>();
+
+                UsingTransaction(tr =>
+                {
+                    // 1. Harvest BeamGeometry với đầy đủ thông tin từ XData
+                    var beamGeometries = new List<Core.Data.BeamGeometry>();
+                    var handleToObjectId = new Dictionary<string, ObjectId>();
+
+                    foreach (ObjectId id in ids)
+                    {
+                        if (id.IsErased) continue;
+                        var ent = tr.GetObject(id, OpenMode.ForRead) as Entity;
+                        if (ent == null) continue;
+
+                        // Chỉ xử lý entity có XData là BEAM
+                        var elemData = XDataUtils.ReadElementData(ent);
+                        if (elemData == null || elemData.ElementType != ElementType.Beam) continue;
+
+                        var beamData = elemData as BeamData;
+
+                        // Get geometry
+                        double startX = 0, startY = 0, startZ = 0;
+                        double endX = 0, endY = 0, endZ = 0;
+
+                        if (ent is Autodesk.AutoCAD.DatabaseServices.Line line)
+                        {
+                            startX = line.StartPoint.X; startY = line.StartPoint.Y; startZ = line.StartPoint.Z;
+                            endX = line.EndPoint.X; endY = line.EndPoint.Y; endZ = line.EndPoint.Z;
+                        }
+                        else if (ent is Autodesk.AutoCAD.DatabaseServices.Polyline pline && pline.NumberOfVertices >= 2)
+                        {
+                            var p0 = pline.GetPoint3dAt(0);
+                            var pN = pline.GetPoint3dAt(pline.NumberOfVertices - 1);
+                            startX = p0.X; startY = p0.Y; startZ = p0.Z;
+                            endX = pN.X; endY = pN.Y; endZ = pN.Z;
+                        }
+                        else continue;
+
+                        // Get ResultData for A_req propagation
+                        var rebarData = XDataUtils.ReadRebarData(ent);
+
+                        var geom = new Core.Data.BeamGeometry
+                        {
+                            Handle = ent.Handle.ToString(),
+                            Name = beamData?.SapFrameName ?? ent.Handle.ToString(),
+                            StartX = startX,
+                            StartY = startY,
+                            StartZ = startZ,
+                            EndX = endX,
+                            EndY = endY,
+                            EndZ = endZ,
+                            Width = beamData?.Width ?? 200,
+                            Height = beamData?.Depth ?? beamData?.Height ?? 400,
+                            SupportI = beamData?.SupportI ?? 1,
+                            SupportJ = beamData?.SupportJ ?? 1,
+                            ResultData = rebarData
+                        };
+
+                        beamGeometries.Add(geom);
+                        handleToObjectId[geom.Handle] = id;
+                    }
+
+                    if (beamGeometries.Count < 2)
+                    {
+                        WriteMessage("Không tìm thấy đủ dầm hợp lệ (cần có XData BEAM).");
+                        return;
+                    }
+
+                    WriteMessage($"Tìm thấy {beamGeometries.Count} dầm. Đang phân tích nhóm...");
+
+                    // 2. Populate AxisName and update SupportI/J in BeamGeometry từ XData
+                    foreach (var geom in beamGeometries)
+                    {
+                        var objId = handleToObjectId[geom.Handle];
+                        var obj = tr.GetObject(objId, OpenMode.ForRead);
+                        var elemData = XDataUtils.ReadElementData(obj);
+                        var beamData = elemData as BeamData;
+
+                        // Set AxisName for Girder classification
+                        geom.AxisName = beamData?.AxisName ?? "";
+
+                        // Set SupportI/J for Girder classification
+                        geom.SupportI = beamData?.SupportI ?? 1;
+                        geom.SupportJ = beamData?.SupportJ ?? 1;
+                    }
+
+                    // 3. GROUP BY COLLINEARITY + CONNECTIVITY (NOT by AxisName!)
+                    const double Z_TOLERANCE = 500; // mm - tolerance cho cùng tầng
+
+                    // 3.1. Nhóm theo Story (Z elevation)
+                    var storyGroups = beamGeometries
+                        .GroupBy(b => System.Math.Round((b.StartZ + b.EndZ) / 2 / Z_TOLERANCE) * Z_TOLERANCE)
+                        .OrderBy(g => g.Key)
+                        .ToList();
+
+                    WriteMessage($"Phát hiện {storyGroups.Count} tầng.");
+
+                    var usedHandles = new HashSet<string>();
+                    var allBeamGroups = new List<Core.Data.BeamGroup>();
+
+                    foreach (var storyGroup in storyGroups)
+                    {
+                        double storyZ = storyGroup.Key;
+                        var beamsInStory = storyGroup.ToList();
+
+                        // 3.2. Group ALL beams by collinearity + connectivity
+                        // (No AxisName-first grouping - group by geometry only!)
+                        foreach (var beam in beamsInStory)
+                        {
+                            if (usedHandles.Contains(beam.Handle)) continue;
+
+                            bool isXDirection = beam.IsXDirection;
+
+                            // Start new group
+                            var localGroup = new List<Core.Data.BeamGeometry> { beam };
+                            usedHandles.Add(beam.Handle);
+
+                            // Find ALL collinear + connected beams (regardless of AxisName)
+                            bool foundNew;
+                            do
+                            {
+                                foundNew = false;
+                                foreach (var other in beamsInStory)
+                                {
+                                    if (usedHandles.Contains(other.Handle)) continue;
+
+                                    // Must have same direction
+                                    if (isXDirection != other.IsXDirection) continue;
+
+                                    // Check collinearity
+                                    bool collinear;
+                                    if (isXDirection)
+                                    {
+                                        // X-direction beams: check Y-axis alignment
+                                        collinear = localGroup.Any(g =>
+                                            System.Math.Abs(g.CenterY - other.CenterY) < AXIS_TOLERANCE);
+                                    }
+                                    else
+                                    {
+                                        // Y-direction beams: check X-axis alignment
+                                        collinear = localGroup.Any(g =>
+                                            System.Math.Abs(g.CenterX - other.CenterX) < AXIS_TOLERANCE);
+                                    }
+
+                                    if (!collinear) continue;
+
+                                    // Check connectivity (endpoints touch)
+                                    bool connected;
+                                    if (isXDirection)
+                                    {
+                                        connected = localGroup.Any(g =>
+                                        {
+                                            double gap1 = System.Math.Abs(g.EndX - other.StartX);
+                                            double gap2 = System.Math.Abs(g.StartX - other.EndX);
+                                            return gap1 < GAP_TOLERANCE || gap2 < GAP_TOLERANCE;
+                                        });
+                                    }
+                                    else
+                                    {
+                                        connected = localGroup.Any(g =>
+                                        {
+                                            double gap1 = System.Math.Abs(g.EndY - other.StartY);
+                                            double gap2 = System.Math.Abs(g.StartY - other.EndY);
+                                            return gap1 < GAP_TOLERANCE || gap2 < GAP_TOLERANCE;
+                                        });
+                                    }
+
+                                    if (connected)
+                                    {
+                                        localGroup.Add(other);
+                                        usedHandles.Add(other.Handle);
+                                        foundNew = true;
+                                    }
+                                }
+                            } while (foundNew);
+
+                            // Create group for 1+ beams (single beams also need calculation!)
+                            if (localGroup.Count >= 1)
+                            {
+                                // Sort by primary coordinate
+                                var sortedGroup = isXDirection
+                                    ? localGroup.OrderBy(b => b.CenterX).ToList()
+                                    : localGroup.OrderBy(b => b.CenterY).ToList();
+
+                                // 3.3. Classify Girder/Beam by MAJORITY support type (using IsGirder property)
+                                int girderCount = localGroup.Count(b => b.IsGirder);
+                                string groupType = girderCount > localGroup.Count / 2 ? "Girder" : "Beam";
+
+                                // Get AxisName from majority (for display, not grouping)
+                                var axisNames = localGroup
+                                    .Where(b => !string.IsNullOrEmpty(b.AxisName))
+                                    .GroupBy(b => b.AxisName)
+                                    .OrderByDescending(g => g.Count())
+                                    .FirstOrDefault();
+                                string majorityAxisName = axisNames?.Key ?? "";
+
+                                // Create BeamGroup
+                                var beamGroup = new Core.Data.BeamGroup
+                                {
+                                    AxisName = majorityAxisName,
+                                    Direction = isXDirection ? "X" : "Y",
+                                    GroupType = groupType,
+                                    LevelZ = storyZ,
+                                    Width = sortedGroup.Average(b => b.Width),
+                                    Height = sortedGroup.Average(b => b.Height),
+                                    EntityHandles = sortedGroup.Select(b => b.Handle).ToList(),
+                                    Source = "Auto",
+                                    IsSingleBeam = sortedGroup.Count == 1, // Mark single-beam groups
+                                    // Store geometry center for NamingEngine sorting
+                                    GeometryCenterX = sortedGroup.Average(b => b.CenterX),
+                                    GeometryCenterY = sortedGroup.Average(b => b.CenterY)
+                                };
+
+                                allBeamGroups.Add(beamGroup);
+
+                                // Create Star Topology links
+                                var motherObjId = handleToObjectId[sortedGroup[0].Handle];
+                                var motherObj = tr.GetObject(motherObjId, OpenMode.ForWrite);
+
+                                for (int i = 1; i < sortedGroup.Count; i++)
+                                {
+                                    var childObjId = handleToObjectId[sortedGroup[i].Handle];
+                                    var childObj = tr.GetObject(childObjId, OpenMode.ForWrite);
+
+                                    // Clear existing parent link first
+                                    var childData = XDataUtils.ReadElementData(childObj);
+                                    if (childData != null && !string.IsNullOrEmpty(childData.OriginHandle))
+                                    {
+                                        XDataUtils.UnregisterLink(childObj, childData.OriginHandle, tr);
+                                    }
+
+                                    // Register new link to Mother
+                                    var result = XDataUtils.RegisterLink(childObj, motherObj, isReference: false, tr);
+                                    if (result == LinkRegistrationResult.Primary || result == LinkRegistrationResult.AlreadyLinked)
+                                    {
+                                        totalLinks++;
+                                    }
+                                }
+
+                                // Visual feedback
+                                var childObjIds = sortedGroup.Skip(1)
+                                    .Select(b => handleToObjectId[b.Handle])
+                                    .ToList();
+
+                                VisualUtils.HighlightObject(motherObjId, 4); // Cyan
+                                VisualUtils.HighlightObjects(childObjIds, 3); // Green
+                                VisualUtils.DrawLinkLines(motherObjId, childObjIds, 3);
+
+                                // Display with axis info if available
+                                string axisInfo = string.IsNullOrEmpty(majorityAxisName) ? "" : $" [{majorityAxisName}]";
+                                WriteMessage($"  Nhóm {groupCount + 1}: {sortedGroup.Count} dầm ({groupType}{axisInfo} @Z={storyZ:F0})");
+                                groupCount++;
+                            }
+                        }
+                    }
+
+                    // 4. Auto Labeling với NamingEngine
+                    if (allBeamGroups.Count > 0)
+                    {
+                        var settings = DtsSettings.Instance;
+                        Core.Algorithms.NamingEngine.AutoLabeling(allBeamGroups, settings);
+                        WriteMessage($"  → Đã đặt tên cho {allBeamGroups.Count} nhóm với NamingEngine.");
+
+                        // 5. Persist group names to mother beam XData
+                        foreach (var group in allBeamGroups)
+                        {
+                            if (group.EntityHandles == null || group.EntityHandles.Count == 0) continue;
+                            if (string.IsNullOrEmpty(group.Name)) continue;
+
+                            // Get mother beam (first in EntityHandles)
+                            string motherHandle = group.EntityHandles[0];
+                            if (handleToObjectId.TryGetValue(motherHandle, out var motherObjId))
+                            {
+                                var motherObj = tr.GetObject(motherObjId, OpenMode.ForWrite);
+                                var beamData = XDataUtils.ReadElementData(motherObj) as BeamData;
+                                if (beamData != null)
+                                {
+                                    beamData.GroupLabel = group.Name;
+                                    beamData.GroupType = group.GroupType;
+                                    XDataUtils.WriteElementData(motherObj, beamData, tr);
+                                }
+                            }
+                        }
+                        WriteMessage($"  → Đã lưu tên nhóm vào XData của các Mother beams.");
+                    }
+                });
+
+                if (groupCount > 0)
+                {
+                    WriteSuccess($"✅ Đã tạo {groupCount} nhóm với tổng {totalLinks} liên kết Star Topology.");
+                    WriteMessage("Chạy DTS_REBAR_CALCULATE hoặc DTS_REBAR_VIEWER để làm việc với các nhóm này.");
+                }
+                else
+                {
+                    WriteMessage("Không tìm thấy nhóm dầm nào phù hợp để gom.");
+                }
+
+                WriteMessage("\n(Sử dụng DTS_CLEAR_VISUAL để xóa hiển thị tạm thời)");
             });
         }
 

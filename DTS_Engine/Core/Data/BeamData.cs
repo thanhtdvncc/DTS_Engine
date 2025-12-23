@@ -87,6 +87,18 @@ namespace DTS_Engine.Core.Data
         /// </summary>
         public string AxisName { get; set; }
 
+        /// <summary>
+        /// Tên nhóm từ NamingEngine (VD: "0GX1", "0BY3").
+        /// Được ghi vào XData của mother beam khi grouping.
+        /// </summary>
+        public string GroupLabel { get; set; }
+
+        /// <summary>
+        /// Loại nhóm: "Girder" hoặc "Beam".
+        /// Được ghi vào XData của mother beam khi grouping.
+        /// </summary>
+        public string GroupType { get; set; }
+
         #endregion
 
         #region ILoadBearing Implementation
@@ -187,6 +199,8 @@ namespace DTS_Engine.Core.Data
             dict["xSupport_I"] = SupportI;
             dict["xSupport_J"] = SupportJ;
             if (!string.IsNullOrEmpty(AxisName)) dict["xOnAxis"] = AxisName;
+            if (!string.IsNullOrEmpty(GroupLabel)) dict["xGroupLabel"] = GroupLabel;
+            if (!string.IsNullOrEmpty(GroupType)) dict["xGroupType"] = GroupType;
             if (!string.IsNullOrEmpty(BeamType)) dict["xBeamType"] = BeamType;
             dict["xUnitWeight"] = UnitWeight;
             if (!string.IsNullOrEmpty(LoadPattern)) dict["xLoadPattern"] = LoadPattern;
@@ -228,6 +242,8 @@ namespace DTS_Engine.Core.Data
             if (dict.TryGetValue("xSupport_I", out var si)) SupportI = System.Convert.ToInt32(si);
             if (dict.TryGetValue("xSupport_J", out var sj)) SupportJ = System.Convert.ToInt32(sj);
             if (dict.TryGetValue("xOnAxis", out var oa)) AxisName = oa?.ToString();
+            if (dict.TryGetValue("xGroupLabel", out var gl)) GroupLabel = gl?.ToString();
+            if (dict.TryGetValue("xGroupType", out var gt)) GroupType = gt?.ToString();
 
             // Deserialize Loads (ILoadBearing)
             if (dict.TryGetValue("xLoads", out var loadsJson))

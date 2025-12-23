@@ -318,6 +318,7 @@ namespace DTS_Engine.Core.Utils
         /// XData-first: cập nhật kết quả bố trí thép vào XData của phần tử, nhưng KHÔNG ghi đè các key khác (đặc biệt xType=BEAM).
         /// Lưu các field của BeamResultData: TopRebarString/BotRebarString/StirrupString/WebBarString + TopAreaProv/BotAreaProv.
         /// Đồng thời giữ tương thích ngược bằng cách update các key legacy (TopRebar/BotRebar/Stirrup/SideBar).
+        /// V5: Thêm SelectedDesignJson để persist phương án đã chốt.
         /// </summary>
         public static void UpdateBeamSolutionXData(
             DBObject obj,
@@ -327,7 +328,8 @@ namespace DTS_Engine.Core.Utils
             string[] stirrupString,
             string[] webBarString,
             string belongToGroup = null,
-            string beamType = null)
+            string beamType = null,
+            string selectedDesignJson = null)
         {
             if (obj == null || tr == null) return;
 
@@ -370,6 +372,12 @@ namespace DTS_Engine.Core.Utils
 
             if (!string.IsNullOrEmpty(belongToGroup)) dict["BelongToGroup"] = belongToGroup;
             if (!string.IsNullOrEmpty(beamType)) dict["BeamType"] = beamType;
+
+            // V5: Persist SelectedDesign (backbone info + locked timestamp)
+            if (!string.IsNullOrEmpty(selectedDesignJson))
+            {
+                dict["SelectedDesignJson"] = selectedDesignJson;
+            }
 
             // Legacy meta
             if (!string.IsNullOrEmpty(belongToGroup)) dict[KEY_BEAM_GROUP] = belongToGroup;
@@ -453,126 +461,8 @@ namespace DTS_Engine.Core.Utils
 
         #endregion
 
-        #region BeamGroup NOD Persistence (DEPRECATED V5)
-
-        /// <summary>
-        /// [DEPRECATED V5] Lưu danh sách BeamGroup vào NOD của bản vẽ.
-        /// V5: Sử dụng XData trên từng entity thay vì NOD.
-        /// Kept for backward compatibility only.
-        /// </summary>
-        [Obsolete("V5: Use XData on individual entities. BeamGroups are now runtime-only. Call SyncGroupSpansToXData() instead.")]
-        public static void SaveBeamGroupsToNOD(Database db, Transaction tr, string jsonData)
-        {
-            // V5: No-op - kept for backward compatibility
-            // Data is now stored in XData on each entity
-            System.Diagnostics.Debug.WriteLine("[V5 WARNING] SaveBeamGroupsToNOD called - this is deprecated. Data should be in XData.");
-            
-            // Keep original implementation for backward compatibility
-            if (db == null || tr == null || string.IsNullOrEmpty(jsonData)) return;
-
-            DBDictionary nod = (DBDictionary)tr.GetObject(db.NamedObjectsDictionaryId, OpenMode.ForWrite);
-
-            if (nod.Contains(NOD_BEAM_GROUPS))
-            {
-                nod.Remove(NOD_BEAM_GROUPS);
-            }
-
-            var xrec = new Xrecord();
-            var resBuf = CreateResultBufferFromJson(jsonData);
-            xrec.Data = resBuf;
-
-            nod.SetAt(NOD_BEAM_GROUPS, xrec);
-            tr.AddNewlyCreatedDBObject(xrec, true);
-        }
-
-        /// <summary>
-        /// [DEPRECATED V5] Đọc danh sách BeamGroup từ NOD của bản vẽ.
-        /// V5: Sử dụng TopologyBuilder.BuildGraph() để tạo runtime groups từ XData.
-        /// </summary>
-        [Obsolete("V5: Use TopologyBuilder.BuildGraph() to create runtime groups from XData. NOD is no longer the source of truth.")]
-        public static string LoadBeamGroupsFromNOD(Database db, Transaction tr)
-        {
-            System.Diagnostics.Debug.WriteLine("[V5 WARNING] LoadBeamGroupsFromNOD called - this is deprecated. Use TopologyBuilder instead.");
-            
-            if (db == null || tr == null) return null;
-
-            try
-            {
-                DBDictionary nod = (DBDictionary)tr.GetObject(db.NamedObjectsDictionaryId, OpenMode.ForRead);
-
-                if (!nod.Contains(NOD_BEAM_GROUPS))
-                    return null;
-
-                ObjectId xrecId = nod.GetAt(NOD_BEAM_GROUPS);
-                if (xrecId == ObjectId.Null) return null;
-
-                var xrec = tr.GetObject(xrecId, OpenMode.ForRead) as Xrecord;
-                if (xrec == null || xrec.Data == null) return null;
-
-                return ExtractJsonFromResultBuffer(xrec.Data);
-            }
-            catch
-            {
-                return null;
-            }
-        }
-
-        /// <summary>
-        /// [NEW V5] Xóa BeamGroup data từ NOD (dọn dẹp legacy data).
-        /// Call this to clean up old NOD-based data after migrating to V5.
-        /// </summary>
-        public static bool ClearBeamGroupsFromNOD(Database db, Transaction tr)
-        {
-            if (db == null || tr == null) return false;
-
-            try
-            {
-                DBDictionary nod = (DBDictionary)tr.GetObject(db.NamedObjectsDictionaryId, OpenMode.ForWrite);
-
-                if (nod.Contains(NOD_BEAM_GROUPS))
-                {
-                    nod.Remove(NOD_BEAM_GROUPS);
-                    return true;
-                }
-                return false;
-            }
-            catch
-            {
-                return false;
-            }
-        }
-
-        /// <summary>
-        /// Tạo ResultBuffer từ JSON string (chia thành chunks 250 chars)
-        /// </summary>
-        private static ResultBuffer CreateResultBufferFromJson(string json)
-        {
-            var rb = new ResultBuffer();
-            for (int i = 0; i < json.Length; i += CHUNK_SIZE)
-            {
-                int len = Math.Min(CHUNK_SIZE, json.Length - i);
-                rb.Add(new TypedValue((int)DxfCode.Text, json.Substring(i, len)));
-            }
-            return rb;
-        }
-
-        /// <summary>
-        /// Extract JSON string từ ResultBuffer
-        /// </summary>
-        private static string ExtractJsonFromResultBuffer(ResultBuffer rb)
-        {
-            if (rb == null) return null;
-
-            var sb = new StringBuilder();
-            foreach (TypedValue tv in rb)
-            {
-                if (tv.TypeCode == (int)DxfCode.Text)
-                    sb.Append(tv.Value?.ToString());
-            }
-            return sb.ToString();
-        }
-
-        #endregion
+        // V5: NOD Persistence removed. All data stored in XData on individual entities.
+        // Use TopologyBuilder.BuildGraph() for runtime group creation.
 
         #region StoryData (Trường hợp đặc biệt)
 

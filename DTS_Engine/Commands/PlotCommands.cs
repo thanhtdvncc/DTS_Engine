@@ -418,7 +418,12 @@ namespace DTS_Engine.Commands
                 Point3d p2 = new Point3d(x.Coordinate + offset.X, maxY + offset.Y, z);
 
                 var line = new Line(p1, p2) { Layer = AXIS_LAYER, ColorIndex = 5 };
-                btr.AppendEntity(line); tr.AddNewlyCreatedDBObject(line, true);
+                ObjectId lineId = btr.AppendEntity(line);
+                tr.AddNewlyCreatedDBObject(line, true);
+
+                // Add XData to grid line for Plan View extraction
+                DBObject lineObj = tr.GetObject(lineId, OpenMode.ForWrite);
+                AddGridXData(lineObj, x.Name, x.Coordinate, "X", tr);
 
                 // FIX2: Text to hơn và màu7
                 PlotAxisLabel(btr, tr, x.Name, new Point3d(p1.X, maxY + offset.Y + textH * 0.5, z), textH);
@@ -432,7 +437,12 @@ namespace DTS_Engine.Commands
                 Point3d p2 = new Point3d(maxX + offset.X, y.Coordinate + offset.Y, z);
 
                 var line = new Line(p1, p2) { Layer = AXIS_LAYER, ColorIndex = 5 };
-                btr.AppendEntity(line); tr.AddNewlyCreatedDBObject(line, true);
+                ObjectId lineId = btr.AppendEntity(line);
+                tr.AddNewlyCreatedDBObject(line, true);
+
+                // Add XData to grid line for Plan View extraction
+                DBObject lineObj = tr.GetObject(lineId, OpenMode.ForWrite);
+                AddGridXData(lineObj, y.Name, y.Coordinate, "Y", tr);
 
                 PlotAxisLabel(btr, tr, y.Name, new Point3d(minX + offset.X - textH, p1.Y, z), textH);
                 PlotAxisLabel(btr, tr, y.Name, new Point3d(maxX + offset.X + textH, p1.Y, z), textH);
@@ -485,7 +495,14 @@ namespace DTS_Engine.Commands
                     tr.AddNewlyCreatedDBObject(col, true);
 
                     // Gan XData cho marker point de co the lien ket (Origin/Link)
-                    var colData = new ColumnData { SectionName = f.Section, Material = "Concrete", BaseZ = Math.Min(f.Z1, f.Z2) };
+                    var colData = new ColumnData
+                    {
+                        SectionName = f.Section,
+                        Material = "Concrete",
+                        BaseZ = Math.Min(f.Z1, f.Z2),
+                        Width = f.Width,      // Section width (t2 from SAP)
+                        Depth = f.Height      // Section depth (t3 from SAP) - NOT column height!
+                    };
                     DBObject colObj = tr.GetObject(colId, OpenMode.ForWrite);
                     XDataUtils.WriteElementData(colObj, colData, tr);
 
@@ -735,6 +752,45 @@ namespace DTS_Engine.Commands
             tr.AddNewlyCreatedDBObject(lbl, true);
 
             return id.Handle.ToString();
+        }
+
+        /// <summary>
+        /// Add XData to grid line for Plan View extraction
+        /// Stores: GridName, Coordinate, Orientation
+        /// </summary>
+        private void AddGridXData(DBObject obj, string name, double coordinate, string orientation, Transaction tr)
+        {
+            try
+            {
+                // Use DTS_GRID appname for grid data
+                const string appName = "DTS_GRID";
+
+                // Register app if needed
+                var regTable = (RegAppTable)tr.GetObject(obj.Database.RegAppTableId, OpenMode.ForRead);
+                if (!regTable.Has(appName))
+                {
+                    regTable.UpgradeOpen();
+                    var app = new RegAppTableRecord { Name = appName };
+                    regTable.Add(app);
+                    tr.AddNewlyCreatedDBObject(app, true);
+                    regTable.DowngradeOpen();
+                }
+
+                // Build XData: (appName, Name, Coordinate, Orientation)
+                var rb = new ResultBuffer(
+                    new TypedValue((int)DxfCode.ExtendedDataRegAppName, appName),
+                    new TypedValue((int)DxfCode.ExtendedDataAsciiString, name),
+                    new TypedValue((int)DxfCode.ExtendedDataReal, coordinate),
+                    new TypedValue((int)DxfCode.ExtendedDataAsciiString, orientation)
+                );
+
+                obj.XData = rb;
+                rb.Dispose();
+            }
+            catch (System.Exception ex)
+            {
+                WriteError($"Error adding grid XData: {ex.Message}");
+            }
         }
 
         #endregion

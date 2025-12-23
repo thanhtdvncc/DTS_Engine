@@ -390,6 +390,16 @@ namespace DTS_Engine.Core.Data
         /// </summary>
         public bool RequiresSplice { get; set; } = false;
 
+        /// <summary>
+        /// Geometry center X coordinate (mm) - for NamingEngine sorting when Spans not available
+        /// </summary>
+        public double GeometryCenterX { get; set; }
+
+        /// <summary>
+        /// Geometry center Y coordinate (mm) - for NamingEngine sorting when Spans not available
+        /// </summary>
+        public double GeometryCenterY { get; set; }
+
         // ===== DATA =====
         public List<SpanData> Spans { get; set; } = new List<SpanData>();
         public List<SupportData> Supports { get; set; } = new List<SupportData>();

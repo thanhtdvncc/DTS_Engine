@@ -150,8 +150,10 @@
         <!-- CANVAS CONTAINER - Full height, table overlays on top -->
         <div class="absolute inset-0 bg-white border-b border-slate-200 overflow-hidden" id="canvasContainer">
             <canvas id="beamCanvas" height="360"></canvas>
-            <!-- View Mode Toggle: Mode 1 = Section, Mode 2 = Long Rebar, Mode 3 = Shear-Web Bar -->
+            <!-- View Mode Toggle: Plan | Section | Long Rebar | Shear-Web -->
             <div class="absolute top-12 right-2 flex gap-1 z-20">
+                <button onclick="setCanvasMode('plan')" id="modePlan"
+                    class="px-2 py-1 bg-slate-600 text-white text-[10px] rounded hover:bg-slate-500 shadow">Plan</button>
                 <button onclick="setCanvasMode('section')" id="modeSection"
                     class="px-2 py-1 bg-slate-600 text-white text-[10px] rounded hover:bg-slate-500 shadow">Section</button>
                 <button onclick="setCanvasMode('long')" id="modeLong"
@@ -159,6 +161,11 @@
                     Rebar</button>
                 <button onclick="setCanvasMode('shear')" id="modeShear"
                     class="px-2 py-1 bg-slate-600 text-white text-[10px] rounded hover:bg-slate-500 shadow">Shear-Web</button>
+            </div>
+            <!-- Story dropdown (visible only in Plan mode) -->
+            <div id="storyDropdownContainer" class="absolute top-12 left-2 z-20 hidden">
+                <select id="storySelect" onchange="loadStory(this.value)"
+                    class="bg-slate-800 border border-slate-600 text-white px-2 py-1 rounded text-xs"></select>
             </div>
             <!-- Zoom indicator -->
             <div id="zoomIndicator"
@@ -311,8 +318,9 @@
             highlightedSpanIndex: -1,
             spanBounds: [],
 
-            // Canvas mode: 'section' | 'long' | 'shear'
+            // Canvas mode: 'plan' | 'section' | 'long' | 'shear'
             canvasMode: 'long',
+            currentStoryZ: null, // For Plan view: current story Z level
 
             // Canvas interaction
             zoom: 1.0,
@@ -544,11 +552,15 @@
 
         function setCanvasMode(mode) {
             canvasMode = mode;
-            // Toggle active state for 3 buttons
+            // Toggle active state for 4 buttons
+            const btnPlan = document.getElementById('modePlan');
             const btnSection = document.getElementById('modeSection');
             const btnLong = document.getElementById('modeLong');
             const btnShear = document.getElementById('modeShear');
+            const storyContainer = document.getElementById('storyDropdownContainer');
 
+            btnPlan.classList.toggle('bg-blue-600', mode === 'plan');
+            btnPlan.classList.toggle('bg-slate-600', mode !== 'plan');
             btnSection.classList.toggle('bg-blue-600', mode === 'section');
             btnSection.classList.toggle('bg-slate-600', mode !== 'section');
             btnLong.classList.toggle('bg-blue-600', mode === 'long');
@@ -556,7 +568,317 @@
             btnShear.classList.toggle('bg-blue-600', mode === 'shear');
             btnShear.classList.toggle('bg-slate-600', mode !== 'shear');
 
-            renderCanvas();
+            // Show/hide Story dropdown for Plan mode
+            if (mode === 'plan') {
+                storyContainer.classList.remove('hidden');
+                populateStoryDropdown();
+                renderPlanView();
+            } else {
+                storyContainer.classList.add('hidden');
+                renderCanvas();
+            }
+        }
+
+        // ============ PLAN VIEW FUNCTIONS ============
+        function populateStoryDropdown() {
+            const select = document.getElementById('storySelect');
+            select.innerHTML = '';
+
+            // Extract unique Z levels from allBeams (independent from groups)
+            const allBeams = data.allBeams || [];
+            const allZLevels = new Set();
+            allBeams.forEach(b => {
+                if (b.LevelZ != null) allZLevels.add(b.LevelZ);
+            });
+
+            const sortedZ = Array.from(allZLevels).sort((a, b) => a - b);
+
+            if (sortedZ.length === 0) {
+                // Fallback: single story at Z=0
+                sortedZ.push(0);
+            }
+
+            sortedZ.forEach((z, i) => {
+                const opt = document.createElement('option');
+                opt.value = z;
+                opt.textContent = `Story ${i + 1} (Z=${z})`;
+                select.appendChild(opt);
+            });
+
+            if (sortedZ.length > 0 && Beam.State.currentStoryZ == null) {
+                Beam.State.currentStoryZ = sortedZ[0];
+            }
+        }
+
+        function loadStory(z) {
+            Beam.State.currentStoryZ = parseFloat(z);
+            renderPlanView();
+        }
+
+        function renderPlanView() {
+            const canvas = document.getElementById('beamCanvas');
+            const ctx = canvas.getContext('2d');
+
+            // CRITICAL: Plan View reads from data.allBeams, NOT data.groups
+            // This ensures independence from grouping logic
+            const allBeams = data.allBeams || [];
+
+            if (allBeams.length === 0) {
+                ctx.fillStyle = '#f8fafc';
+                ctx.fillRect(0, 0, canvas.width, canvas.height);
+                ctx.fillStyle = '#94a3b8';
+                ctx.font = '14px sans-serif';
+                ctx.textAlign = 'center';
+                ctx.fillText('Không có dữ liệu mặt bằng', canvas.width / 2, canvas.height / 2);
+                return;
+            }
+
+            const z = Beam.State.currentStoryZ;
+            const Z_TOLERANCE = 500;
+
+            // Filter beams for current story - read directly from allBeams
+            const beamsOnStory = allBeams.filter(b => {
+                const beamZ = b.LevelZ || 0;
+                return Math.abs(beamZ - z) < Z_TOLERANCE;
+            });
+
+            if (beamsOnStory.length === 0) {
+                ctx.fillStyle = '#f8fafc';
+                ctx.fillRect(0, 0, canvas.width, canvas.height);
+                ctx.fillStyle = '#94a3b8';
+                ctx.font = '14px sans-serif';
+                ctx.textAlign = 'center';
+                ctx.fillText(`Không có dầm ở tầng Z=${z}`, canvas.width / 2, canvas.height / 2);
+                return;
+            }
+
+            // Collect axis names for grid lines
+            const axisNames = new Set();
+            beamsOnStory.forEach(b => {
+                if (b.AxisName) axisNames.add(b.AxisName);
+            });
+
+            // Detect column points at beam endpoints (for orange circle markers)
+            const columnPoints = [];
+            beamsOnStory.forEach(b => {
+                // Add both endpoints - these show beam-column connection points
+                columnPoints.push({ x: b.StartX, y: b.StartY });
+                columnPoints.push({ x: b.EndX, y: b.EndY });
+            });
+
+            // Calculate bounds
+            const allX = beamsOnStory.flatMap(b => [b.StartX, b.EndX]);
+            const allY = beamsOnStory.flatMap(b => [b.StartY, b.EndY]);
+            const minX = Math.min(...allX) - 2000;
+            const maxX = Math.max(...allX) + 2000;
+            const minY = Math.min(...allY) - 2000;
+            const maxY = Math.max(...allY) + 2000;
+
+            // Scale to fit canvas (base scale)
+            const scaleX = (canvas.width - 40) / (maxX - minX);
+            const scaleY = (canvas.height - 40) / (maxY - minY);
+            const baseScale = Math.min(scaleX, scaleY) * 0.85;
+            const baseOffsetX = 20 - minX * baseScale;
+            const baseOffsetY = 20 - minY * baseScale;
+
+            // Apply interactive zoom and pan
+            const tx = x => (x * baseScale + baseOffsetX) * canvasZoom + canvasPanX;
+            const ty = y => (canvas.height - (y * baseScale + baseOffsetY)) * canvasZoom + canvasPanY; // Flip Y
+
+            // Clear
+            ctx.fillStyle = '#f8fafc';
+            ctx.fillRect(0, 0, canvas.width, canvas.height);
+
+            // Draw grid lines from AutoCAD layer (dts_axis)
+            const gridsOnStory = (data.allGrids || []).filter(g => {
+                const gridZ = g.Z || 0;
+                return Math.abs(gridZ - z) < Z_TOLERANCE;
+            });
+
+            ctx.strokeStyle = '#cbd5e1';
+            ctx.lineWidth = 1;
+            ctx.setLineDash([5, 5]);
+            ctx.font = '10px sans-serif';
+            ctx.fillStyle = '#64748b';
+
+            gridsOnStory.forEach(grid => {
+                ctx.beginPath();
+                ctx.moveTo(tx(grid.StartX), ty(grid.StartY));
+                ctx.lineTo(tx(grid.EndX), ty(grid.EndY));
+                ctx.stroke();
+
+                // Draw grid label: Name and Coordinate on SAME side
+                if (grid.Name) {
+                    ctx.save();
+                    ctx.font = 'bold 12px sans-serif';
+                    ctx.fillStyle = '#1e293b';
+                    ctx.textAlign = 'center';
+
+                    // Format coordinate (convert from mm to m if > 1000)
+                    const coordText = grid.Coordinate > 1000
+                        ? `${(grid.Coordinate / 1000).toFixed(1)}m`
+                        : `${grid.Coordinate.toFixed(0)}`;
+
+                    if (grid.Orientation === 'X') {
+                        // Vertical grid: Name and coordinate at TOP
+                        ctx.fillText(grid.Name, tx(grid.StartX), ty(grid.StartY) - 25);
+                        ctx.font = '10px sans-serif';
+                        ctx.fillStyle = '#64748b';
+                        ctx.fillText(coordText, tx(grid.StartX), ty(grid.StartY) - 10);
+
+                        // Only name at bottom
+                        ctx.font = 'bold 12px sans-serif';
+                        ctx.fillStyle = '#1e293b';
+                        ctx.fillText(grid.Name, tx(grid.EndX), ty(grid.EndY) + 20);
+                    } else {
+                        // Horizontal grid: Name and coordinate at LEFT
+                        ctx.textAlign = 'right';
+                        ctx.fillText(grid.Name, tx(grid.StartX) - 15, ty(grid.StartY) - 5);
+                        ctx.font = '10px sans-serif';
+                        ctx.fillStyle = '#64748b';
+                        ctx.fillText(coordText, tx(grid.StartX) - 15, ty(grid.StartY) + 8);
+
+                        // Only name at right
+                        ctx.font = 'bold 12px sans-serif';
+                        ctx.fillStyle = '#1e293b';
+                        ctx.textAlign = 'left';
+                        ctx.fillText(grid.Name, tx(grid.EndX) + 15, ty(grid.EndY) + 5);
+                    }
+                    ctx.restore();
+                }
+            });
+            ctx.setLineDash([]);
+
+            // Draw beams
+            beamsOnStory.forEach(b => {
+                const isSelected = currentGroup?.GroupName === b.GroupName;
+                ctx.strokeStyle = isSelected ? '#3b82f6' : '#475569';
+                ctx.lineWidth = isSelected ? 4 : 2;
+                ctx.beginPath();
+                ctx.moveTo(tx(b.StartX), ty(b.StartY));
+                ctx.lineTo(tx(b.EndX), ty(b.EndY));
+                ctx.stroke();
+            });
+
+            // Draw columns from AutoCAD layer (dts_point)
+            const columnsOnStory = (data.allColumns || []).filter(col => {
+                const colZ = col.Z || 0;
+                return Math.abs(colZ - z) < Z_TOLERANCE;
+            });
+
+            columnsOnStory.forEach(col => {
+                const cx = col.X;
+                const cy = col.Y;
+                const w = col.Width || 400;
+                const d = col.Depth || 400;  // Use Depth instead of Height
+                const sectionType = (col.SectionType || 'Rectangular').toUpperCase();
+
+                ctx.save();
+
+                // Colors for columns
+                ctx.fillStyle = 'rgba(100, 116, 139, 0.2)';  // Gray with transparency
+                ctx.strokeStyle = '#475569';
+                ctx.lineWidth = 2;
+
+                // Draw based on section type
+                if (sectionType === 'RECTANGULAR' || sectionType === 'RECT') {
+                    drawRectColumn(ctx, cx, cy, w, d);
+                } else if (sectionType === 'CIRCULAR' || sectionType === 'CIRCLE' || sectionType === 'PIPE') {
+                    drawCircleColumn(ctx, cx, cy, Math.max(w, d) / 2);
+                } else if (sectionType.includes('I') || sectionType.includes('H')) {
+                    drawIColumn(ctx, cx, cy, w, d);
+                } else if (sectionType.includes('BOX')) {
+                    drawBoxColumn(ctx, cx, cy, w, d);
+                } else if (sectionType.includes('CHANNEL') || sectionType.includes('C')) {
+                    drawChannelColumn(ctx, cx, cy, w, d);
+                } else {
+                    // Default: rectangle
+                    drawRectColumn(ctx, cx, cy, w, d);
+                }
+
+                ctx.restore();
+            });
+
+            // Helper functions for column drawing
+            function drawRectColumn(ctx, cx, cy, w, h) {
+                // Center-based rectangle
+                const halfW = (w * baseScale * canvasZoom) / 2;
+                const halfH = (h * baseScale * canvasZoom) / 2;
+                const x = tx(cx) - halfW;
+                const y = ty(cy) - halfH;
+                const width = w * baseScale * canvasZoom;
+                const height = h * baseScale * canvasZoom;
+
+                ctx.fillRect(x, y, width, height);
+                ctx.strokeRect(x, y, width, height);
+            }
+
+            function drawCircleColumn(ctx, cx, cy, radius) {
+                ctx.beginPath();
+                ctx.arc(tx(cx), ty(cy), radius * baseScale * canvasZoom, 0, Math.PI * 2);
+                ctx.fill();
+                ctx.stroke();
+            }
+
+            function drawIColumn(ctx, cx, cy, w, h) {
+                // Simplified I-section: just draw as rectangle for now
+                // Complex shapes need more careful coordinate handling
+                drawRectColumn(ctx, cx, cy, w, h);
+            }
+
+            function drawBoxColumn(ctx, cx, cy, w, h) {
+                // Hollow rectangle - draw outer then inner
+                const thickness = Math.min(w, h) * 0.15;
+
+                // Outer rectangle
+                drawRectColumn(ctx, cx, cy, w, h);
+
+                // Inner rectangle (clear with background color)
+                ctx.save();
+                ctx.fillStyle = '#f8fafc';  // Background color
+                drawRectColumn(ctx, cx, cy, w - 2 * thickness, h - 2 * thickness);
+                ctx.restore();
+            }
+
+            function drawChannelColumn(ctx, cx, cy, w, h) {
+                // Simplified C-section: draw as rectangle for now
+                drawRectColumn(ctx, cx, cy, w, h);
+            }
+
+            // Draw beam endpoints (small circles at support points)
+            // These indicate where beams connect to columns
+            const uniqueColumns = [];
+            columnPoints.forEach(cp => {
+                const exists = uniqueColumns.some(uc =>
+                    Math.abs(uc.x - cp.x) < 100 && Math.abs(uc.y - cp.y) < 100
+                );
+                if (!exists) uniqueColumns.push(cp);
+            });
+
+            ctx.fillStyle = '#f59e0b';
+            ctx.strokeStyle = '#78350f';
+            ctx.lineWidth = 1;
+            uniqueColumns.forEach(c => {
+                ctx.beginPath();
+                ctx.arc(tx(c.x), ty(c.y), 3, 0, Math.PI * 2);  // Small circle (3px radius)
+                ctx.fill();
+                ctx.stroke();
+            });
+
+            // Legend
+            ctx.fillStyle = '#1e293b';
+            ctx.font = 'bold 11px sans-serif';
+            ctx.textAlign = 'left';
+            ctx.fillText(`Plan View - Z=${z} | ${beamsOnStory.length} beams | ${gridsOnStory.length} grids | ${columnsOnStory.length} columns`, 10, 20);
+        }
+
+        // Mode-aware render wrapper - use this instead of renderCanvas() for interactive actions
+        function render() {
+            if (canvasMode === 'plan') {
+                renderPlanView();
+            } else {
+                renderCanvas();
+            }
         }
 
         function autoLockOnEdit() {
@@ -736,7 +1058,7 @@
                     if (boxZoomActive) {
                         boxZoomEndX = e.clientX - rect.left;
                         boxZoomEndY = e.clientY - rect.top;
-                        renderCanvas(); // Will draw selection box
+                        render(); // Will draw selection box
                         return;
                     }
 
@@ -748,7 +1070,7 @@
                         canvasPanY += dy;
                         canvasLastX = e.clientX;
                         canvasLastY = e.clientY;
-                        renderCanvas();
+                        render();
                     } else {
                         // Hover detection
                         const x = (e.clientX - rect.left - canvasPanX) / canvasZoom;
@@ -778,7 +1100,7 @@
                         }
                         if (found !== highlightedSpanIndex) {
                             highlightedSpanIndex = found;
-                            renderCanvas();
+                            render();
                             renderTable();
                         }
                     }
@@ -872,7 +1194,7 @@
                             canvasPanX = canvasW / 2 - worldCenterX * canvasZoom;
                             canvasPanY = canvasH / 2 - worldCenterY * canvasZoom;
 
-                            renderCanvas();
+                            render();
                         }
                         return;
                     }
@@ -887,7 +1209,7 @@
                     boxZoomActive = false;
                     canvas.style.cursor = 'default';
                     highlightedSpanIndex = -1;
-                    renderCanvas();
+                    render();
                     renderTable();
                 });
 
@@ -902,7 +1224,7 @@
                     canvasPanX = mouseX - (mouseX - canvasPanX) * (newZoom / canvasZoom);
                     canvasPanY = mouseY - (mouseY - canvasPanY) * (newZoom / canvasZoom);
                     canvasZoom = newZoom;
-                    renderCanvas();
+                    render();
                 }, { passive: false });
 
                 // Double click: label edit (priority) or reset view
@@ -921,7 +1243,7 @@
                     canvasZoom = 1.0;
                     canvasPanX = 0;
                     canvasPanY = 0;
-                    renderCanvas();
+                    render();
                     centerCanvas();
                 });
 
@@ -1003,13 +1325,18 @@
             const opt = getSelectedOption();
             if (opt) applyOptionToSpans(opt);
 
-            // Reset zoom/pan and center view
-            canvasZoom = 1.0;
-            canvasPanX = 0;
-            canvasPanY = 0;
-
-            renderCanvas();
-            centerCanvas(); // Center after first render
+            // Render based on current mode - RESPECT Plan mode!
+            if (canvasMode === 'plan') {
+                // Stay in Plan view - just highlight the selected group
+                renderPlanView();
+            } else {
+                // Section/Long/Shear modes - render as usual
+                canvasZoom = 1.0;
+                canvasPanX = 0;
+                canvasPanY = 0;
+                renderCanvas();
+                centerCanvas(); // Center after first render
+            }
             renderTable();
             updateMetrics();
             updateGroupInfo();

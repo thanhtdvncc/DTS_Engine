@@ -171,7 +171,10 @@ namespace DTS_Engine.Core.Algorithms
 
         private static double GetCenterY(Data.BeamGroup group)
         {
-            if (group.Spans == null || group.Spans.Count == 0) return 0;
+            // Use stored geometry center if Spans not available
+            if (group.Spans == null || group.Spans.Count == 0)
+                return group.GeometryCenterY;
+
             double sum = 0;
             int count = 0;
             foreach (var span in group.Spans)
@@ -188,12 +191,15 @@ namespace DTS_Engine.Core.Algorithms
                     }
                 }
             }
-            return count > 0 ? sum / count : 0;
+            return count > 0 ? sum / count : group.GeometryCenterY;
         }
 
         private static double GetCenterX(Data.BeamGroup group)
         {
-            if (group.Spans == null || group.Spans.Count == 0) return 0;
+            // Use stored geometry center if Spans not available
+            if (group.Spans == null || group.Spans.Count == 0)
+                return group.GeometryCenterX;
+
             double sum = 0;
             int count = 0;
             foreach (var span in group.Spans)
@@ -210,7 +216,7 @@ namespace DTS_Engine.Core.Algorithms
                     }
                 }
             }
-            return count > 0 ? sum / count : 0;
+            return count > 0 ? sum / count : group.GeometryCenterX;
         }
     }
 }

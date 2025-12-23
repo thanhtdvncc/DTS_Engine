@@ -557,6 +557,9 @@ namespace DTS_Engine.Commands
                             // Update SpanData for Viewer
                             UpdateGroupSpansFromSolution(group, bestSolution);
 
+                            // Store SelectedDesign for persistence
+                            group.SelectedDesign = bestSolution;
+
                             if (topoGroup.Count == 1)
                                 singleCount++;
                             else
@@ -573,8 +576,13 @@ namespace DTS_Engine.Commands
             // Summary
             WriteSuccess($"Hoàn thành: {singleCount} dầm đơn + {groupCount} nhóm. {lockedCount} nhóm đã chốt (giữ nguyên).");
 
-            // Note: NO NOD SAVE - BeamGroups are runtime-only
-            // Data is persisted in XData on each entity
+            // V5: Persist SelectedDesign and BackboneOptions to XData
+            // This ensures Viewer can reload the last calculated proposals
+            if (allRuntimeGroups.Count > 0)
+            {
+                SyncGroupSpansToXData(allRuntimeGroups);
+                WriteMessage($"  → Đã lưu {allRuntimeGroups.Count} nhóm vào XData.");
+            }
         }
 
         /// <summary>
@@ -666,8 +674,8 @@ namespace DTS_Engine.Commands
                 var obj = tr.GetObject(topo.ObjectId, OpenMode.ForWrite);
                 if (obj == null) continue;
 
-                string spanId = group?.Spans != null && i < group.Spans.Count 
-                    ? group.Spans[i].SpanId 
+                string spanId = group?.Spans != null && i < group.Spans.Count
+                    ? group.Spans[i].SpanId
                     : $"S{i + 1}";
 
                 // Build rebar strings for 3 positions (Start/Mid/End)
@@ -801,6 +809,17 @@ namespace DTS_Engine.Commands
                                 webStrings = FlipArrayStatic(webStrings);
                             }
 
+                            // Serialize SelectedDesign (only for first span - it's group-level data)
+                            string selectedDesignJson = null;
+                            if (i == 0 && group.SelectedDesign != null)
+                            {
+                                try
+                                {
+                                    selectedDesignJson = Newtonsoft.Json.JsonConvert.SerializeObject(group.SelectedDesign);
+                                }
+                                catch { /* Ignore serialization errors */ }
+                            }
+
                             // Write to XData
                             XDataUtils.UpdateBeamSolutionXData(
                                 obj,
@@ -810,7 +829,8 @@ namespace DTS_Engine.Commands
                                 stirrupStrings,
                                 webStrings,
                                 group.GroupName,
-                                group.GroupType);
+                                group.GroupType,
+                                selectedDesignJson);
 
                             // Mark as manually modified if applicable
                             if (span.IsManualModified)
@@ -848,7 +868,7 @@ namespace DTS_Engine.Commands
             try
             {
                 var selectedIds = AcadUtils.SelectObjectsOnScreen("LINE,LWPOLYLINE,POLYLINE", true);
-                
+
                 var topologyBuilder = new TopologyBuilder();
                 var resultGroups = new List<BeamGroup>();
                 var dtsSettings = DtsSettings.Instance;
@@ -987,9 +1007,9 @@ namespace DTS_Engine.Commands
                 // Map 3 zones -> 6 positions
                 for (int zi = 0; zi < 3; zi++)
                 {
-                    double asTopReq = (designData.TopArea?.ElementAtOrDefault(zi) ?? 0) + 
+                    double asTopReq = (designData.TopArea?.ElementAtOrDefault(zi) ?? 0) +
                                      (designData.TorsionArea?.ElementAtOrDefault(zi) ?? 0) * torsTop;
-                    double asBotReq = (designData.BotArea?.ElementAtOrDefault(zi) ?? 0) + 
+                    double asBotReq = (designData.BotArea?.ElementAtOrDefault(zi) ?? 0) +
                                      (designData.TorsionArea?.ElementAtOrDefault(zi) ?? 0) * torsBot;
 
                     int p0 = zi == 0 ? 0 : (zi == 1 ? 2 : 4);
@@ -1064,7 +1084,25 @@ namespace DTS_Engine.Commands
                     span.Stirrup = stirrupStrings;
                 }
 
-                // Check if design is locked
+                // V5: Restore SelectedDesign from first span (group-level data)
+                if (i == 0 && rawData.TryGetValue("SelectedDesignJson", out var designJson) && designJson != null)
+                {
+                    try
+                    {
+                        string json = designJson.ToString();
+                        if (!string.IsNullOrEmpty(json))
+                        {
+                            var design = Newtonsoft.Json.JsonConvert.DeserializeObject<ContinuousBeamSolution>(json);
+                            if (design != null)
+                            {
+                                group.SelectedDesign = design;
+                            }
+                        }
+                    }
+                    catch { /* Ignore deserialization errors */ }
+                }
+
+                // Check if design is locked (legacy check)
                 if (rawData.TryGetValue("DesignLocked", out var lockedObj))
                 {
                     bool isLocked = lockedObj?.ToString() == "True" || lockedObj?.ToString() == "1";

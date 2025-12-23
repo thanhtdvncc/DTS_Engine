@@ -62,5 +62,20 @@ namespace DTS_Engine.Core.Data
 
         /// <summary>Support at Joint J (End): 1 = có cột/tường, 0 = FreeEnd</summary>
         public int SupportJ { get; set; } = 1;
+
+        /// <summary>AxisName from SAP grid (e.g., "A", "B", "1", "2")</summary>
+        public string AxisName { get; set; }
+
+        /// <summary>
+        /// True if beam runs in X direction (horizontal in plan)
+        /// </summary>
+        public bool IsXDirection => Math.Abs(EndX - StartX) > Math.Abs(EndY - StartY);
+
+        /// <summary>
+        /// Girder = Beam with both ends on columns OR (one column end + on grid axis)
+        /// Beam = All others (typically secondary beams resting on other beams)
+        /// </summary>
+        public bool IsGirder => (SupportI == 1 && SupportJ == 1)
+                             || ((SupportI == 1 || SupportJ == 1) && !string.IsNullOrEmpty(AxisName));
     }
 }

@@ -14,6 +14,8 @@ using DTS_Engine.Core.Utils;
 using Microsoft.Web.WebView2.Core;
 using Microsoft.Web.WebView2.WinForms;
 using Newtonsoft.Json;
+using Autodesk.AutoCAD.DatabaseServices;
+using Autodesk.AutoCAD.Geometry;
 
 namespace DTS_Engine.UI.Forms
 {
@@ -131,10 +133,53 @@ namespace DTS_Engine.UI.Forms
 
                     try
                     {
+                        // Extract ALL individual beam segments for Plan View independence
+                        // Plan View must NOT depend on grouping - it reads raw beam data
+                        var allBeams = new List<object>();
+
+                        if (_groups != null)
+                        {
+                            foreach (var group in _groups)
+                            {
+                                if (group.Spans == null) continue;
+
+                                foreach (var span in group.Spans)
+                                {
+                                    if (span.Segments == null) continue;
+
+                                    foreach (var seg in span.Segments)
+                                    {
+                                        allBeams.Add(new
+                                        {
+                                            Handle = seg.EntityHandle,
+                                            StartX = seg.StartPoint?[0] ?? 0,
+                                            StartY = seg.StartPoint?[1] ?? 0,
+                                            EndX = seg.EndPoint?[0] ?? 0,
+                                            EndY = seg.EndPoint?[1] ?? 0,
+                                            AxisName = group.AxisName ?? "",
+                                            Width = group.Width,
+                                            Height = group.Height,
+                                            LevelZ = group.LevelZ,
+                                            GroupName = !string.IsNullOrEmpty(group.Name) ? group.Name : (group.GroupName ?? "")
+                                        });
+                                    }
+                                }
+                            }
+                        }
+
+                        // Extract grid lines from dts_axis layer
+                        var allGrids = ExtractGridLinesFromLayer("dts_axis");
+
+                        // Extract columns from dts_point layer 
+                        var allColumns = ExtractColumnsFromLayer("dts_point");
+
                         var data = new
                         {
                             mode = viewMode,
                             groups = _groups,
+                            allBeams = allBeams, // Independent beam data for Plan View
+                            allGrids = allGrids, // Grid lines from dts_axis layer
+                            allColumns = allColumns, // Columns from dts_point layer
                             settings = new
                             {
                                 ConcreteGradeName = settings.General?.ConcreteGradeName ?? "B25",
@@ -212,21 +257,9 @@ namespace DTS_Engine.UI.Forms
                     {
                         _groups = data.groups;
 
-                        // Persist to DWG (NOD) so next open is consistent
-                        var doc = Autodesk.AutoCAD.ApplicationServices.Application.DocumentManager.MdiActiveDocument;
-                        if (doc != null)
-                        {
-                            using (doc.LockDocument())
-                            using (var tr = doc.Database.TransactionManager.StartTransaction())
-                            {
-                                string nodJson = JsonConvert.SerializeObject(_groups);
-                                XDataUtils.SaveBeamGroupsToNOD(doc.Database, tr, nodJson);
-                                tr.Commit();
-                            }
-
-                            // XDATA-FIRST: Sync rebar strings to beam XData entities
-                            Commands.RebarCommands.SyncGroupSpansToXData(_groups);
-                        }
+                        // V5: XData-only persistence (No NOD)
+                        // Sync rebar strings directly to beam XData entities
+                        Commands.RebarCommands.SyncGroupSpansToXData(_groups);
                     }
 
                     MessageBox.Show("Đã lưu dữ liệu!", "Save",
@@ -1063,6 +1096,181 @@ namespace DTS_Engine.UI.Forms
         {
             return _groups;
         }
+
+        #region Plan View Data Extraction
+
+        /// <summary>
+        /// Extract grid lines from specified layer (e.g., "dts_axis")
+        /// </summary>
+        private List<object> ExtractGridLinesFromLayer(string layerName)
+        {
+            var grids = new List<object>();
+
+            try
+            {
+                var doc = Autodesk.AutoCAD.ApplicationServices.Application.DocumentManager.MdiActiveDocument;
+                var db = doc.Database;
+
+                using (var tr = db.TransactionManager.StartTransaction())
+                {
+                    var bt = (BlockTable)tr.GetObject(db.BlockTableId, OpenMode.ForRead);
+                    var btr = (BlockTableRecord)tr.GetObject(bt[BlockTableRecord.ModelSpace], OpenMode.ForRead);
+
+                    foreach (ObjectId id in btr)
+                    {
+                        var ent = tr.GetObject(id, OpenMode.ForRead) as Entity;
+                        if (ent == null) continue;
+
+                        // Filter by layer
+                        if (ent.Layer != layerName) continue;
+
+                        // Only process Lines
+                        if (ent is Line line)
+                        {
+                            // Extract line geometry
+                            double x1 = line.StartPoint.X;
+                            double y1 = line.StartPoint.Y;
+                            double x2 = line.EndPoint.X;
+                            double y2 = line.EndPoint.Y;
+                            double z = line.StartPoint.Z;
+
+                            // Try to read XData from DTS_GRID
+                            string gridName = "";
+                            double gridCoordinate = 0;
+                            string orientation = "";
+
+                            try
+                            {
+                                var xdata = ent.GetXDataForApplication("DTS_GRID");
+                                if (xdata != null)
+                                {
+                                    var values = xdata.AsArray();
+                                    if (values.Length >= 4)
+                                    {
+                                        // Format: (appName, Name, Coordinate, Orientation)
+                                        gridName = values[1].Value?.ToString() ?? "";
+                                        gridCoordinate = Convert.ToDouble(values[2].Value);
+                                        orientation = values[3].Value?.ToString() ?? "";
+                                    }
+                                }
+                            }
+                            catch { }
+
+                            // Fallback: detect from geometry if no XData
+                            if (string.IsNullOrEmpty(gridName))
+                            {
+                                bool isVertical = Math.Abs(x1 - x2) < 1.0;
+                                bool isHorizontal = Math.Abs(y1 - y2) < 1.0;
+                                orientation = isVertical ? "X" : (isHorizontal ? "Y" : "DIAGONAL");
+                                gridCoordinate = isVertical ? x1 : y1;
+                                gridName = $"{orientation}_{gridCoordinate:0}";
+                            }
+
+                            grids.Add(new
+                            {
+                                StartX = x1,
+                                StartY = y1,
+                                EndX = x2,
+                                EndY = y2,
+                                Z = z,
+                                Orientation = orientation,
+                                Name = gridName,
+                                Coordinate = gridCoordinate
+                            });
+                        }
+                    }
+
+                    tr.Commit();
+                }
+            }
+            catch (System.Exception ex)
+            {
+                System.Diagnostics.Debug.WriteLine($"Error extracting grids: {ex.Message}");
+            }
+
+            return grids;
+        }
+
+        /// <summary>
+        /// Extract columns from specified layer (e.g., "dts_point")
+        /// Columns are drawn as Circles by DTS_PLOT_FROM_SAP
+        /// </summary>
+        private List<object> ExtractColumnsFromLayer(string layerName)
+        {
+            var columns = new List<object>();
+
+            try
+            {
+                var doc = Autodesk.AutoCAD.ApplicationServices.Application.DocumentManager.MdiActiveDocument;
+                var db = doc.Database;
+
+                using (var tr = db.TransactionManager.StartTransaction())
+                {
+                    var bt = (BlockTable)tr.GetObject(db.BlockTableId, OpenMode.ForRead);
+                    var btr = (BlockTableRecord)tr.GetObject(bt[BlockTableRecord.ModelSpace], OpenMode.ForRead);
+
+                    foreach (ObjectId id in btr)
+                    {
+                        var ent = tr.GetObject(id, OpenMode.ForRead) as Entity;
+                        if (ent == null) continue;
+
+                        // Filter by layer
+                        if (ent.Layer != layerName) continue;
+
+                        // Only process Circles
+                        if (ent is Circle circle)
+                        {
+                            double x = circle.Center.X;
+                            double y = circle.Center.Y;
+                            double z = circle.Center.Z;
+                            double radius = circle.Radius;
+
+                            // Try to read ColumnData from XData
+                            string sectionName = "";
+                            string sectionType = "Rectangular"; // Default
+                            double width = radius * 2; // Default from circle
+                            double depth = radius * 2; // Section depth (Y dimension)
+
+                            try
+                            {
+                                var elemData = XDataUtils.ReadElementData(ent);
+                                if (elemData is ColumnData colData)
+                                {
+                                    sectionName = colData.SectionName ?? "";
+                                    sectionType = colData.SectionType ?? "Rectangular";
+                                    width = colData.Width ?? (radius * 2);
+                                    depth = colData.Depth ?? (radius * 2);  // Read Depth, not Height
+                                }
+                            }
+                            catch { }
+
+                            columns.Add(new
+                            {
+                                X = x,
+                                Y = y,
+                                Z = z,
+                                Radius = radius,
+                                Width = width,
+                                Depth = depth,  // Send as Depth to frontend
+                                SectionName = sectionName,
+                                SectionType = sectionType,
+                                Handle = ent.Handle.ToString()
+                            });
+                        }
+                    }
+
+                    tr.Commit();
+                }
+            }
+            catch (System.Exception ex)
+            {
+                System.Diagnostics.Debug.WriteLine($"Error extracting columns: {ex.Message}");
+            }
+
+            return columns;
+        }
+
+        #endregion
 
         private class DataWrapper
         {

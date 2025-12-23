@@ -299,14 +299,25 @@ namespace DTS_Engine.Core.Algorithms
             double dy = Math.Abs(last.EndPoint.Y - first.StartPoint.Y);
             string direction = dx >= dy ? "X" : "Y";
 
-            // Xác định loại (Girder hay Beam)
+            // Xác định loại (Girder hay Beam) - ưu tiên từ XData, fallback to width
             double avgWidth = topologies.Average(t => t.Width);
             double girderThreshold = settings?.Naming?.GirderMinWidth ?? 300;
-            string groupType = avgWidth >= girderThreshold ? "Girder" : "Beam";
+
+            // Read GroupLabel/GroupType from mother beam XData (first topology)
+            var motherBeamData = first.ElementData as BeamData;
+            string groupLabel = motherBeamData?.GroupLabel;
+            string groupTypeFromXData = motherBeamData?.GroupType;
+
+            // Fallback to width-based classification if not in XData
+            string groupType = !string.IsNullOrEmpty(groupTypeFromXData)
+                ? groupTypeFromXData
+                : (avgWidth >= girderThreshold ? "Girder" : "Beam");
 
             var group = new BeamGroup
             {
-                GroupName = $"{groupType}_{first.Handle}",
+                // Use GroupLabel from XData (from NamingEngine), fallback to Handle-based name
+                GroupName = !string.IsNullOrEmpty(groupLabel) ? groupLabel : $"{groupType}_{first.Handle}",
+                Name = groupLabel, // Also set Name for compatibility
                 GroupType = groupType,
                 Direction = direction,
                 Width = avgWidth,
