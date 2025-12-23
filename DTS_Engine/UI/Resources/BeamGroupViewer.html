@@ -587,27 +587,54 @@
             // Extract unique Z levels from allBeams (independent from groups)
             const allBeams = data.allBeams || [];
             const allZLevels = new Set();
+
+            // Fix: Round Z to nearest 10mm to avoid float precision issues creating duplicate stories
             allBeams.forEach(b => {
-                if (b.LevelZ != null) allZLevels.add(b.LevelZ);
+                if (b.LevelZ != null) {
+                    const z = Math.round(b.LevelZ / 10) * 10;
+                    allZLevels.add(z);
+                }
             });
+
+            // Also ensure current group's Z is included
+            if (currentGroup && currentGroup.LevelZ != null) {
+                const z = Math.round(currentGroup.LevelZ / 10) * 10;
+                allZLevels.add(z);
+            }
 
             const sortedZ = Array.from(allZLevels).sort((a, b) => a - b);
 
             if (sortedZ.length === 0) {
-                // Fallback: single story at Z=0
                 sortedZ.push(0);
             }
 
+            // Determine best default Z
+            let defaultZ = Beam.State.currentStoryZ;
+
+            // If current Z is invalid or null, try to match current Group, or fallback to first
+            if (defaultZ == null || !allZLevels.has(defaultZ)) {
+                if (currentGroup && currentGroup.LevelZ != null) {
+                    const target = Math.round(currentGroup.LevelZ / 10) * 10;
+                    if (allZLevels.has(target)) defaultZ = target;
+                    else defaultZ = sortedZ[0];
+                } else {
+                    defaultZ = sortedZ[0];
+                }
+            }
+
+            // Populate options
             sortedZ.forEach((z, i) => {
                 const opt = document.createElement('option');
                 opt.value = z;
-                opt.textContent = `Story ${i + 1} (Z=${z})`;
+                // Display in Meters for cleaner UI
+                const zM = (z / 1000).toFixed(1);
+                opt.textContent = `Story ${i + 1} (Z=${zM}m)`;
                 select.appendChild(opt);
             });
 
-            if (sortedZ.length > 0 && Beam.State.currentStoryZ == null) {
-                Beam.State.currentStoryZ = sortedZ[0];
-            }
+            // Set state and select value
+            Beam.State.currentStoryZ = defaultZ;
+            select.value = defaultZ;
         }
 
         function loadStory(z) {
@@ -636,6 +663,10 @@
             const z = Beam.State.currentStoryZ;
             const Z_TOLERANCE = 500;
 
+            // Clear canvas BEFORE filtering
+            ctx.fillStyle = '#f8fafc';
+            ctx.fillRect(0, 0, canvas.width, canvas.height);
+
             // Filter beams for current story - read directly from allBeams
             const beamsOnStory = allBeams.filter(b => {
                 const beamZ = b.LevelZ || 0;
@@ -643,8 +674,7 @@
             });
 
             if (beamsOnStory.length === 0) {
-                ctx.fillStyle = '#f8fafc';
-                ctx.fillRect(0, 0, canvas.width, canvas.height);
+                // Background already cleared
                 ctx.fillStyle = '#94a3b8';
                 ctx.font = '14px sans-serif';
                 ctx.textAlign = 'center';
@@ -931,6 +961,9 @@
         }
 
         function init() {
+            // Fix: Reset story state on load to ensure stale state doesn't persist
+            Beam.State.currentStoryZ = null;
+
             // Resize canvas with multiple fallbacks for reliable sizing
             // Container may not have size immediately on WebView2 load
             resizeCanvas();

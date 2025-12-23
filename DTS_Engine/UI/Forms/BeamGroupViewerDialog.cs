@@ -136,6 +136,7 @@ namespace DTS_Engine.UI.Forms
                         // Extract ALL individual beam segments for Plan View independence
                         // Plan View must NOT depend on grouping - it reads raw beam data
                         var allBeams = new List<object>();
+                        var capturedHandles = new HashSet<string>();
 
                         if (_groups != null)
                         {
@@ -149,6 +150,9 @@ namespace DTS_Engine.UI.Forms
 
                                     foreach (var seg in span.Segments)
                                     {
+                                        if (!capturedHandles.Contains(seg.EntityHandle))
+                                            capturedHandles.Add(seg.EntityHandle);
+
                                         // === FIX: Use GroupName (display) NOT Name (label) ===
                                         // GroupName = axis-based display name ("GX-B (3 spans)")
                                         // Name = Label for rebar grouping ("1GHY4")
@@ -177,6 +181,10 @@ namespace DTS_Engine.UI.Forms
                                 }
                             }
                         }
+
+                        // === FIX: Extract neighbors for full plan view ===
+                        var neighbors = ExtractNeighborBeams(capturedHandles, _groups);
+                        allBeams.AddRange(neighbors);
 
                         // Extract grid lines from dts_axis layer
                         var allGrids = ExtractGridLinesFromLayer("dts_axis");
@@ -1282,6 +1290,132 @@ namespace DTS_Engine.UI.Forms
         }
 
         #endregion
+
+        /// <summary>
+        /// Extract neighbor beams on the same layers and levels as the selected groups (for full Plan View).
+        /// This ensures the viewer shows the entire floor plan, not just selected beams.
+        /// </summary>
+        private List<object> ExtractNeighborBeams(HashSet<string> capturedHandles, List<BeamGroup> selectedGroups)
+        {
+            var neighbors = new List<object>();
+            if (selectedGroups == null || selectedGroups.Count == 0) return neighbors;
+
+            try
+            {
+                // 1. Identify Context (Layers and Levels)
+                var targetLayers = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+                var targetLevels = new HashSet<double>();
+
+                // Collect layers from selected groups requires Transaction because BeamGroup only has Handles
+                var doc = Autodesk.AutoCAD.ApplicationServices.Application.DocumentManager.MdiActiveDocument;
+                var db = doc.Database;
+
+                using (var tr = db.TransactionManager.StartTransaction())
+                {
+                    foreach (var group in selectedGroups)
+                    {
+                        targetLevels.Add(group.LevelZ);
+                        if (group.EntityHandles != null)
+                        {
+                            foreach (var h in group.EntityHandles)
+                            {
+                                ObjectId id = AcadUtils.GetObjectIdFromHandle(h);
+                                if (id != ObjectId.Null)
+                                {
+                                    var ent = tr.GetObject(id, OpenMode.ForRead) as Entity;
+                                    if (ent != null) targetLayers.Add(ent.Layer);
+                                }
+                            }
+                        }
+                    }
+
+                    // 2. Scan ModelSpace for candidates
+                    var bt = (BlockTable)tr.GetObject(db.BlockTableId, OpenMode.ForRead);
+                    var btr = (BlockTableRecord)tr.GetObject(bt[BlockTableRecord.ModelSpace], OpenMode.ForRead);
+
+                    foreach (ObjectId id in btr)
+                    {
+                        var ent = tr.GetObject(id, OpenMode.ForRead) as Entity;
+                        if (ent == null) continue;
+
+                        // Type filter: Beams are usually Line or Polyline
+                        if (!(ent is Curve)) continue;
+                        if (ent.Layer == null || !targetLayers.Contains(ent.Layer)) continue;
+
+                        // Skip if already captured
+                        string handle = ent.Handle.ToString();
+                        if (capturedHandles.Contains(handle)) continue;
+
+                        // Z Level check
+                        double z = 0;
+                        if (ent is Line line) z = line.StartPoint.Z;
+                        else if (ent is Polyline pl) z = pl.Elevation;
+                        else if (ent is Polyline2d pl2) z = pl2.Elevation;
+                        else continue; // Skip other curves
+
+                        // Tolerance 100mm
+                        if (!targetLevels.Any(lvl => Math.Abs(lvl - z) < 100)) continue;
+
+                        // Extract info for Neighbor
+                        string groupName = "";
+                        double width = 200;
+                        double height = 400;
+
+                        // Try read XData
+                        try
+                        {
+                            var beamData = XDataUtils.ReadElementData(ent) as BeamData;
+                            if (beamData != null)
+                            {
+                                // Fix: Handle potential missing GroupDisplayName and nullable types
+                                groupName = beamData.GroupLabel ?? "";
+                                if (beamData.Width.HasValue) width = beamData.Width.Value;
+                                if (beamData.Height.HasValue) height = beamData.Height.Value;
+                            }
+                        }
+                        catch { }
+
+                        // Extract Geometry
+                        double x1 = 0, y1 = 0, x2 = 0, y2 = 0;
+                        if (ent is Line l)
+                        {
+                            x1 = l.StartPoint.X; y1 = l.StartPoint.Y;
+                            x2 = l.EndPoint.X; y2 = l.EndPoint.Y;
+                        }
+                        else if (ent is Polyline p)
+                        {
+                            // Approximate polyline as segment from Start to End (simplified)
+                            // Ideally we iterate segments, but for context view this is usually enough 
+                            // as beams are mostly single lines.
+                            x1 = p.StartPoint.X; y1 = p.StartPoint.Y;
+                            x2 = p.EndPoint.X; y2 = p.EndPoint.Y;
+                        }
+
+                        neighbors.Add(new
+                        {
+                            Handle = handle,
+                            StartX = x1,
+                            StartY = y1,
+                            EndX = x2,
+                            EndY = y2,
+                            AxisName = "", // Context beam usually doesn't need axis unless analyzed
+                            Width = width,
+                            Height = height,
+                            LevelZ = z,
+                            GroupName = groupName,
+                            GroupId = "" // Not in selected group
+                        });
+                    }
+                    tr.Commit();
+                }
+            }
+            catch (System.Exception ex)
+            {
+                System.Diagnostics.Debug.WriteLine($"Error extracting neighbor beams: {ex.Message}");
+            }
+
+            return neighbors;
+        }
 
         private class DataWrapper
         {
