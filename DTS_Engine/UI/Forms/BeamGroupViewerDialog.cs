@@ -1155,7 +1155,11 @@ namespace DTS_Engine.UI.Forms
         {
             try
             {
-                var db = Autodesk.AutoCAD.ApplicationServices.Application.DocumentManager.MdiActiveDocument.Database;
+                var doc = Autodesk.AutoCAD.ApplicationServices.Application.DocumentManager.MdiActiveDocument;
+                var db = doc.Database;
+
+                // CRITICAL: Lock document to prevent crash when modifying from UI thread
+                using (doc.LockDocument())
                 using (var tr = db.TransactionManager.StartTransaction())
                 {
                     var objId = Core.Utils.AcadUtils.GetObjectIdFromHandle(handleStr);
@@ -1199,7 +1203,11 @@ namespace DTS_Engine.UI.Forms
         {
             try
             {
-                var db = Autodesk.AutoCAD.ApplicationServices.Application.DocumentManager.MdiActiveDocument.Database;
+                var doc = Autodesk.AutoCAD.ApplicationServices.Application.DocumentManager.MdiActiveDocument;
+                var db = doc.Database;
+
+                // CRITICAL: Lock document to prevent crash when modifying from UI thread
+                using (doc.LockDocument())
                 using (var tr = db.TransactionManager.StartTransaction())
                 {
                     var members = Core.Engines.RegistryEngine.GetMembersByGroupId(groupId, tr);
@@ -1215,6 +1223,9 @@ namespace DTS_Engine.UI.Forms
                         if (objId == ObjectId.Null || objId.IsErased) continue;
 
                         var obj = tr.GetObject(objId, OpenMode.ForWrite);
+
+                        // Issue #5 FIX: Clear old rebar options to avoid "râu ông nọ cắm cằm bà kia"
+                        Core.Utils.XDataUtils.ClearRebarOptions(obj, tr);
 
                         // Mỗi entity thành group riêng
                         string newGroupId = Guid.NewGuid().ToString().Substring(0, 8).ToUpperInvariant();
@@ -1253,7 +1264,11 @@ namespace DTS_Engine.UI.Forms
                     return;
                 }
 
-                var db = Autodesk.AutoCAD.ApplicationServices.Application.DocumentManager.MdiActiveDocument.Database;
+                var doc = Autodesk.AutoCAD.ApplicationServices.Application.DocumentManager.MdiActiveDocument;
+                var db = doc.Database;
+
+                // CRITICAL: Lock document to prevent crash when modifying from UI thread
+                using (doc.LockDocument())
                 using (var tr = db.TransactionManager.StartTransaction())
                 {
                     // Xóa GroupId cũ của từng entity

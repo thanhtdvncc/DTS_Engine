@@ -1118,6 +1118,41 @@ namespace DTS_Engine.Core.Utils
         }
 
         /// <summary>
+        /// [V5.0] Clear all rebar options and calculation results from entity XData.
+        /// Used when ungrouping to prevent inheriting old group's rebar data.
+        /// </summary>
+        public static void ClearRebarOptions(DBObject obj, Transaction tr)
+        {
+            if (obj == null || tr == null) return;
+
+            var dict = GetRawData(obj) ?? new Dictionary<string, object>();
+
+            // Clear Opt0..4 compact format
+            for (int i = 0; i < 5; i++)
+            {
+                dict.Remove($"Opt{i}");
+                dict.Remove($"TopOpt{i}");
+                dict.Remove($"BotOpt{i}");
+            }
+
+            // Clear current rebar
+            dict.Remove("TopL0");
+            dict.Remove("TopL1");
+            dict.Remove("BotL0");
+            dict.Remove("BotL1");
+            dict.Remove("CurrentRebar");
+
+            // Clear calculation state
+            dict.Remove("IsManual");
+            dict.Remove("CalculatedAt");
+            dict.Remove("SelectedDesignJson");
+            dict.Remove("DesignLocked");
+            dict.Remove("BackboneOptionsJson");
+
+            SetRawData(obj, dict, tr);
+        }
+
+        /// <summary>
         /// [V5.0] Write rebar options to entity using compact spec format.
         /// Format: "Opt{i}" = "T:L0|L1;B:L0" where L0=backbone, L1=addon
         /// Spec Section 2: "T:2d20|1d12;B:3d18"
