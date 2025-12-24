@@ -200,15 +200,7 @@ namespace DTS_Engine.Commands
                                     var topAreaProv = existingData.TopAreaProv;
                                     var botAreaProv = existingData.BotAreaProv;
 
-                                    // Fallback: calculate from RebarString if TopAreaProv is null/empty
-                                    if ((topAreaProv == null || topAreaProv.All(x => x == 0)) && existingData.TopRebarString != null)
-                                    {
-                                        topAreaProv = existingData.TopRebarString.Select(DTS_Engine.Core.Algorithms.RebarCalculator.ParseRebarArea).ToArray();
-                                    }
-                                    if ((botAreaProv == null || botAreaProv.All(x => x == 0)) && existingData.BotRebarString != null)
-                                    {
-                                        botAreaProv = existingData.BotRebarString.Select(DTS_Engine.Core.Algorithms.RebarCalculator.ParseRebarArea).ToArray();
-                                    }
+                                    // V6.0: TopAreaProv/BotAreaProv là nguồn dữ liệu duy nhất
 
                                     if (topAreaProv != null && topAreaProv.Length >= 3 &&
                                         botAreaProv != null && botAreaProv.Length >= 3)
@@ -1643,6 +1635,152 @@ namespace DTS_Engine.Commands
             }
             return flipped;
         }
+
+        #region DTS_REBAR_BEAM_NAME - Re-name dầm sau khi tính toán
+
+        /// <summary>
+        /// [V6.0] Đặt lại tên dầm (xSectionLabel) dựa trên bố trí thép thực tế.
+        /// Gọi NamingEngine.AutoLabeling() để đặt tên theo rules trong DtsSettings.
+        /// Workflow: GROUP (tên tạm) → CALCULATE → BEAM_NAME (tên chính thức)
+        /// </summary>
+        [CommandMethod("DTS_REBAR_BEAM_NAME")]
+        public void DTS_REBAR_BEAM_NAME()
+        {
+            ExecuteSafe(() =>
+            {
+                WriteMessage("\n=== ĐẶT TÊN DẦM THEO BỐ TRÍ THÉP ===");
+                WriteMessage("Lệnh này đặt lại tên dầm (xSectionLabel) dựa trên section + thép đã bố trí.");
+
+                var allGroups = new List<BeamGroup>();
+
+                UsingTransaction(tr =>
+                {
+                    // 1. Quét NOD để lấy groups
+                    var registryGroups = Core.Engines.RegistryEngine.GetAllBeamGroups(tr);
+
+                    if (registryGroups.Count == 0)
+                    {
+                        WriteMessage("Không tìm thấy nhóm dầm nào trong Registry.");
+                        WriteMessage("Chạy DTS_REBAR_GROUP_AUTO để gom nhóm trước.");
+                        return;
+                    }
+
+                    WriteMessage($"Tìm thấy {registryGroups.Count} nhóm dầm.");
+
+                    // 2. Convert và load thêm thông tin từ XData
+                    foreach (var regInfo in registryGroups)
+                    {
+                        var grp = new BeamGroup
+                        {
+                            GroupName = regInfo.GroupName,
+                            Name = regInfo.Name,
+                            GroupType = regInfo.GroupType,
+                            Direction = regInfo.Direction,
+                            AxisName = regInfo.AxisName,
+                            LevelZ = regInfo.LevelZ,
+                            Width = regInfo.Width,
+                            Height = regInfo.Height,
+                            EntityHandles = regInfo.GetAllMembers()
+                        };
+
+                        if (grp.EntityHandles == null || grp.EntityHandles.Count == 0) continue;
+
+                        // Load first entity để update Signature
+                        var firstHandle = grp.EntityHandles[0];
+                        var objId = AcadUtils.GetObjectIdFromHandle(firstHandle);
+                        if (objId.IsNull) continue;
+
+                        var obj = tr.GetObject(objId, OpenMode.ForRead);
+                        var beamData = XDataUtils.ReadElementData(obj) as BeamData;
+
+                        if (beamData != null)
+                        {
+                            grp.Width = beamData.Width.GetValueOrDefault(grp.Width);
+                            grp.Height = (beamData.Depth ?? beamData.Height).GetValueOrDefault(grp.Height);
+                            grp.LevelZ = beamData.BaseZ.GetValueOrDefault(grp.LevelZ);
+                        }
+
+                        // Update Signature từ OptUser (thép đã bố trí)
+                        var optUser = XDataUtils.ReadOptUser(obj);
+                        if (optUser.TopL0 != null || optUser.BotL0 != null)
+                        {
+                            string sectionPart = $"{grp.Width}x{grp.Height}";
+                            string rebarPart = $"T:{optUser.TopL0}|B:{optUser.BotL0}";
+                            grp.Signature = $"{sectionPart}|{rebarPart}";
+                        }
+                        else
+                        {
+                            grp.UpdateSignature();
+                        }
+
+                        allGroups.Add(grp);
+                    }
+
+                    if (allGroups.Count == 0)
+                    {
+                        WriteMessage("Không có nhóm dầm nào có dữ liệu hợp lệ.");
+                        return;
+                    }
+
+                    // 3. Gọi NamingEngine để đặt lại tên
+                    var settings = DtsSettings.Instance;
+                    NamingEngine.AutoLabeling(allGroups, settings);
+
+                    WriteMessage($"Đã đặt tên cho {allGroups.Count} nhóm dầm.");
+
+                    // 4. Cập nhật XData với tên mới
+                    int updatedCount = 0;
+                    foreach (var grp in allGroups)
+                    {
+                        if (string.IsNullOrEmpty(grp.Name)) continue;
+                        if (grp.EntityHandles == null || grp.EntityHandles.Count == 0) continue;
+
+                        // Update tất cả entities trong group với SectionLabel mới
+                        foreach (var handle in grp.EntityHandles)
+                        {
+                            var objId = AcadUtils.GetObjectIdFromHandle(handle);
+                            if (objId.IsNull) continue;
+
+                            var obj = tr.GetObject(objId, OpenMode.ForWrite);
+                            var beamData = XDataUtils.ReadElementData(obj) as BeamData;
+                            if (beamData != null)
+                            {
+                                beamData.SectionLabel = grp.Name;
+                                beamData.GroupType = grp.GroupType;
+                                XDataUtils.UpdateElementData(obj, beamData, tr);
+                                updatedCount++;
+                            }
+                        }
+
+                        // Update Registry với tên mới
+                        var motherHandle = grp.EntityHandles[0];
+                        Core.Engines.RegistryEngine.RegisterBeamGroup(
+                            motherHandle: motherHandle,
+                            groupName: grp.GroupName,
+                            name: grp.Name,
+                            groupType: grp.GroupType,
+                            direction: grp.Direction,
+                            axisName: grp.AxisName,
+                            levelZ: grp.LevelZ,
+                            width: grp.Width,
+                            height: grp.Height,
+                            childHandles: grp.EntityHandles.Skip(1).ToList(),
+                            tr: tr);
+                    }
+
+                    WriteSuccess($"✅ Đã cập nhật tên cho {updatedCount} dầm trong {allGroups.Count} nhóm.");
+
+                    // 5. Hiển thị kết quả
+                    WriteMessage("\n--- KẾT QUẢ ĐẶT TÊN ---");
+                    foreach (var grp in allGroups.OrderBy(g => g.Name))
+                    {
+                        WriteMessage($"  {grp.Name}: {grp.EntityHandles.Count} dầm ({grp.GroupType})");
+                    }
+                });
+            });
+        }
+
+        #endregion
     }
 }
 

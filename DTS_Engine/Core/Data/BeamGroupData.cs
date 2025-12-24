@@ -240,6 +240,13 @@ namespace DTS_Engine.Core.Data
         public string[] WebBar { get; set; } = new string[3];
         public string SideBar { get; set; }
 
+        // ===== V7.0: 5 OPTIONS TỪ XDATA (Opt0-4) =====
+        /// <summary>
+        /// 5 phương án từ XData (Opt0-4). Frontend đọc trực tiếp Options[selectedIndex].
+        /// Mỗi option có: TopL0, BotL0, TopL1, BotL1
+        /// </summary>
+        public List<Utils.XDataUtils.RebarOptionData> Options { get; set; } = new List<Utils.XDataUtils.RebarOptionData>();
+
         // ===== YÊU CẦU ĐAI & SƯỜN (3 vị trí) =====
         // Unit depends on upstream (typically cm2/cm for stirrup req, cm2 for web req)
         public double[] StirrupReq { get; set; } = new double[3];
@@ -417,6 +424,8 @@ namespace DTS_Engine.Core.Data
         /// Index phương án đang chọn hiển thị (chưa phải chốt)
         /// </summary>
         public int SelectedBackboneIndex { get; set; } = 0;
+
+        // V7.0: Da xoa RebarOptions va SelectedOptionIndex - dùng BackboneOptions trực tiếp
 
         /// <summary>
         /// [V5.0] Unique identifier for this group. Used for NOD registry and XData.

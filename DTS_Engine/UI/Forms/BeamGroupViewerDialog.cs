@@ -805,8 +805,8 @@ namespace DTS_Engine.UI.Forms
         }
 
         /// <summary>
-        /// Pre-load rebar data from XData into Span objects so viewer displays calculated data immediately.
-        /// This reads TopRebarString/BotRebarString from XData and populates Span.TopL0/BotL0 arrays.
+        /// [V6.0] Pre-load rebar data from XData into Span/Group objects.
+        /// Reads OptUser + Opt0-4 from XData (Single Source of Truth).
         /// </summary>
         private void LoadRebarDataFromXDataForGroups(List<BeamGroup> groups)
         {
@@ -824,6 +824,25 @@ namespace DTS_Engine.UI.Forms
                     foreach (var group in groups)
                     {
                         if (group?.Spans == null) continue;
+
+                        // V7.0: Load IsLocked tu entity dau tien (BackboneOptions da duoc load boi RebarCommands)
+                        string firstHandle = group.EntityHandles?.FirstOrDefault();
+                        if (!string.IsNullOrWhiteSpace(firstHandle))
+                        {
+                            try
+                            {
+                                var firstObjId = AcadUtils.GetObjectIdFromHandle(firstHandle);
+                                if (!firstObjId.IsNull)
+                                {
+                                    var firstObj = tr.GetObject(firstObjId, Autodesk.AutoCAD.DatabaseServices.OpenMode.ForRead);
+                                    if (firstObj != null)
+                                    {
+                                        group.IsLocked = XDataUtils.ReadIsLocked(firstObj);
+                                    }
+                                }
+                            }
+                            catch { /* Ignore per-group errors */ }
+                        }
 
                         for (int spanIdx = 0; spanIdx < group.Spans.Count; spanIdx++)
                         {
@@ -863,35 +882,23 @@ namespace DTS_Engine.UI.Forms
                                 }
                                 if (isReversed) ReverseBeamResultData(rebarData);
 
-                                // V6.0: Read OptUser first (new Single Source of Truth)
-                                var optUser = XDataUtils.ReadOptUser(obj);
-                                if (optUser != null && !string.IsNullOrEmpty(optUser.TopL0))
-                                {
-                                    // Use OptUser data
-                                    span.TopRebarInternal[0, 0] = optUser.TopL0;
-                                    span.TopRebarInternal[0, 2] = optUser.TopL0;
-                                    span.TopRebarInternal[0, 4] = optUser.TopL0;
-                                    span.BotRebarInternal[0, 0] = optUser.BotL0;
-                                    span.BotRebarInternal[0, 2] = optUser.BotL0;
-                                    span.BotRebarInternal[0, 4] = optUser.BotL0;
+                                // V7.0: Load 5 options (Opt0-4) trực tiếp vào span.Options
+                                var options = XDataUtils.ReadRebarOptionsV5(obj);
+                                span.Options = options ?? new List<XDataUtils.RebarOptionData>();
 
-                                    // Read IsLocked
-                                    bool isLocked = XDataUtils.ReadIsLocked(obj);
-                                    span.IsManualModified = isLocked;
-                                }
-                                // Fallback: Read from TopRebarString (legacy data)
-                                else if (rebarData.TopRebarString != null && rebarData.TopRebarString.Length >= 3)
+                                // Hiển thị mặc định theo option đầu tiên (Opt0)
+                                if (span.Options.Count > 0 && !string.IsNullOrEmpty(span.Options[0].TopL0))
                                 {
-                                    span.TopRebarInternal[0, 0] = rebarData.TopRebarString[0];
-                                    span.TopRebarInternal[0, 2] = rebarData.TopRebarString[1];
-                                    span.TopRebarInternal[0, 4] = rebarData.TopRebarString[2];
+                                    span.TopRebarInternal[0, 0] = span.Options[0].TopL0 ?? "";
+                                    span.TopRebarInternal[0, 2] = span.Options[0].TopL0 ?? "";
+                                    span.TopRebarInternal[0, 4] = span.Options[0].TopL0 ?? "";
+                                    span.BotRebarInternal[0, 0] = span.Options[0].BotL0 ?? "";
+                                    span.BotRebarInternal[0, 2] = span.Options[0].BotL0 ?? "";
+                                    span.BotRebarInternal[0, 4] = span.Options[0].BotL0 ?? "";
                                 }
-                                if (optUser == null && rebarData.BotRebarString != null && rebarData.BotRebarString.Length >= 3)
-                                {
-                                    span.BotRebarInternal[0, 0] = rebarData.BotRebarString[0];
-                                    span.BotRebarInternal[0, 2] = rebarData.BotRebarString[1];
-                                    span.BotRebarInternal[0, 4] = rebarData.BotRebarString[2];
-                                }
+
+                                // Read IsLocked
+                                span.IsManualModified = XDataUtils.ReadIsLocked(obj);
 
                                 // Map TopArea/BotArea to As_Top/As_Bot (6-position array)  
                                 // XData [0,1,2] = [L1, Mid, L2] → [0, 2, 4] positions
@@ -1176,7 +1183,7 @@ namespace DTS_Engine.UI.Forms
                 }
 
                 // ═══════════════════════════════════════════════════════════════
-                // LEGACY STRING DATA: Keep for backward compatibility
+                // Build TopRebarInternal/BotRebarInternal cho Viewer render
                 // ═══════════════════════════════════════════════════════════════
                 string topLeft = backboneTopStr;
                 string topMid = backboneTopStr;

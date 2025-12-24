@@ -96,7 +96,7 @@ namespace DTS_Engine.Core.Algorithms.Rebar.V4
                     }
                 }
 
-                // Legacy quick check (kept for backward compatibility)
+                // Quick validation check
                 if (spanResults == null || spanResults.Count == 0)
                 {
                     Utils.RebarLogger.LogError("No span results provided");
@@ -234,23 +234,23 @@ namespace DTS_Engine.Core.Algorithms.Rebar.V4
                     // CRITICAL FIX: Match by SpanId OR by SpanIndex
                     // SpanId matching takes priority
                     SpanData span = null;
-                    
+
                     // Try match by SpanId first
                     if (!string.IsNullOrEmpty(spanResult.SpanId))
                     {
                         span = group.Spans.FirstOrDefault(s => s.SpanId == spanResult.SpanId);
                     }
-                    
+
                     // Fallback to SpanIndex if SpanId match failed
                     if (span == null && spanResult.SpanIndex >= 0 && spanResult.SpanIndex < group.Spans.Count)
                     {
                         span = group.Spans[spanResult.SpanIndex];
-                        
+
                         // DEBUG: Log when using index fallback
                         Utils.RebarLogger.Log($"  [WARN] SpanId '{spanResult.SpanId}' not found, using index {spanResult.SpanIndex} -> span '{span?.SpanId}'");
                     }
-                    
-                    if (span == null) 
+
+                    if (span == null)
                     {
                         Utils.RebarLogger.Log($"  [ERROR] Could not match SpanResult SpanId='{spanResult.SpanId}' Index={spanResult.SpanIndex}");
                         continue;

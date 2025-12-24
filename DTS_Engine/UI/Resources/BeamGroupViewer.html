@@ -532,37 +532,21 @@
         };
 
         // ============ LOCK/UNLOCK ============
-        let lockedSnapshot = null; // Snapshot at lock time
+        // V7.0: Delete SelectedDesign / lockedSnapshot obsolete
 
         function toggleLock() {
             if (!currentGroup) return;
 
-            if (currentGroup.SelectedDesign) {
-                // Unlock
-                currentGroup.SelectedDesign = null;
-                currentGroup.LockedAt = null;
-                Beam.History.isLocked = false;
-                lockedSnapshot = null;
-                // Notify C# to update _groups
-                window.chrome.webview?.postMessage('UNLOCK_DESIGN|' + currentGroupIndex);
-            } else {
-                // Lock current design
-                const opt = getSelectedOption();
-                if (!opt) return;
-                currentGroup.SelectedDesign = JSON.parse(JSON.stringify(opt));
-                currentGroup.LockedAt = new Date().toISOString();
-                Beam.History.isLocked = true;
-                lockedSnapshot = Beam.History.snapshot();
-                // Notify C# to update _groups with SelectedDesign
-                window.chrome.webview?.postMessage('LOCK_DESIGN|' + currentGroupIndex + '|' + JSON.stringify(currentGroup.SelectedDesign));
-            }
-            updateLockStatus();
-            populateOptionSelect();
-        }
+            currentGroup.IsLocked = !currentGroup.IsLocked;
 
-        function restoreLockedDesign() {
-            if (!currentGroup?.SelectedDesign || !lockedSnapshot) return;
-            Beam.History.restore(lockedSnapshot);
+            // Notify C#
+            if (currentGroup.IsLocked) {
+                window.chrome.webview?.postMessage('LOCK_DESIGN|' + currentGroupIndex);
+            } else {
+                window.chrome.webview?.postMessage('UNLOCK_DESIGN|' + currentGroupIndex);
+            }
+
+            updateLockStatus();
         }
 
         function updateLockStatus() {
@@ -570,15 +554,14 @@
             const status = document.getElementById('lockStatus');
             if (!currentGroup) return;
 
-            const isLocked = !!currentGroup.SelectedDesign;
-            Beam.History.isLocked = isLocked;
+            const isLocked = !!currentGroup.IsLocked;
 
             if (isLocked) {
-                btn.innerHTML = '<i class="fa-solid fa-lock-open"></i> Mở';
+                btn.innerHTML = '<i class="fa-solid fa-lock-open"></i> Mo';
                 btn.className = 'px-2 py-1 bg-slate-600 hover:bg-slate-500 text-white rounded text-xs flex items-center gap-1';
                 status.classList.remove('hidden');
             } else {
-                btn.innerHTML = '<i class="fa-solid fa-lock"></i> Chốt';
+                btn.innerHTML = '<i class="fa-solid fa-lock"></i> Chot';
                 btn.className = 'px-2 py-1 bg-amber-600 hover:bg-amber-500 text-white rounded text-xs flex items-center gap-1';
                 status.classList.add('hidden');
             }
@@ -625,9 +608,7 @@
             // Avoid heavy table re-render during canvas-first workflow when panel is collapsed.
             // When user expands the panel, we'll re-render once.
             if (!tablePanelCollapsed) renderTable();
-            // V5.0: Update stale geometry warning banner
             updateStaleGeometryBanner();
-            // V5.0: Update visual indicators (👑🔒🔗❌)
             updateVisualIndicators();
         }
 
@@ -1636,25 +1617,23 @@
             currentGroup = data.groups[currentGroupIndex];
             document.getElementById('groupSelect').value = currentGroupIndex;
 
-            selectedOptionKey = currentGroup?.SelectedDesign ? 'locked' : String(currentGroup?.SelectedBackboneIndex || 0);
+            // V7.0: Mặc định chọn option 0
+            selectedOptionKey = String(currentGroup?.SelectedBackboneIndex || 0);
 
             populateOptionSelect();
 
-            // Apply selected option to spans (populate table with rebar data)
-            const opt = getSelectedOption();
-            if (opt) applyOptionToSpans(opt);
+            // V7.0: Apply option từ span.Options trực tiếp
+            applyXDataOptionToSpans(parseInt(selectedOptionKey) || 0);
 
-            // Render based on current mode - RESPECT Plan mode!
+            // Render based on current mode
             if (canvasMode === 'plan') {
-                // Stay in Plan view - just highlight the selected group
                 renderPlanView();
             } else {
-                // Section/Long/Shear modes - render as usual
                 canvasZoom = 1.0;
                 canvasPanX = 0;
                 canvasPanY = 0;
                 renderCanvas();
-                centerCanvas(); // Center after first render
+                centerCanvas();
             }
             renderTable();
             updateMetrics();
@@ -1662,14 +1641,9 @@
             loadMaterialSelects();
             updateLockStatus();
 
-            // Initialize history for this group
+            // Initialize history
             Beam.History.clear();
             Beam.History.push();
-
-            // Restore locked snapshot if design is locked
-            if (currentGroup?.SelectedDesign) {
-                lockedSnapshot = Beam.History.snapshot();
-            }
         }
 
         // Center canvas viewport on content
@@ -2048,190 +2022,85 @@
             const sel = document.getElementById('optionSelect');
             sel.innerHTML = '';
 
-            const getOptionScore = (opt) => {
-                if (!opt) return Number.NEGATIVE_INFINITY;
-                const v = (opt.TotalScore ?? opt.ConstructabilityScore ?? opt.EfficiencyScore);
-                const n = Number(v);
-                return Number.isFinite(n) ? n : Number.NEGATIVE_INFINITY;
-            };
+            // V7.0: Đọc options từ span đầu tiên (tất cả spans có cùng options structure)
+            const firstSpan = currentGroup?.Spans?.[0];
+            const options = firstSpan?.Options || [];
 
-            // DEBUG: Log SelectedDesign status
-            console.log('populateOptionSelect:', {
+            console.log('populateOptionSelect V7:', {
                 groupName: currentGroup?.GroupName,
-                hasSelectedDesign: !!currentGroup?.SelectedDesign,
-                selectedDesign: currentGroup?.SelectedDesign,
-                backboneOptionsCount: currentGroup?.BackboneOptions?.length || 0
+                spanCount: currentGroup?.Spans?.length || 0,
+                optionsCount: options.length
             });
 
-            // Nếu có SelectedDesign (đã chốt), luôn hiển thị đầu tiên với ⭐
-            if (currentGroup?.SelectedDesign) {
-                const lockedOpt = document.createElement('option');
-                lockedOpt.value = 'locked';
-                const isInvalid = currentGroup.SelectedDesign.IsValid === false;
-                const designName = currentGroup.SelectedDesign.OptionName || 'Phương án đã chốt';
-                lockedOpt.textContent = `⭐ ${designName} ${isInvalid ? '⚠️ THIẾU THÉP' : '(Đang chốt)'}`;
-                sel.appendChild(lockedOpt);
-                console.log('Added locked option:', designName);
-            }
-
-            // Kiểm tra BackboneOptions
-            const options = currentGroup?.BackboneOptions || [];
-
-            if (options.length === 0) {
-                // Không có phương án tính toán
-                const noCalcOpt = document.createElement('option');
-                noCalcOpt.value = 'none';
-                noCalcOpt.textContent = '⏳ Chưa tính (Nhấn "Tính thép")';
-                noCalcOpt.disabled = true;
-                sel.appendChild(noCalcOpt);
-            } else {
-                // Thêm các phương án máy đề xuất (sort theo Score giảm dần)
-                const ranked = options
-                    .map((opt, originalIndex) => ({ opt, originalIndex, score: getOptionScore(opt) }))
-                    .sort((a, b) => (b.score - a.score) || (a.originalIndex - b.originalIndex));
-
-                const bestOriginalIndex = ranked.length > 0 ? ranked[0].originalIndex : 0;
-
-                ranked.forEach((r, rankIdx) => {
-                    const opt = r.opt;
-                    const option = document.createElement('option');
-                    option.value = String(r.originalIndex);
-                    const score = getOptionScore(opt);
-                    const scoreText = Number.isFinite(score) ? ` | Score ${score.toFixed(0)}` : '';
-                    const bestTag = (r.originalIndex === bestOriginalIndex) ? ' ★Best' : '';
-                    option.textContent = `#${rankIdx + 1} ${opt.OptionName || ('Option ' + (r.originalIndex + 1))} - D${opt.BackboneDiameter || '?'}${scoreText}${bestTag}`;
-                    sel.appendChild(option);
+            // Hiển thị 5 options (Opt0-4)
+            if (options.length > 0) {
+                options.forEach((opt, idx) => {
+                    const el = document.createElement('option');
+                    el.value = String(idx);
+                    const topStr = opt.TopL0 || '-';
+                    const botStr = opt.BotL0 || '-';
+                    el.textContent = `Opt${idx}: T:${topStr} / B:${botStr}`;
+                    sel.appendChild(el);
                 });
+            } else {
+                // Không có options
+                const noOpt = document.createElement('option');
+                noOpt.value = 'none';
+                noOpt.textContent = 'Chua tinh thep';
+                noOpt.disabled = true;
+                sel.appendChild(noOpt);
             }
 
-            // Chọn SelectedDesign nếu có, không thì chọn theo index
-            if (selectedOptionKey == null) {
-                selectedOptionKey = currentGroup?.SelectedDesign ? 'locked' : String(currentGroup?.SelectedBackboneIndex || 0);
-            }
-
-            // Nếu selectedOptionKey không tồn tại trong dropdown (vd: chưa tính), fallback về option đầu
-            const validValues = Array.from(sel.options).map(o => o.value);
-            if (selectedOptionKey != null && !validValues.includes(String(selectedOptionKey))) {
-                selectedOptionKey = sel.options.length > 0 ? sel.options[0].value : null;
-            }
-            sel.value = selectedOptionKey ?? '';
+            // Chọn option mặc định
+            const selectedIdx = currentGroup?.SelectedBackboneIndex || 0;
+            sel.value = String(selectedIdx);
+            selectedOptionKey = String(selectedIdx);
         }
 
         function selectOption(index) {
-            selectedOptionKey = String(index);
-            if (selectedOptionKey !== 'locked') {
-                const parsed = parseInt(selectedOptionKey);
-                if (!isNaN(parsed)) currentGroup.SelectedBackboneIndex = parsed;
-            }
+            const parsed = parseInt(index);
+            if (isNaN(parsed)) return;
 
-            // V3.4 FIX: Reset _userEdited so proposal can apply to all spans
-            if (currentGroup?.Spans) {
-                currentGroup.Spans.forEach(span => span._userEdited = false);
-            }
+            selectedOptionKey = String(parsed);
+            currentGroup.SelectedBackboneIndex = parsed;
 
-            const opt = getSelectedOption();
-            applyOptionToSpans(opt);
+            // V7.0: Đọc trực tiếp từ span.Options[index] - XData là nguồn duy nhất
+            applyXDataOptionToSpans(parsed);
 
             updateMetrics();
             renderCanvas();
             renderTable();
         }
 
-        function getSelectedOption() {
-            if (!currentGroup) return null;
-            if (selectedOptionKey === 'locked') return currentGroup.SelectedDesign || null;
-            const idx = parseInt(selectedOptionKey);
-            if (isNaN(idx)) return currentGroup.BackboneOptions?.[0] || null;
-            return currentGroup.BackboneOptions?.[idx] || null;
-        }
+        // V7.0: Xóa getSelectedOption obsolete - không còn sử dụng BackboneOptions
 
-        function applyOptionToSpans(opt) {
-            if (!currentGroup?.Spans?.length || !opt) return;
-
-            // V3.4.2: Dynamic MaxLayers from settings
-            const maxLayers = data.settings?.MaxLayers || 2;
-
-            // V3.4.1: Use separate Top/Bot backbone diameters
-            const topDia = opt.BackboneDiameter_Top || opt.BackboneDiameter;
-            const botDia = opt.BackboneDiameter_Bot || opt.BackboneDiameter;
-            const backboneTop = `${opt.BackboneCount_Top}D${topDia}`;
-            const backboneBot = `${opt.BackboneCount_Bot}D${botDia}`;
-
-            // V3.4.2: Helper to get addon RebarSpec from solution
-            const getAddonSpec = (spanId, pos) => {
-                const reinf = opt.Reinforcements;
-                if (!reinf) return null;
-                const key = `${spanId}_${pos}`;
-                const spec = reinf[key];
-                if (spec && spec.Count > 0) {
-                    return spec;
-                }
-                return null;
-            };
-
-            // Helper to format addon string
-            const formatAddon = (spec) => {
-                if (!spec || spec.Count <= 0) return '';
-                return `${spec.Count}D${spec.Diameter}`;
-            };
+        // V7.0: Đọc trực tiếp từ span.Options[index] - XData là nguồn duy nhất
+        function applyXDataOptionToSpans(optionIndex) {
+            if (!currentGroup?.Spans?.length) return;
 
             currentGroup.Spans.forEach(span => {
-                // Only update if not manually edited
-                if (!span._userEdited) {
-                    const sid = span.SpanId;
+                // Đọc trực tiếp từ span.Options[optionIndex]
+                const opt = span.Options?.[optionIndex];
+                if (!opt) return;
 
-                    // V3.4.2: Initialize jagged arrays with correct MaxLayers
-                    span.TopRebar = [];
-                    span.BotRebar = [];
-                    for (let i = 0; i < maxLayers; i++) {
-                        span.TopRebar.push([]);
-                        span.BotRebar.push([]);
-                    }
+                // Initialize arrays
+                if (!span.TopRebar) span.TopRebar = [[], []];
+                if (!span.BotRebar) span.BotRebar = [[], []];
 
-                    // Layer 0: BACKBONE ONLY (continuous across all positions)
-                    span.TopRebar[0][0] = backboneTop;
-                    span.TopRebar[0][2] = backboneTop;
-                    span.TopRebar[0][4] = backboneTop;
-                    span.BotRebar[0][0] = backboneBot;
-                    span.BotRebar[0][2] = backboneBot;
-                    span.BotRebar[0][4] = backboneBot;
+                // Layer 0: Backbone (L0 positions)
+                span.TopRebar[0] = [opt.TopL0 || '', '', opt.TopL0 || '', '', opt.TopL0 || ''];
+                span.BotRebar[0] = [opt.BotL0 || '', '', opt.BotL0 || '', '', opt.BotL0 || ''];
 
-                    // Layer 1+: ADDON bars (position-specific)
-                    // Top addons
-                    const topLeftSpec = getAddonSpec(sid, 'Top_Left');
-                    const topMidSpec = getAddonSpec(sid, 'Top_Mid');
-                    const topRightSpec = getAddonSpec(sid, 'Top_Right');
-
-                    if (topLeftSpec) {
-                        const layer = Math.min(topLeftSpec.Layer || 1, maxLayers - 1);
-                        span.TopRebar[layer][0] = formatAddon(topLeftSpec);
-                    }
-                    if (topMidSpec) {
-                        const layer = Math.min(topMidSpec.Layer || 1, maxLayers - 1);
-                        span.TopRebar[layer][2] = formatAddon(topMidSpec);
-                    }
-                    if (topRightSpec) {
-                        const layer = Math.min(topRightSpec.Layer || 1, maxLayers - 1);
-                        span.TopRebar[layer][4] = formatAddon(topRightSpec);
-                    }
-
-                    // Bot addons
-                    const botLeftSpec = getAddonSpec(sid, 'Bot_Left');
-                    const botMidSpec = getAddonSpec(sid, 'Bot_Mid');
-                    const botRightSpec = getAddonSpec(sid, 'Bot_Right');
-
-                    if (botLeftSpec) {
-                        const layer = Math.min(botLeftSpec.Layer || 1, maxLayers - 1);
-                        span.BotRebar[layer][0] = formatAddon(botLeftSpec);
-                    }
-                    if (botMidSpec) {
-                        const layer = Math.min(botMidSpec.Layer || 1, maxLayers - 1);
-                        span.BotRebar[layer][2] = formatAddon(botMidSpec);
-                    }
-                    if (botRightSpec) {
-                        const layer = Math.min(botRightSpec.Layer || 1, maxLayers - 1);
-                        span.BotRebar[layer][4] = formatAddon(botRightSpec);
-                    }
+                // Layer 1: Addon (L1 positions) - nếu có
+                if (opt.TopL1) {
+                    span.TopRebar[1] = [opt.TopL1, '', opt.TopL1, '', opt.TopL1];
+                } else {
+                    span.TopRebar[1] = ['', '', '', '', ''];
+                }
+                if (opt.BotL1) {
+                    span.BotRebar[1] = [opt.BotL1, '', opt.BotL1, '', opt.BotL1];
+                } else {
+                    span.BotRebar[1] = ['', '', '', '', ''];
                 }
             });
         }
@@ -2260,7 +2129,7 @@
 
                 if (currentGroupIndex === groupIndex) {
                     currentGroup = updated;
-                    selectedOptionKey = currentGroup?.SelectedDesign ? 'locked' : String(currentGroup?.SelectedBackboneIndex || 0);
+                    selectedOptionKey = String(currentGroup?.SelectedBackboneIndex || 0);
                     populateOptionSelect();
                     updateLockStatus();
                     updateGroupInfo();
@@ -2303,23 +2172,25 @@
 
         function updateMetrics() {
             if (!currentGroup) return;
-            const opt = getSelectedOption() || currentGroup.BackboneOptions?.[currentGroup.SelectedBackboneIndex || 0];
+
+            // V7.0: Đọc từ span.Options thay vì BackboneOptions
+            const firstSpan = currentGroup.Spans?.[0];
+            const selectedIdx = parseInt(selectedOptionKey) || 0;
+            const opt = firstSpan?.Options?.[selectedIdx];
+
             if (opt) {
-                document.getElementById('metricBackbone').textContent = opt.OptionName || '-';
-                document.getElementById('metricAs').textContent = `${opt.As_Backbone_Top?.toFixed(1) || 0} cm²`;
-                document.getElementById('metricWaste').textContent = `${opt.WastePercentage?.toFixed(1) || 0}%`;
-                document.getElementById('metricWeight').textContent = `${opt.TotalSteelWeight?.toFixed(0) || 0} kg`;
-                const scoreVal = (opt.TotalScore ?? opt.ConstructabilityScore ?? opt.EfficiencyScore);
-                document.getElementById('metricScore').textContent = (scoreVal !== undefined && scoreVal !== null)
-                    ? Number(scoreVal).toFixed(0)
-                    : '-';
+                document.getElementById('metricBackbone').textContent = opt.TopL0 || '-';
+                document.getElementById('metricAs').textContent = '-'; // Không còn As_Backbone
+                document.getElementById('metricWaste').textContent = '-';
+                document.getElementById('metricWeight').textContent = '-';
+                document.getElementById('metricScore').textContent = '-';
             }
 
             // Warnings
             const warnings = [];
-            if (currentGroup.HasStepChange) warnings.push({ icon: '⚠️', text: 'Giật cấp', cls: 'bg-amber-100 text-amber-700' });
-            if (currentGroup.RequiresSplice) warnings.push({ icon: '🔗', text: 'Nối thép', cls: 'bg-blue-100 text-blue-700' });
-            if (currentGroup.HasConsole) warnings.push({ icon: '📐', text: 'Console', cls: 'bg-purple-100 text-purple-700' });
+            if (currentGroup.HasStepChange) warnings.push({ icon: '!', text: 'Giat cap', cls: 'bg-amber-100 text-amber-700' });
+            if (currentGroup.RequiresSplice) warnings.push({ icon: '+', text: 'Noi thep', cls: 'bg-blue-100 text-blue-700' });
+            if (currentGroup.HasConsole) warnings.push({ icon: '>', text: 'Console', cls: 'bg-purple-100 text-purple-700' });
 
             document.getElementById('warningsContainer').innerHTML = warnings
                 .map(w => `<span class="px-2 py-0.5 rounded text-[10px] font-bold ${w.cls}">${w.icon} ${w.text}</span>`).join('');
@@ -2983,11 +2854,12 @@
             // Populate Option select
             const optSelect = document.getElementById('propOption');
             optSelect.innerHTML = '';
-            if (currentGroup.BackboneOptions?.length > 0) {
-                currentGroup.BackboneOptions.forEach((opt, i) => {
+            // V7.0: Đọc từ span.Options
+            if (span.Options?.length > 0) {
+                span.Options.forEach((opt, i) => {
                     const optEl = document.createElement('option');
                     optEl.value = i;
-                    optEl.textContent = opt.OptionName || `Option ${i}`;
+                    optEl.textContent = `Opt${i}: ${opt.TopL0 || '-'}`;
                     optEl.selected = (i === currentGroup.SelectedBackboneIndex);
                     optSelect.appendChild(optEl);
                 });
@@ -3175,8 +3047,8 @@
                 motherEl.classList.add('hidden');
             }
 
-            // Show 🔒 if design is locked
-            if (currentGroup.IsLocked || currentGroup.SelectedDesign?.IsLocked) {
+            // V7.0: Show lock badge if design is locked
+            if (currentGroup.IsLocked) {
                 lockedEl.classList.remove('hidden');
             } else {
                 lockedEl.classList.add('hidden');

@@ -28,14 +28,10 @@ namespace DTS_Engine.Core.Utils
         public const string KEY_SIDE_BAR = "SideBar";
         public const string KEY_BEAM_GROUP = "BeamGroupName";
         public const string KEY_BEAM_TYPE = "BeamType";
-        public const string KEY_LAST_MODIFIED = "LastModified";
-
-        // NOD Keys for BeamGroup persistence
-        public const string NOD_BEAM_GROUPS = "DTS_BeamGroups";
 
         // V5.0: Rebar Options Persistence Keys
         public const string KEY_GROUP_IDENTITY = "GroupIdentity";  // "G:ABC123|I:0"
-        // NOTE: KEY_GROUP_STATE và KEY_CALCULATED_AT đã xóa - dùng IsLocked từ WriteIsLocked
+
         public const string KEY_IS_MANUAL = "IsManual";
 
         #endregion
@@ -168,7 +164,7 @@ namespace DTS_Engine.Core.Utils
 
         #endregion
 
-        #region Specialized Readers (Backward Compatibility)
+        #region Specialized Element Readers
 
         /// <summary>
         /// Đọc WallData - Phương thức tiện ích (không cần Transaction)
@@ -444,8 +440,7 @@ namespace DTS_Engine.Core.Utils
         #region Hệ thống quản lý liên kết (Hoạt động nguyên tử 2 chiều)
 
         /// <summary>
-        /// [LEGACY] Thiết lập liên kết cha-con (tương thích ngược).
-        /// Khuyến nghị: Sử dụng RegisterLink() để đảm bảo tính toán vẹn 2 chiều.
+        /// Thiết lập liên kết cha-con. Wrapper cho RegisterLink().
         /// </summary>
         public static void SetLink(DBObject child, DBObject parent, Transaction tr)
         {
@@ -453,8 +448,7 @@ namespace DTS_Engine.Core.Utils
         }
 
         /// <summary>
-        /// [LEGACY] Xoa lien ket cha-con (backward compatible).
-        /// Recommend: Su dung UnregisterLink() hoac ClearAllLinks().
+        /// Xóa liên kết cha-con. Wrapper cho UnregisterLink().
         /// </summary>
         public static void RemoveLink(DBObject child, Transaction tr)
         {
@@ -1085,8 +1079,8 @@ namespace DTS_Engine.Core.Utils
         }
 
         /// <summary>
-        /// [V5.0] Read rebar options from entity.
-        /// Supports both new compact format (Opt0) and legacy format (TopOpt0/BotOpt0).
+        /// [V6.0] Read rebar options from entity.
+        /// Reads Opt0-4 keys (compact format: "T:L0|L1;B:L0|L1;S:;W:").
         /// </summary>
         public static List<RebarOptionData> ReadRebarOptionsV5(DBObject obj)
         {
@@ -1096,50 +1090,22 @@ namespace DTS_Engine.Core.Utils
 
             for (int i = 0; i < 5; i++)
             {
-                // Try new compact format first
+                // V6.0: Only compact format (Opt0-4), no legacy fallback
                 if (dict.TryGetValue($"Opt{i}", out var optVal) && optVal != null)
                 {
                     result.Add(ParseCompactOption(optVal.ToString()));
                 }
-                // Fallback to legacy format
                 else
                 {
-                    object topVal = null, botVal = null;
-                    dict.TryGetValue($"TopOpt{i}", out topVal);
-                    dict.TryGetValue($"BotOpt{i}", out botVal);
-
-                    if (topVal != null || botVal != null)
-                    {
-                        var topParts = ParseOptionString(topVal?.ToString() ?? "");
-                        var botParts = ParseOptionString(botVal?.ToString() ?? "");
-                        result.Add(new RebarOptionData
-                        {
-                            TopL0 = topParts[0],
-                            TopL1 = topParts.Length > 1 ? topParts[1] : "",
-                            BotL0 = botParts[0],
-                            BotL1 = botParts.Length > 1 ? botParts[1] : ""
-                        });
-                    }
-                    else
-                    {
-                        result.Add(new RebarOptionData());
-                    }
+                    // V6.0: No fallback - add empty option if key not found
+                    result.Add(new RebarOptionData());
                 }
             }
 
             return result;
         }
 
-        /// <summary>
-        /// [V5.0] Legacy overload for backward compatibility.
-        /// </summary>
-        public static (List<string[]> TopOptions, List<string[]> BotOptions) ReadRebarOptions(DBObject obj)
-        {
-            var options = ReadRebarOptionsV5(obj);
-            var topOptions = options.Select(o => new[] { o.TopL0, o.TopL1, "" }).ToList();
-            var botOptions = options.Select(o => new[] { o.BotL0, o.BotL1, "" }).ToList();
-            return (topOptions, botOptions);
-        }
+        // V6.0: ReadRebarOptions legacy wrapper đã xóa - dùng ReadRebarOptionsV5 trực tiếp
 
         /// <summary>
         /// [V5.0] Parse compact option format "T:L0|L1;B:L0|L1".
@@ -1174,21 +1140,7 @@ namespace DTS_Engine.Core.Utils
             return result;
         }
 
-        /// <summary>
-        /// [V5.0] Parse legacy option string format "L|M|R" to string[3].
-        /// </summary>
-        private static string[] ParseOptionString(string optStr)
-        {
-            if (string.IsNullOrEmpty(optStr)) return new string[] { "", "", "" };
-
-            var parts = optStr.Split('|');
-            return new string[]
-            {
-                parts.Length > 0 ? parts[0] : "",
-                parts.Length > 1 ? parts[1] : "",
-                parts.Length > 2 ? parts[2] : ""
-            };
-        }
+        // V6.0: ParseOptionString legacy helper đã xóa - không còn caller
 
         /// <summary>
         /// [V6.0] Data class for rebar option - Single Source of Truth.
