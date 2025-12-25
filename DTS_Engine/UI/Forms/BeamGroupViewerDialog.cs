@@ -132,6 +132,8 @@ namespace DTS_Engine.UI.Forms
                     string html = reader.ReadToEnd();
 
                     // Inject data with settings
+                    // Force reload to get latest settings from file (fixes MaxLayers not updating)
+                    DtsSettings.Reload();
                     var settings = DtsSettings.Instance;
                     string viewMode = (_groups != null && _groups.Count > 0) ? "groups" : "single";
 

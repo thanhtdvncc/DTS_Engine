@@ -487,7 +487,7 @@ namespace DTS_Engine.Core.Data
         /// <summary>
         /// Số lớp thép tối đa cho phép (1, 2, 3...)
         /// </summary>
-        public int MaxLayers { get; set; } = 2;
+        public int MaxLayers { get; set; } = 3;
 
         /// <summary>
         /// Số thanh tối thiểu trong mỗi lớp

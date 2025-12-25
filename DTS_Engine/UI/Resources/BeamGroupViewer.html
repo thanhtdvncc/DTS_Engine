@@ -7,8 +7,18 @@
     <script src="https://cdn.tailwindcss.com"></script>
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
     <!-- DTS Canvas Engine -->
-    <script src="DtsCanvas.js"></script>
-    <script src="BeamCanvas.js"></script>
+    <!-- DTS Core Modules -->
+    <script src="core/DtsUI.js"></script>
+    <script src="core/DtsState.js"></script>
+    <script src="core/DtsPhysics.js"></script>
+    <script src="core/DtsEvents.js"></script>
+    <script src="core/DtsRenderer.js"></script>
+    <!-- Beam Modules -->
+    <script src="beam/BeamState.js"></script>
+    <script src="beam/BeamRenderer.js"></script>
+    <script src="beam/BeamTable.js"></script>
+    <script src="beam/BeamActions.js"></script>
+    <script src="beam/BeamInit.js"></script>
     <script>
         tailwind.config = {
             theme: {
@@ -624,6 +634,9 @@
         let highlightedSpanIndex = -1;
         let spanBounds = [];
         let rebarLabelBounds = [];
+        let labelHits = []; // For detailed label hit testing
+        let isPanDragging = false; // Track if we actually dragged during a click
+        let mouseDownButton = -1; // Specific button that started the click
         const MIN_SPAN_WIDTH = 80;
         const MAX_CANVAS_WIDTH = 1600;
         const CANVAS_PADDING = 30;
@@ -661,6 +674,188 @@
         let selectedBeamHandle = null;  // null = full group selected, string = single beam selected
         let singleBeamMode = false;  // Tab toggles this
         let selectedBeamIndex = -1;   // -1 = all beams in group, >=0 = specific beam index
+
+        // ============ INLINE LABEL EDIT FUNCTIONS (Restored from u7.7) ============
+
+        function getLayerRebarText(span, type, layer, pos) {
+            if (!span) return '';
+            const arr = (type === 'Top') ? span.TopRebar : span.BotRebar;
+            const layerArr = arr?.[layer] || [];
+            const v = layerArr?.[pos];
+            return (v === undefined || v === null) ? '' : String(v);
+        }
+
+        function updateLayerRebar(spanIndex, type, layer, pos, value) {
+            const arr = type === 'Top' ? 'TopRebar' : 'BotRebar';
+
+            // BACKBONE LOGIC: Layer 0 is continuous across ALL spans
+            if (layer === 0) {
+                currentGroup.Spans.forEach(span => {
+                    if (!span[arr]) span[arr] = [];
+                    while (span[arr].length <= layer) span[arr].push([]);
+                    if (!span[arr][layer]) span[arr][layer] = [];
+                    span[arr][layer][0] = value; // Left
+                    span[arr][layer][2] = value; // Mid
+                    span[arr][layer][4] = value; // Right
+                });
+                autoLockOnEdit();
+                showToast(`✓ Cốt chủ ${type} đã cập nhật toàn bộ nhịp: ${value}`);
+                maybeRenderTable();
+                renderCanvas();
+                return;
+            }
+
+            // ADDON LOGIC: Layer 1+ is per-span, per-position
+            const span = currentGroup.Spans[spanIndex];
+            if (!span[arr]) span[arr] = [];
+            while (span[arr].length <= layer) span[arr].push([]);
+            if (!span[arr][layer]) span[arr][layer] = [];
+            span[arr][layer][pos] = value;
+
+            autoLockOnEdit();
+
+            // Auto apply to subsequent spans
+            const autoApply = document.getElementById('autoApply');
+            if (autoApply && autoApply.checked) {
+                for (let i = spanIndex + 1; i < currentGroup.Spans.length; i++) {
+                    if (currentGroup.Spans[i].IsActive !== false) {
+                        const s = currentGroup.Spans[i];
+                        if (!s[arr]) s[arr] = [];
+                        while (s[arr].length <= layer) s[arr].push([]);
+                        if (!s[arr][layer]) s[arr][layer] = [];
+                        s[arr][layer][pos] = value;
+                    }
+                }
+                maybeRenderTable();
+            }
+            renderCanvas();
+        }
+
+        function updateStirrup(spanIndex, pos, value) {
+            const span = currentGroup.Spans[spanIndex];
+            if (!span.Stirrup) span.Stirrup = [];
+            span.Stirrup[pos] = value;
+            autoLockOnEdit();
+            maybeRenderTable();
+            renderCanvas();
+        }
+
+        function updateWebBar(spanIndex, pos, value) {
+            const span = currentGroup.Spans[spanIndex];
+            if (!span.WebBar) span.WebBar = [];
+            span.WebBar[pos] = value;
+            autoLockOnEdit();
+            maybeRenderTable();
+            renderCanvas();
+        }
+
+        function startInlineLabelEdit(label) {
+            if (!label || !currentGroup?.Spans?.[label.spanIndex]) return;
+
+            // Get detailCanvas container for overlay positioning
+            const canvas = document.getElementById('detailCanvas');
+            const container = canvas?.parentElement;
+
+            if (!labelEditorEl || !container) {
+                // Fallback to prompt-based edit
+                const span = currentGroup.Spans[label.spanIndex];
+                if (label.type === 'Stirrup' || label.type === 'WebBar') {
+                    const idx = Number.isFinite(label.pos) ? label.pos : 0;
+                    const isStirrup = label.type === 'Stirrup';
+                    const currentVal = (isStirrup ? (span?.Stirrup?.[idx] || '') : (span?.WebBar?.[idx] || '')).toString();
+                    const title = `${isStirrup ? 'ĐAI' : 'SƯỜN'} - Nhịp ${span.SpanId || (label.spanIndex + 1)} (${idx === 0 ? 'L1' : (idx === 1 ? 'Giữa' : 'L2')})`;
+                    const nextVal = prompt(title, currentVal);
+                    if (nextVal === null) return;
+                    if (isStirrup) updateStirrup(label.spanIndex, idx, nextVal);
+                    else updateWebBar(label.spanIndex, idx, nextVal);
+                    maybeRenderTable();
+                    return;
+                }
+                const layer = Number.isFinite(label.layer) ? label.layer : 0;
+                const pos = Number.isFinite(label.pos) ? label.pos : 2;
+                const currentVal = getLayerRebarText(span, label.type, layer, pos);
+                const posName = (pos === 0 ? 'Trái' : (pos === 4 ? 'Phải' : 'Giữa'));
+                const title = `${label.type === 'Top' ? 'THÉP TRÊN' : 'THÉP DƯỚI'} - Nhịp ${span.SpanId || (label.spanIndex + 1)} (Layer ${layer + 1}, ${posName})`;
+                const nextVal = prompt(title, currentVal);
+                if (nextVal === null) return;
+                updateLayerRebar(label.spanIndex, label.type, layer, pos, nextVal);
+                maybeRenderTable();
+                return;
+            }
+
+            activeLabelEdit = label;
+
+            const rect = canvas.getBoundingClientRect();
+            const containerRect = container.getBoundingClientRect();
+
+            // Convert label world coords to canvas screen coords using detailZoom/Pan
+            const sx = label.x * detailZoom + detailPanX;
+            const sy = label.y * detailZoom + detailPanY;
+            const sw = label.width * detailZoom;
+            const sh = label.height * detailZoom;
+
+            // Position relative to container
+            const left = (rect.left - containerRect.left) + sx;
+            const top = (rect.top - containerRect.top) + sy;
+
+            labelEditorEl.style.left = Math.max(0, left) + 'px';
+            labelEditorEl.style.top = Math.max(0, top) + 'px';
+            labelEditorEl.style.width = Math.max(60, sw) + 'px';
+            labelEditorEl.style.height = Math.max(18, sh) + 'px';
+
+            const span = currentGroup.Spans[label.spanIndex];
+            if (label.type === 'Stirrup') {
+                const idx = Number.isFinite(label.pos) ? label.pos : 0;
+                labelEditorEl.value = (span?.Stirrup?.[idx] || '').toString();
+            } else if (label.type === 'WebBar') {
+                const idx = Number.isFinite(label.pos) ? label.pos : 0;
+                labelEditorEl.value = (span?.WebBar?.[idx] || '').toString();
+            } else {
+                const layer = Number.isFinite(label.layer) ? label.layer : 0;
+                const pos = Number.isFinite(label.pos) ? label.pos : 2;
+                labelEditorEl.value = getLayerRebarText(span, label.type, layer, pos);
+            }
+            labelEditorEl.classList.remove('hidden');
+            labelEditorEl.focus();
+            labelEditorEl.select();
+        }
+
+        function commitInlineLabelEdit() {
+            if (!activeLabelEdit || !labelEditorEl) {
+                hideInlineLabelEditor();
+                return;
+            }
+            const nextVal = labelEditorEl.value;
+            if (activeLabelEdit.type === 'Stirrup') {
+                const idx = Number.isFinite(activeLabelEdit.pos) ? activeLabelEdit.pos : 0;
+                updateStirrup(activeLabelEdit.spanIndex, idx, nextVal);
+                hideInlineLabelEditor();
+                return;
+            }
+            if (activeLabelEdit.type === 'WebBar') {
+                const idx = Number.isFinite(activeLabelEdit.pos) ? activeLabelEdit.pos : 0;
+                updateWebBar(activeLabelEdit.spanIndex, idx, nextVal);
+                hideInlineLabelEditor();
+                return;
+            }
+            const layer = Number.isFinite(activeLabelEdit.layer) ? activeLabelEdit.layer : 0;
+            const pos = Number.isFinite(activeLabelEdit.pos) ? activeLabelEdit.pos : 2;
+            updateLayerRebar(activeLabelEdit.spanIndex, activeLabelEdit.type, layer, pos, nextVal);
+            hideInlineLabelEditor();
+        }
+
+        function cancelInlineLabelEdit() {
+            hideInlineLabelEditor();
+        }
+
+        function hideInlineLabelEditor() {
+            activeLabelEdit = null;
+            if (!labelEditorEl) return;
+            labelEditorEl.classList.add('hidden');
+            labelEditorEl.value = '';
+        }
+
+        // ============ END INLINE LABEL EDIT FUNCTIONS ============
 
         function maybeRenderTable() {
             // Avoid heavy table re-render during canvas-first workflow when panel is collapsed.
@@ -1108,19 +1303,22 @@
         }
 
         function drawEditableLabelDetail(ctx, text, x, y, color, meta) {
-            if (!text || text === '-') return;
+            // ALWAYS draw label even if empty - show placeholder "-" for editing
+            const displayText = (text && text !== '-' && text.trim() !== '') ? text : '-';
 
             ctx.font = 'bold 11px sans-serif';
             ctx.textAlign = 'center';
             ctx.textBaseline = 'middle';
 
-            const width = ctx.measureText(text).width + 8;
+            // Use consistent width for all labels (empty or filled) for visual alignment
+            const textWidth = ctx.measureText(displayText).width;
+            const width = Math.max(textWidth + 10, 28); // Min 28px for clickable area
             const height = 16;
             const rx = x - width / 2;
             const ry = y - height / 2;
-            const radius = 3;  // Border radius for rounded corners
+            const radius = 3;
 
-            // Draw rounded rectangle background
+            // Draw rounded rectangle background - SAME STYLE for all labels
             ctx.beginPath();
             ctx.roundRect(rx, ry, width, height, radius);
             ctx.fillStyle = '#fff';
@@ -1129,9 +1327,9 @@
             ctx.lineWidth = 1;
             ctx.stroke();
 
-            // Draw text
+            // Draw text - use same color for consistency
             ctx.fillStyle = color;
-            ctx.fillText(text, x, y);
+            ctx.fillText(displayText, x, y);
 
             detailRebarLabelBounds.push({ x: rx, y: ry, width, height, ...meta });
         }
@@ -1676,34 +1874,20 @@
             // Initialize canvas interaction system (inline, no external dependency)
             const canvas = document.getElementById('beamCanvas');
             if (canvas) {
-                // Inline label editor overlay (canvas-first editing)
-                const planCanvasContainer = document.getElementById('planCanvasContainer');
-                if (planCanvasContainer && !labelEditorEl) {
-                    // ensure positioning context
-                    if (!planCanvasContainer.style.position) planCanvasContainer.style.position = 'relative';
-                    labelEditorEl = document.createElement('input');
-                    labelEditorEl.type = 'text';
-                    labelEditorEl.className = 'hidden absolute z-50 border border-slate-300 rounded px-1 py-0.5 text-[11px] bg-white';
-                    labelEditorEl.style.minWidth = '60px';
-                    labelEditorEl.style.height = '20px';
-                    labelEditorEl.addEventListener('keydown', (ev) => {
-                        if (ev.key === 'Enter') {
-                            commitInlineLabelEdit();
-                        } else if (ev.key === 'Escape') {
-                            cancelInlineLabelEdit();
-                        }
-                        ev.stopPropagation();
-                    });
-                    labelEditorEl.addEventListener('blur', () => {
-                        if (labelEditorEl && !labelEditorEl.classList.contains('hidden')) commitInlineLabelEdit();
-                    });
-                    planCanvasContainer.appendChild(labelEditorEl);
-                }
+                // NOTE: Inline label editor (labelEditorEl) is created in detailCanvas section 
+                // since span editing is now in the sidebar Detail Canvas, not Main Canvas
 
                 // Click: label edit (priority) or span select/copy-format
-                // FIX: Only accept left-click (button 0)
+                // FIX: Only accept left-click (button 0) and ignore if dragged
+                canvas.addEventListener('contextmenu', e => e.preventDefault()); // Block context menu
                 canvas.addEventListener('click', (e) => {
-                    if (e.button !== 0) return; // Ignore middle/right click
+                    if (isPanDragging) {
+                        isPanDragging = false;
+                        return;
+                    }
+                    // Strict check: Click must start AND end with Button 0
+                    if (e.button !== 0 || mouseDownButton !== 0) return;
+
                     const rect = canvas.getBoundingClientRect();
                     const x = (e.clientX - rect.left - canvasPanX) / canvasZoom;
                     const y = (e.clientY - rect.top - canvasPanY) / canvasZoom;
@@ -1717,53 +1901,79 @@
                         }
                     }
 
-                    for (let i = 0; i < spanBounds.length; i++) {
-                        const b = spanBounds[i];
-                        if (x >= b.x && x <= b.x + b.width && y >= b.y && y <= b.y + b.height) {
-                            const spanIndex = b.index;
-                            // Copy format mode
-                            if (copyFormatMode) {
-                                if (!copySourceSpan) {
-                                    copySourceSpan = currentGroup.Spans[spanIndex];
-                                    showToast('Chọn nhịp đích...');
+                    // Skip spanBounds click in Plan mode - Plan mode uses beam-level selection
+                    if (canvasMode !== 'plan') {
+                        for (let i = 0; i < spanBounds.length; i++) {
+                            const b = spanBounds[i];
+                            if (x >= b.x && x <= b.x + b.width && y >= b.y && y <= b.y + b.height) {
+                                const spanIndex = b.index;
+                                // Copy format mode
+                                if (copyFormatMode) {
+                                    if (!copySourceSpan) {
+                                        copySourceSpan = currentGroup.Spans[spanIndex];
+                                        showToast('Chọn nhịp đích...');
+                                    } else {
+                                        const dest = currentGroup.Spans[spanIndex];
+                                        dest.TopRebar = JSON.parse(JSON.stringify(copySourceSpan.TopRebar || []));
+                                        dest.BotRebar = JSON.parse(JSON.stringify(copySourceSpan.BotRebar || []));
+                                        dest.Stirrup = [...(copySourceSpan.Stirrup || [])];
+                                        copyFormatMode = false;
+                                        copySourceSpan = null;
+                                        document.body.style.cursor = 'default';
+                                        renderCanvas();
+                                        renderTable();
+                                        showToast('✓ Copied format to ' + dest.SpanId);
+                                    }
+                                    return;
+                                }
+
+                                highlightSpan(spanIndex);
+
+                                // Expand table panel if collapsed
+                                const panel = document.getElementById('tablePanel');
+                                if (panel && panel.classList.contains('max-h-8')) {
+                                    toggleTablePanel(); // Expand it
+                                }
+
+                                // Scroll to row within tablePanelContent
+                                const row = document.querySelector(`[data-span-index="${spanIndex}"]`);
+                                if (row) {
+                                    const container = document.getElementById('tablePanelContent');
+                                    if (container) {
+                                        // Calculate scroll position to center row
+                                        const rowTop = row.offsetTop;
+                                        const containerHeight = container.clientHeight;
+                                        container.scrollTo({
+                                            top: rowTop - containerHeight / 2 + row.offsetHeight / 2,
+                                            behavior: 'smooth'
+                                        });
+                                    }
+                                }
+                                break;
+                            }
+                        }
+                    } // End of: if (canvasMode !== 'plan')
+
+                    // PLAN VIEW ONLY: Select beam on click  
+                    if (canvasMode === 'plan') {
+                        const clickedBeam = findBeamAtPoint(e.clientX - rect.left, e.clientY - rect.top);
+                        if (clickedBeam) {
+                            const groupIdx = findGroupByBeamHandle(clickedBeam.Handle);
+                            if (groupIdx >= 0) {
+                                if (groupIdx !== currentGroupIndex) {
+                                    // First click on DIFFERENT beam group → select group, highlight full beam
+                                    loadGroup(groupIdx); // loadGroup resets highlightedSpanIndex = -1
+                                    showToast(`Đã chọn: ${data.groups[groupIdx].GroupName || 'Group ' + (groupIdx + 1)}`);
+                                    // loadGroup already calls render functions
                                 } else {
-                                    const dest = currentGroup.Spans[spanIndex];
-                                    dest.TopRebar = JSON.parse(JSON.stringify(copySourceSpan.TopRebar || []));
-                                    dest.BotRebar = JSON.parse(JSON.stringify(copySourceSpan.BotRebar || []));
-                                    dest.Stirrup = [...(copySourceSpan.Stirrup || [])];
-                                    copyFormatMode = false;
-                                    copySourceSpan = null;
-                                    document.body.style.cursor = 'default';
-                                    renderCanvas();
-                                    renderTable();
-                                    showToast('✓ Copied format to ' + dest.SpanId);
-                                }
-                                return;
-                            }
-
-                            highlightSpan(spanIndex);
-
-                            // Expand table panel if collapsed
-                            const panel = document.getElementById('tablePanel');
-                            if (panel && panel.classList.contains('max-h-8')) {
-                                toggleTablePanel(); // Expand it
-                            }
-
-                            // Scroll to row within tablePanelContent
-                            const row = document.querySelector(`[data-span-index="${spanIndex}"]`);
-                            if (row) {
-                                const container = document.getElementById('tablePanelContent');
-                                if (container) {
-                                    // Calculate scroll position to center row
-                                    const rowTop = row.offsetTop;
-                                    const containerHeight = container.clientHeight;
-                                    container.scrollTo({
-                                        top: rowTop - containerHeight / 2 + row.offsetHeight / 2,
-                                        behavior: 'smooth'
-                                    });
+                                    // Second click on SAME group → find span at click position
+                                    const spanIdx = findSpanAtClickPosition(clickedBeam, e.clientX - rect.left, e.clientY - rect.top);
+                                    if (spanIdx >= 0 && spanIdx !== highlightedSpanIndex) {
+                                        highlightSpan(spanIdx); // This will sync sidebar
+                                    }
                                 }
                             }
-                            break;
+                            // DISABLED: showBeamProperties(clickedBeam) - per user request
                         }
                     }
                 });
@@ -1784,6 +1994,10 @@
                     if (canvasDragging) {
                         const dx = e.clientX - canvasLastX;
                         const dy = e.clientY - canvasLastY;
+
+                        // Mark as dragged if moved meaningfully
+                        if (Math.abs(dx) > 2 || Math.abs(dy) > 2) isPanDragging = true;
+
                         canvasPanX += dx;
                         canvasPanY += dy;
                         canvasLastX = e.clientX;
@@ -1810,7 +2024,8 @@
                         }
                         let found = -1;
                         // FIX: Only update highlight if no mouse button is pressed (pure hover)
-                        if (e.buttons === 0) {
+                        // SKIP in Plan mode - hover highlight is disabled in Plan view
+                        if (e.buttons === 0 && canvasMode !== 'plan') {
                             for (let i = 0; i < spanBounds.length; i++) {
                                 const b = spanBounds[i];
                                 if (x >= b.x && x <= b.x + b.width && y >= b.y && y <= b.y + b.height) {
@@ -1830,6 +2045,7 @@
                 // Middle click or Alt+click to start pan, Ctrl+click or left-click-hold to start box zoom
                 let boxZoomTimer = null;
                 canvas.addEventListener('mousedown', (e) => {
+                    mouseDownButton = e.button; // Track which button started the interaction
                     hideInlineLabelEditor();
                     const rect = canvas.getBoundingClientRect();
 
@@ -1863,6 +2079,7 @@
                     if (e.button === 1 || (e.button === 0 && e.altKey)) {
                         if (boxZoomTimer) { clearTimeout(boxZoomTimer); boxZoomTimer = null; }
                         canvasDragging = true;
+                        isPanDragging = false; // Reset drag flag
                         canvasLastX = e.clientX;
                         canvasLastY = e.clientY;
                         canvas.style.cursor = 'grabbing';
@@ -1922,26 +2139,7 @@
 
                     canvasDragging = false;
                     canvas.style.cursor = 'default';
-
-                    // FIX 3: Click detection for beam selection (only if no drag/zoom happened)
-                    if (canvasMode === 'plan' && !e.ctrlKey && !e.altKey) {
-                        const rect = canvas.getBoundingClientRect();
-                        const clickX = e.clientX - rect.left;
-                        const clickY = e.clientY - rect.top;
-
-                        // Find clicked beam
-                        const clickedBeam = findBeamAtPoint(clickX, clickY);
-                        if (clickedBeam) {
-                            // Find group containing this beam
-                            const groupIdx = findGroupByBeamHandle(clickedBeam.Handle);
-                            if (groupIdx >= 0 && groupIdx !== currentGroupIndex) {
-                                loadGroup(groupIdx);
-                                showToast(`Đã chọn: ${data.groups[groupIdx].GroupName || 'Group ' + (groupIdx + 1)}`);
-                            }
-                            // Show properties panel
-                            showBeamProperties(clickedBeam);
-                        }
-                    }
+                    // NOTE: Beam selection is handled ONLY in 'click' event with strict button checks
                 });
 
                 canvas.addEventListener('mouseleave', () => {
@@ -1949,9 +2147,8 @@
                     canvasDragging = false;
                     boxZoomActive = false;
                     canvas.style.cursor = 'default';
-                    highlightedSpanIndex = -1;
-                    render();
-                    renderTable();
+                    // REMOVED: highlightedSpanIndex = -1 - mouse leaving should NOT reset highlight
+                    // Highlight state is persistent, only changed by click/tab
                 });
 
                 // Wheel to zoom
@@ -1992,6 +2189,29 @@
                 let detailDragging = false;
                 let detailLastX = 0;
                 let detailLastY = 0;
+
+                // Create inline label editor for detail canvas
+                const detailContainer = detailCanvas.parentElement;
+                if (detailContainer && !labelEditorEl) {
+                    if (!detailContainer.style.position) detailContainer.style.position = 'relative';
+                    labelEditorEl = document.createElement('input');
+                    labelEditorEl.type = 'text';
+                    labelEditorEl.className = 'hidden absolute z-50 border border-blue-400 rounded px-1 py-0.5 text-[11px] bg-white shadow-lg';
+                    labelEditorEl.style.minWidth = '60px';
+                    labelEditorEl.style.height = '20px';
+                    labelEditorEl.addEventListener('keydown', (ev) => {
+                        if (ev.key === 'Enter') {
+                            commitInlineLabelEdit();
+                        } else if (ev.key === 'Escape') {
+                            cancelInlineLabelEdit();
+                        }
+                        ev.stopPropagation();
+                    });
+                    labelEditorEl.addEventListener('blur', () => {
+                        if (labelEditorEl && !labelEditorEl.classList.contains('hidden')) commitInlineLabelEdit();
+                    });
+                    detailContainer.appendChild(labelEditorEl);
+                }
 
                 // Wheel zoom
                 detailCanvas.addEventListener('wheel', (e) => {
@@ -2069,17 +2289,16 @@
                     }
                 });
 
-                // Double-click: edit label on detail canvas
+                // Double-click: edit label on detail canvas (inline text input)
                 detailCanvas.addEventListener('dblclick', (e) => {
                     const rect = detailCanvas.getBoundingClientRect();
                     const x = (e.clientX - rect.left - detailPanX) / detailZoom;
                     const y = (e.clientY - rect.top - detailPanY) / detailZoom;
 
-                    // Check label bounds
+                    // Check label bounds and start inline edit
                     for (let i = 0; i < detailRebarLabelBounds.length; i++) {
                         const lb = detailRebarLabelBounds[i];
                         if (x >= lb.x && x <= lb.x + lb.width && y >= lb.y && y <= lb.y + lb.height) {
-                            // Use inline label edit (same as main canvas)
                             startInlineLabelEdit(lb);
                             return;
                         }
@@ -2200,6 +2419,9 @@
             currentGroup = data.groups[currentGroupIndex];
             document.getElementById('groupSelect').value = currentGroupIndex;
 
+            // Reset span highlight to full beam when switching groups
+            highlightedSpanIndex = -1;
+
             // V7.0: Mặc định chọn option 0
             selectedOptionKey = String(currentGroup?.SelectedBackboneIndex || 0);
 
@@ -2255,124 +2477,8 @@
             if (el) el.textContent = Math.round(canvasZoom * 100) + '%';
         }
 
-        function startInlineLabelEdit(label) {
-            if (!label || !currentGroup?.Spans?.[label.spanIndex]) return;
-            if (!labelEditorEl) {
-                // Fallback to prompt-based edit if overlay couldn't be created
-                const span = currentGroup.Spans[label.spanIndex];
-                if (label.type === 'Stirrup' || label.type === 'WebBar') {
-                    const idx = Number.isFinite(label.pos) ? label.pos : 0;
-                    const isStirrup = label.type === 'Stirrup';
-                    const currentVal = (isStirrup ? (span?.Stirrup?.[idx] || '') : (span?.WebBar?.[idx] || '')).toString();
-                    const title = `${isStirrup ? 'ĐAI' : 'SƯỜN'} - Nhịp ${span.SpanId || (label.spanIndex + 1)} (${idx === 0 ? 'L1' : (idx === 1 ? 'Giữa' : 'L2')})`;
-                    const nextVal = prompt(title, currentVal);
-                    if (nextVal === null) return;
-                    if (isStirrup) updateStirrup(label.spanIndex, idx, nextVal);
-                    else updateWebBar(label.spanIndex, idx, nextVal);
-                    maybeRenderTable();
-                    return;
-                }
-                const layer = Number.isFinite(label.layer) ? label.layer : 0;
-                const pos = Number.isFinite(label.pos) ? label.pos : 2;
-                const currentVal = getLayerRebarText(span, label.type, layer, pos);
-                const posName = (pos === 0 ? 'Trái' : (pos === 4 ? 'Phải' : 'Giữa'));
-                const title = `${label.type === 'Top' ? 'THÉP TRÊN' : 'THÉP DƯỚI'} - Nhịp ${span.SpanId || (label.spanIndex + 1)} (Layer ${layer + 1}, ${posName})`;
-                const nextVal = prompt(title, currentVal);
-                if (nextVal === null) return;
-                updateLayerRebar(label.spanIndex, label.type, layer, pos, nextVal);
-                maybeRenderTable();
-                return;
-            }
-
-            activeLabelEdit = label;
-
-            const canvas = document.getElementById('beamCanvas');
-            const container = document.getElementById('canvasContainer');
-            if (!canvas || !container) return;
-
-            const rect = canvas.getBoundingClientRect();
-            const containerRect = container.getBoundingClientRect();
-
-            // Convert label world coords to canvas screen coords
-            const sx = label.x * canvasZoom + canvasPanX;
-            const sy = label.y * canvasZoom + canvasPanY;
-            const sw = label.width * canvasZoom;
-            const sh = label.height * canvasZoom;
-
-            // Position relative to container
-            const left = (rect.left - containerRect.left) + sx;
-            const top = (rect.top - containerRect.top) + sy;
-
-            labelEditorEl.style.left = Math.max(0, left) + 'px';
-            labelEditorEl.style.top = Math.max(0, top) + 'px';
-            labelEditorEl.style.width = Math.max(60, sw) + 'px';
-            labelEditorEl.style.height = Math.max(18, sh) + 'px';
-
-            const span = currentGroup.Spans[label.spanIndex];
-            if (label.type === 'Stirrup') {
-                const idx = Number.isFinite(label.pos) ? label.pos : 0;
-                labelEditorEl.value = (span?.Stirrup?.[idx] || '').toString();
-            } else if (label.type === 'WebBar') {
-                const idx = Number.isFinite(label.pos) ? label.pos : 0;
-                labelEditorEl.value = (span?.WebBar?.[idx] || '').toString();
-            } else {
-                const layer = Number.isFinite(label.layer) ? label.layer : 0;
-                const pos = Number.isFinite(label.pos) ? label.pos : 2;
-                labelEditorEl.value = getLayerRebarText(span, label.type, layer, pos);
-            }
-            labelEditorEl.classList.remove('hidden');
-            labelEditorEl.focus();
-            labelEditorEl.select();
-        }
-
-        function commitInlineLabelEdit() {
-            if (!activeLabelEdit || !labelEditorEl) {
-                hideInlineLabelEditor();
-                return;
-            }
-            const nextVal = labelEditorEl.value;
-            if (activeLabelEdit.type === 'Stirrup') {
-                const idx = Number.isFinite(activeLabelEdit.pos) ? activeLabelEdit.pos : 0;
-                updateStirrup(activeLabelEdit.spanIndex, idx, nextVal);
-                maybeRenderTable();
-                renderCanvas();
-                hideInlineLabelEditor();
-                return;
-            }
-            if (activeLabelEdit.type === 'WebBar') {
-                const idx = Number.isFinite(activeLabelEdit.pos) ? activeLabelEdit.pos : 0;
-                updateWebBar(activeLabelEdit.spanIndex, idx, nextVal);
-                maybeRenderTable();
-                renderCanvas();
-                hideInlineLabelEditor();
-                return;
-            }
-            const layer = Number.isFinite(activeLabelEdit.layer) ? activeLabelEdit.layer : 0;
-            const pos = Number.isFinite(activeLabelEdit.pos) ? activeLabelEdit.pos : 2;
-            updateLayerRebar(activeLabelEdit.spanIndex, activeLabelEdit.type, layer, pos, nextVal);
-            maybeRenderTable();
-            renderCanvas(); // Ensure canvas refreshes to clear old labels
-            hideInlineLabelEditor();
-        }
-
-        function cancelInlineLabelEdit() {
-            hideInlineLabelEditor();
-        }
-
-        function hideInlineLabelEditor() {
-            activeLabelEdit = null;
-            if (!labelEditorEl) return;
-            labelEditorEl.classList.add('hidden');
-            labelEditorEl.value = '';
-        }
-
-        function getLayerRebarText(span, type, layer, pos) {
-            if (!span) return '';
-            const arr = (type === 'Top') ? span.TopRebar : span.BotRebar;
-            const layerArr = arr?.[layer] || [];
-            const v = layerArr?.[pos];
-            return (v === undefined || v === null) ? '' : String(v);
-        }
+        // NOTE: Inline label edit functions (startInlineLabelEdit, commitInlineLabelEdit, etc.) 
+        // moved to lines 752-859 to use detailCanvas instead of beamCanvas
 
         // Backward compatible helper (kept for other UI pieces)
         function getSpanRebarText(span, type) {
@@ -3114,8 +3220,8 @@
                     tr.dataset.spanIndex = spanIdx;
 
                     // Mouse events for sync
-                    tr.addEventListener('mouseenter', () => highlightSpan(spanIdx));
-                    tr.addEventListener('mouseleave', clearHighlight);
+                    // DISABLED: mouseenter/mouseleave - hover should NOT change selection
+                    // User requested: only CLICK changes span selection
                     // FIX: Click to select span persistently (update highlight on plan view)
                     tr.addEventListener('click', () => {
                         highlightSpan(spanIdx);
@@ -3211,54 +3317,7 @@
             return html;
         }
 
-        // Update rebar value for a specific layer
-        function updateLayerRebar(spanIndex, type, layer, pos, value) {
-            const arr = type === 'Top' ? 'TopRebar' : 'BotRebar';
-
-            // BACKBONE LOGIC: Layer 0 is continuous across ALL spans
-            if (layer === 0) {
-                // Update ALL spans, ALL positions (0, 2, 4) for Layer 0
-                currentGroup.Spans.forEach(span => {
-                    if (!span[arr]) span[arr] = [];
-                    while (span[arr].length <= layer) span[arr].push([]);
-                    if (!span[arr][layer]) span[arr][layer] = [];
-                    span[arr][layer][0] = value; // Left
-                    span[arr][layer][2] = value; // Mid
-                    span[arr][layer][4] = value; // Right
-                });
-                autoLockOnEdit();
-                showToast(`✓ Cốt chủ ${type} đã cập nhật toàn bộ nhịp: ${value}`);
-                maybeRenderTable();
-                renderCanvas();
-                return;
-            }
-
-            // ADDON LOGIC: Layer 1+ is per-span, per-position
-            const span = currentGroup.Spans[spanIndex];
-            if (!span[arr]) span[arr] = [];
-            while (span[arr].length <= layer) span[arr].push([]);
-            if (!span[arr][layer]) span[arr][layer] = [];
-
-            span[arr][layer][pos] = value;
-
-            // Mark as user edited
-            autoLockOnEdit();
-
-            // Auto apply to subsequent spans (for Layer 1+)
-            if (document.getElementById('autoApply').checked) {
-                for (let i = spanIndex + 1; i < currentGroup.Spans.length; i++) {
-                    if (currentGroup.Spans[i].IsActive !== false) {
-                        const s = currentGroup.Spans[i];
-                        if (!s[arr]) s[arr] = [];
-                        while (s[arr].length <= layer) s[arr].push([]);
-                        if (!s[arr][layer]) s[arr][layer] = [];
-                        s[arr][layer][pos] = value;
-                    }
-                }
-                maybeRenderTable();
-            }
-            renderCanvas();
-        }
+        // NOTE: updateLayerRebar moved to line 688 (uses renderDetailCanvas)
 
         // ============ DATA UPDATE FUNCTIONS ============
         function toggleSpanActive(index, active) {
@@ -3299,29 +3358,7 @@
             renderCanvas();
         }
 
-        function updateStirrup(spanIndex, pos, value) {
-            const span = currentGroup.Spans[spanIndex];
-            if (!span.Stirrup) span.Stirrup = [];
-            span.Stirrup[pos] = value;
-
-            // ===== AUTO-LOCK: Tự động chốt khi sửa tay =====
-            autoLockOnEdit();
-
-            maybeRenderTable();
-            renderCanvas();
-        }
-
-        function updateWebBar(spanIndex, pos, value) {
-            const span = currentGroup.Spans[spanIndex];
-            if (!span.WebBar) span.WebBar = [];
-            span.WebBar[pos] = value;
-
-            // ===== AUTO-LOCK: Tự động chốt khi sửa tay =====
-            autoLockOnEdit();
-
-            maybeRenderTable();
-            renderCanvas();
-        }
+        // NOTE: updateStirrup moved to line 734, updateWebBar to line 743 (use renderDetailCanvas)
 
         function updateSideBar(spanIndex, value) {
             currentGroup.Spans[spanIndex].SideBar = value;
@@ -3522,6 +3559,59 @@
             return -1;
         }
 
+        // NEW: Find span index at click position (for quick span selection)
+        function findSpanAtClickPosition(clickedBeam, screenX, screenY) {
+            if (!currentGroup?.Spans || currentGroup.Spans.length === 0) return -1;
+
+            // For single-beam groups, just return 0
+            if (currentGroup.Spans.length === 1) return 0;
+
+            // Get canvas and transforms
+            const canvas = document.getElementById('beamCanvas');
+            if (!canvas) return -1;
+
+            // Calculate story-based bounds
+            const z = Beam.State.currentStoryZ;
+            const Z_TOL = 500;
+            const beamsOnStory = data.allBeams.filter(b => Math.abs((b.LevelZ || 0) - z) < Z_TOL);
+            if (beamsOnStory.length === 0) return -1;
+
+            const allX = beamsOnStory.flatMap(b => [b.StartX, b.EndX]);
+            const allY = beamsOnStory.flatMap(b => [b.StartY, b.EndY]);
+            if (allX.length === 0) return -1;
+
+            const minX = Math.min(...allX) - 2000;
+            const maxX = Math.max(...allX) + 2000;
+            const minY = Math.min(...allY) - 2000;
+            const maxY = Math.max(...allY) + 2000;
+
+            const scaleX = (canvas.width - 40) / (maxX - minX);
+            const scaleY = (canvas.height - 40) / (maxY - minY);
+            const baseScale = Math.min(scaleX, scaleY) * 0.85;
+            const baseOffsetX = 20 - minX * baseScale;
+            const baseOffsetY = 20 - minY * baseScale;
+
+            // Find which span entity was clicked
+            const groupHandles = currentGroup.EntityHandles || [];
+            for (let spanIdx = 0; spanIdx < groupHandles.length; spanIdx++) {
+                const beam = data.allBeams.find(b => b.Handle === groupHandles[spanIdx]);
+                if (!beam) continue;
+
+                // Transform beam coords to screen
+                const x1 = (beam.StartX * baseScale + baseOffsetX) * canvasZoom + canvasPanX;
+                const y1 = (canvas.height - (beam.StartY * baseScale + baseOffsetY)) * canvasZoom + canvasPanY;
+                const x2 = (beam.EndX * baseScale + baseOffsetX) * canvasZoom + canvasPanX;
+                const y2 = (canvas.height - (beam.EndY * baseScale + baseOffsetY)) * canvasZoom + canvasPanY;
+
+                // Check if click is near this beam segment
+                const dist = pointToLineDistance(screenX, screenY, x1, y1, x2, y2);
+                if (dist < 10) {
+                    return spanIdx;
+                }
+            }
+            return -1;
+        }
+
         // FIX 4: Show properties for clicked beam
         function showBeamProperties(beam) {
             const panel = document.getElementById('propertiesPanel');
@@ -3573,29 +3663,54 @@
             if (helpOverlay) helpOverlay.style.bottom = `${bottomOffset}px`;
         }
 
-        // FIX 3: Tab key to cycle through beams in current group
+        // FIX 3: Tab key to cycle through SPANS in current group (synced with mouse)
         document.addEventListener('keydown', (e) => {
             if (e.key === 'Tab' && canvasMode === 'plan') {
                 e.preventDefault();
 
-                // Get current group's beams
-                const handles = currentGroup?.EntityHandles || [];
-                if (handles.length === 0) return;
+                // Get current group's spans
+                const spanCount = currentGroup?.Spans?.length || 0;
+                if (spanCount === 0) return;
 
                 // Cycle: -1 (all) -> 0 -> 1 -> ... -> last -> -1 (all)
-                selectedBeamIndex = selectedBeamIndex + 1;
-                if (selectedBeamIndex >= handles.length) {
-                    selectedBeamIndex = -1;  // Back to all
-                }
-
-                // Update message
-                if (selectedBeamIndex === -1) {
-                    showToast(`Chế độ: Cả nhóm (${handles.length} dầm)`);
+                if (highlightedSpanIndex === -1) {
+                    // Full beam → start from span 0
+                    highlightedSpanIndex = 0;
                 } else {
-                    showToast(`Dầm ${selectedBeamIndex + 1}/${handles.length}`);
+                    // Next span
+                    highlightedSpanIndex = highlightedSpanIndex + 1;
+                    if (highlightedSpanIndex >= spanCount) {
+                        highlightedSpanIndex = -1;  // Back to full beam
+                    }
                 }
 
-                render();
+                // Update message and sync all views
+                if (highlightedSpanIndex === -1) {
+                    showToast(`Chế độ: Cả nhóm (${spanCount} nhịp)`);
+                } else {
+                    showToast(`Nhịp ${highlightedSpanIndex + 1}/${spanCount}`);
+                }
+
+                // Sync all views like highlightSpan does
+                renderCanvas();
+                renderDetailCanvas();
+                renderTable();
+
+                // Scroll table to highlighted row
+                if (highlightedSpanIndex >= 0) {
+                    const row = document.querySelector(`[data-span-index="${highlightedSpanIndex}"]`);
+                    if (row) {
+                        const container = document.getElementById('tablePanelContent');
+                        if (container) {
+                            const rowTop = row.offsetTop;
+                            const containerHeight = container.clientHeight;
+                            container.scrollTo({
+                                top: rowTop - containerHeight / 2 + row.offsetHeight / 2,
+                                behavior: 'smooth'
+                            });
+                        }
+                    }
+                }
             }
         });
 
@@ -3765,6 +3880,7 @@
             updateRebar,
             updateLayerRebar,
             updateStirrup,
+            updateWebBar,
             updateSideBar,
             renderLayerRebarInputs,
             renderStirrupInputs,
