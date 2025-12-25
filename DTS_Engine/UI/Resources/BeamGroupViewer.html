@@ -143,45 +143,36 @@
                 <!-- Only copyFormat and Reset buttons in header now - Group controls moved to Plan toolbar -->
                 <button class="px-2 py-1 bg-slate-700 hover:bg-slate-600 text-white rounded text-xs"
                     onclick="copyFormat()" title="Copy Format"><i class="fa-solid fa-paintbrush"></i></button>
-                <button class="px-2 py-1 bg-slate-700 hover:bg-slate-600 text-white rounded text-xs"
-                    onclick="resetCanvasView()" title="Reset View / Zoom to fit"><i
-                        class="fa-solid fa-arrows-to-dot"></i></button>
             </div>
         </div>
     </header>
 
     <!-- MAIN -->
-    <main class="flex-1 flex flex-col overflow-hidden relative">
-        <!-- CANVAS CONTAINER - Full height, table overlays on top -->
-        <div class="absolute inset-0 bg-white border-b border-slate-200 overflow-hidden" id="canvasContainer">
-            <canvas id="beamCanvas" height="360"></canvas>
-            <!-- View Mode Toggle: Plan | Section | Long Rebar | Shear-Web -->
-            <div class="absolute top-12 right-2 flex gap-1 z-20">
-                <button onclick="setCanvasMode('plan')" id="modePlan"
-                    class="px-2 py-1 bg-slate-600 text-white text-[10px] rounded hover:bg-slate-500 shadow">Plan</button>
-                <button onclick="setCanvasMode('section')" id="modeSection"
-                    class="px-2 py-1 bg-slate-600 text-white text-[10px] rounded hover:bg-slate-500 shadow">Section</button>
-                <button onclick="setCanvasMode('long')" id="modeLong"
-                    class="px-2 py-1 bg-blue-600 text-white text-[10px] rounded hover:bg-blue-500 shadow">Long
-                    Rebar</button>
-                <button onclick="setCanvasMode('shear')" id="modeShear"
-                    class="px-2 py-1 bg-slate-600 text-white text-[10px] rounded hover:bg-slate-500 shadow">Shear-Web</button>
-            </div>
-            <!-- Story dropdown (visible only in Plan mode) -->
-            <div id="storyDropdownContainer" class="absolute top-12 left-2 z-20 hidden">
+    <main class="flex-1 flex overflow-hidden relative">
+        <!-- PLAN CANVAS - Full window, behind overlays -->
+        <div class="absolute inset-0 bg-white overflow-hidden" id="planCanvasContainer">
+            <canvas id="beamCanvas"></canvas>
+            <!-- Story dropdown (visible in Plan mode - default) -->
+            <div id="storyDropdownContainer" class="absolute top-2 left-2 z-20">
                 <select id="storySelect" onchange="loadStory(this.value)"
                     class="bg-slate-800 border border-slate-600 text-white px-2 py-1 rounded text-xs"></select>
             </div>
-            <!-- Zoom indicator - positioned above table panel -->
+            <!-- Zoom indicator -->
             <div id="zoomIndicator"
-                class="absolute right-2 bg-slate-800/70 text-white text-[10px] px-2 py-0.5 rounded z-20"
-                style="bottom: 320px;">100%</div>
-            <!-- Help overlay - positioned above table panel -->
-            <div id="helpOverlay" class="absolute left-2 text-[9px] text-slate-400 bg-white/70 px-1 rounded z-20"
-                style="bottom: 320px;">Click: Select | Box: Zoom | Alt+Drag: Pan | Wheel: Zoom | Tab: Next beam</div>
+                class="absolute bottom-2 right-2 bg-slate-800/70 text-white text-[10px] px-2 py-0.5 rounded z-20">100%
+            </div>
+            <!-- Zoom Fit button (top right corner) -->
+            <button onclick="resetPlanCanvasView()" title="Zoom to fit"
+                class="absolute top-2 right-2 w-8 h-8 bg-slate-600/80 hover:bg-slate-500 text-white text-sm rounded flex items-center justify-center z-20">
+                <i class="fa-solid fa-arrows-to-dot"></i>
+            </button>
+            <!-- Help overlay -->
+            <div id="helpOverlay"
+                class="absolute bottom-2 left-2 text-[9px] text-slate-400 bg-white/70 px-1 rounded z-20">
+                Click: Select | Box: Zoom | Alt+Drag: Pan | Wheel: Zoom | Tab: Next beam</div>
 
-            <!-- Plan View Floating Toolbar (Group operations) - Clean transparent design -->
-            <div id="planToolbar" class="hidden absolute top-24 left-2 z-20 flex flex-col gap-1">
+            <!-- Plan View Floating Toolbar (Group operations) -->
+            <div id="planToolbar" class="absolute top-2 left-40 z-20 flex gap-1">
                 <!-- Detach -->
                 <button onclick="sendDetachSelected()" title="Tách dầm (Detach)"
                     class="w-8 h-8 bg-slate-600/80 hover:bg-slate-500 text-white text-sm rounded flex items-center justify-center">
@@ -205,50 +196,134 @@
             </div>
         </div>
 
-        <!-- METRICS BAR - Overlay at top -->
-        <div id="metricsBar"
-            class="absolute top-0 left-0 right-0 bg-slate-50/95 backdrop-blur border-b border-slate-200 px-4 py-2 flex items-center gap-6 text-xs flex-wrap z-10">
-            <div class="flex items-center gap-2">
-                <span class="text-slate-500">Backbone:</span>
-                <span class="font-bold text-blue-600" id="metricBackbone">-</span>
+        <!-- FLOATING TOGGLE BUTTONS - Visible when sidebars are collapsed -->
+        <!-- Right Sidebar Toggle (when collapsed) -->
+        <button id="rightSidebarFloatBtn" onclick="toggleRightSidebar()" title="Mở Metrics & Table"
+            class="hidden absolute right-0 top-1/2 -translate-y-1/2 w-6 h-16 bg-slate-700 hover:bg-slate-600 text-white rounded-l z-30 flex items-center justify-center">
+            <i class="fa-solid fa-chevron-left text-xs"></i>
+        </button>
+
+        <!-- Detail Panel Toggle (when collapsed) -->
+        <button id="detailPanelFloatBtn" onclick="toggleDetailPanel()" title="Mở Detail Panel"
+            class="hidden absolute bottom-0 left-1/2 -translate-x-1/2 w-16 h-6 bg-slate-700 hover:bg-slate-600 text-white rounded-t z-30 flex items-center justify-center"
+            style="margin-bottom: 0;">
+            <i class="fa-solid fa-chevron-up text-xs"></i>
+        </button>
+
+        <!-- RIGHT SIDEBAR - Collapsible overlay (Metrics + Table) -->
+        <div id="rightSidebar"
+            class="absolute right-0 top-0 bottom-0 w-80 bg-slate-50/95 backdrop-blur border-l border-slate-300 shadow-lg z-20 transition-transform duration-300 flex flex-col">
+
+            <!-- METRICS BAR - Top of sidebar with toggle in title -->
+            <div id="metricsBar" class="flex-none bg-slate-100 border-b border-slate-200 p-3">
+                <div onclick="toggleRightSidebar()"
+                    class="flex justify-between items-center cursor-pointer hover:bg-slate-200 -m-2 p-2 rounded mb-2">
+                    <span class="text-xs font-bold text-slate-600">📊 Metrics & Table</span>
+                    <i id="rightSidebarIcon" class="fa-solid fa-chevron-right text-xs text-slate-400"></i>
+                </div>
+                <div class="grid grid-cols-2 gap-2 text-xs">
+                    <div class="flex items-center gap-1">
+                        <span class="text-slate-500">Backbone:</span>
+                        <span class="font-bold text-blue-600" id="metricBackbone">-</span>
+                    </div>
+                    <div class="flex items-center gap-1">
+                        <span class="text-slate-500">As:</span>
+                        <span class="font-bold" id="metricAs">-</span>
+                    </div>
+                    <div class="flex items-center gap-1">
+                        <span class="text-slate-500">Waste:</span>
+                        <span class="font-bold" id="metricWaste">-</span>
+                    </div>
+                    <div class="flex items-center gap-1">
+                        <span class="text-slate-500">Weight:</span>
+                        <span class="font-bold" id="metricWeight">-</span>
+                    </div>
+                    <div class="flex items-center gap-1">
+                        <span class="text-slate-500">Score:</span>
+                        <span class="font-bold text-green-600" id="metricScore">-</span>
+                    </div>
+                </div>
+                <!-- Visual Indicators -->
+                <div id="visualIndicators" class="flex items-center gap-2 mt-2">
+                    <span id="motherIndicator" class="hidden text-yellow-500 text-xs"
+                        title="Mother beam (Span 0)">👑</span>
+                    <span id="lockedIndicator" class="hidden text-red-500 text-xs" title="Design locked">🔒</span>
+                    <span id="brokenChainIndicator" class="hidden text-orange-500 text-xs"
+                        title="SpanIndex gap detected">🔗❌</span>
+                    <span id="manualEditIndicator" class="hidden text-yellow-400 text-xs"
+                        title="Manually edited">⚠️</span>
+                </div>
+                <!-- Stale Geometry Warning -->
+                <div id="staleGeometryBanner"
+                    class="hidden mt-2 flex items-center gap-2 px-2 py-1 bg-amber-100 text-amber-800 rounded text-xs border border-amber-300">
+                    <i class="fa-solid fa-triangle-exclamation"></i>
+                    <span>Geometry đã thay đổi!</span>
+                    <button onclick="quickCalc()"
+                        class="px-2 py-0.5 bg-amber-600 hover:bg-amber-500 text-white rounded text-xs">Tính lại</button>
+                </div>
+                <div id="warningsContainer" class="flex gap-2 mt-2"></div>
             </div>
-            <div class="flex items-center gap-2">
-                <span class="text-slate-500">As:</span>
-                <span class="font-bold" id="metricAs">-</span>
+
+            <!-- TABLE SECTION - Scrollable -->
+            <div id="tablePanel" class="flex-1 flex flex-col overflow-hidden">
+                <div class="flex-none p-2 bg-slate-100 border-b border-slate-200">
+                    <div class="flex items-center gap-2 text-xs">
+                        <label class="flex items-center gap-1">
+                            <input type="checkbox" id="autoApply" checked class="w-3.5 h-3.5">
+                            Auto Apply
+                        </label>
+                        <button class="px-2 py-1 bg-slate-200 hover:bg-slate-300 rounded text-xs"
+                            onclick="selectAllSpans()">All</button>
+                        <button class="px-2 py-1 bg-slate-200 hover:bg-slate-300 rounded text-xs"
+                            onclick="selectNoneSpans()">None</button>
+                        <span id="groupInfo" class="ml-auto text-slate-500">-</span>
+                    </div>
+                </div>
+                <div id="tablePanelContent" class="flex-1 overflow-auto p-2">
+                    <div class="bg-white rounded border border-slate-200 overflow-hidden">
+                        <table class="table-fixed w-max text-xs whitespace-nowrap">
+                            <thead class="bg-slate-100 sticky top-0">
+                                <tr>
+                                    <th class="p-1 text-left w-14" rowspan="2">Nhịp</th>
+                                    <th class="p-1 text-center w-8" rowspan="2">✓</th>
+                                    <th class="p-1 text-center w-10" rowspan="2">L(m)</th>
+                                    <th class="p-1 text-center w-12" rowspan="2">b×h</th>
+                                    <th class="p-1 text-center w-8" rowspan="2">Lớp</th>
+                                    <th colspan="3" class="p-1 text-center bg-red-50 text-red-700 text-[10px]">THÉP TRÊN
+                                    </th>
+                                    <th colspan="3" class="p-1 text-center bg-blue-50 text-blue-700 text-[10px]">THÉP
+                                        DƯỚI</th>
+                                    <th colspan="3" class="p-1 text-center bg-slate-100 text-[10px]">ĐAI</th>
+                                    <th class="p-1 text-center w-12" rowspan="2">Sidebar</th>
+                                </tr>
+                                <tr class="text-[10px] text-slate-500">
+                                    <th class="p-1 bg-red-50 w-12">Gối T</th>
+                                    <th class="p-1 bg-red-50 w-12">Giữa</th>
+                                    <th class="p-1 bg-red-50 w-12">Gối P</th>
+                                    <th class="p-1 bg-blue-50 w-12">Gối T</th>
+                                    <th class="p-1 bg-blue-50 w-12">Giữa</th>
+                                    <th class="p-1 bg-blue-50 w-12">Gối P</th>
+                                    <th class="p-1 w-12">L1</th>
+                                    <th class="p-1 w-12">Mid</th>
+                                    <th class="p-1 w-12">L2</th>
+                                </tr>
+                            </thead>
+                            <tbody id="spanTableBody"></tbody>
+                        </table>
+                    </div>
+                    <div class="mt-3 flex items-center gap-3">
+                        <label class="text-xs text-slate-500">Stirrup pattern:</label>
+                        <input type="text" id="stirrupPattern" value="d8a100/150/100"
+                            class="border border-slate-300 rounded px-2 py-1 text-xs w-32">
+                        <button class="px-2 py-1 bg-slate-200 hover:bg-slate-300 rounded text-xs"
+                            onclick="applyStirrupPattern()">Apply</button>
+                    </div>
+                </div>
             </div>
-            <div class="flex items-center gap-2">
-                <span class="text-slate-500">Waste:</span>
-                <span class="font-bold" id="metricWaste">-</span>
-            </div>
-            <div class="flex items-center gap-2">
-                <span class="text-slate-500">Weight:</span>
-                <span class="font-bold" id="metricWeight">-</span>
-            </div>
-            <div class="flex items-center gap-2">
-                <span class="text-slate-500">Score:</span>
-                <span class="font-bold text-green-600" id="metricScore">-</span>
-            </div>
-            <!-- V5.0: Visual Indicators (per spec Section 9.6) -->
-            <div id="visualIndicators" class="flex items-center gap-2">
-                <span id="motherIndicator" class="hidden text-yellow-500 text-xs" title="Mother beam (Span 0)">👑</span>
-                <span id="lockedIndicator" class="hidden text-red-500 text-xs" title="Design locked">🔒</span>
-                <span id="brokenChainIndicator" class="hidden text-orange-500 text-xs"
-                    title="SpanIndex gap detected">🔗❌</span>
-                <span id="manualEditIndicator" class="hidden text-yellow-400 text-xs" title="Manually edited">⚠️</span>
-            </div>
-            <!-- V5.0: Stale Geometry Warning -->
-            <div id="staleGeometryBanner"
-                class="hidden flex items-center gap-2 px-2 py-1 bg-amber-100 text-amber-800 rounded text-xs border border-amber-300">
-                <i class="fa-solid fa-triangle-exclamation"></i>
-                <span>Geometry đã thay đổi - Cần tính lại!</span>
-                <button onclick="quickCalc()"
-                    class="px-2 py-0.5 bg-amber-600 hover:bg-amber-500 text-white rounded text-xs">Tính lại</button>
-            </div>
-            <div id="warningsContainer" class="flex gap-2"></div>
         </div>
 
-        <!-- V5.0: Floating Properties Panel (per spec Section 9.2) -->
-        <div id="propertiesPanel" class="hidden absolute right-4 top-20 w-72 bg-white shadow-lg rounded border z-30">
+        <!-- V5.0: Floating Properties Panel -->
+        <div id="propertiesPanel" class="hidden absolute left-4 top-12 w-72 bg-white shadow-lg rounded border z-30">
             <div class="p-3 bg-slate-100 border-b font-bold text-xs flex justify-between items-center">
                 <span>🏗️ Span Properties</span>
                 <button onclick="closePropertiesPanel()" class="text-slate-500 hover:text-red-500">&times;</button>
@@ -296,73 +371,48 @@
             </div>
         </div>
 
-        <!-- COLLAPSIBLE TABLE SECTION - Overlay at bottom -->
-        <div id="tablePanel"
-            class="absolute bottom-0 left-0 right-0 bg-slate-50/95 backdrop-blur border-t border-slate-300 transition-all duration-300 ease-in-out max-h-[300px] overflow-hidden z-10">
-            <!-- Toggle Button -->
-            <button onclick="toggleTablePanel()"
-                class="w-full py-1 bg-slate-200 hover:bg-slate-300 flex items-center justify-center gap-2 text-xs text-slate-600">
-                <i id="tablePanelIcon" class="fa-solid fa-chevron-down"></i>
-                <span id="tablePanelLabel">Bảng chi tiết nhịp</span>
-            </button>
-            <div id="tablePanelContent" class="p-3 overflow-auto max-h-[260px]">
-                <div class="flex items-center gap-3 mb-2">
-                    <label class="flex items-center gap-1 text-xs">
-                        <input type="checkbox" id="autoApply" checked class="w-3.5 h-3.5">
-                        Auto Apply
-                    </label>
-                    <button class="px-2 py-1 bg-slate-200 hover:bg-slate-300 rounded text-xs"
-                        onclick="selectAllSpans()">Select All</button>
-                    <button class="px-2 py-1 bg-slate-200 hover:bg-slate-300 rounded text-xs"
-                        onclick="selectNoneSpans()">Select None</button>
-                    <div class="ml-auto text-xs text-slate-500">
-                        <span id="groupInfo">-</span>
-                    </div>
-                </div>
+        <!-- BOTTOM DETAIL PANEL - Collapsible overlay (40% viewport height) -->
+        <div id="detailPanel"
+            class="absolute left-0 bottom-0 bg-white border-t border-slate-300 shadow-lg z-20 transition-transform duration-300 flex flex-col"
+            style="right: 320px; height: 40vh;">
 
-                <div class="bg-white rounded border border-slate-200 overflow-hidden">
-                    <table class="table-fixed w-max text-xs whitespace-nowrap">
-                        <thead class="bg-slate-100 sticky top-0">
-                            <tr>
-                                <th class="p-1 text-left w-14" rowspan="2">Nhịp</th>
-                                <th class="p-1 text-center w-8" rowspan="2">✓</th>
-                                <th class="p-1 text-center w-10" rowspan="2">L(m)</th>
-                                <th class="p-1 text-center w-12" rowspan="2">b×h</th>
-                                <th class="p-1 text-center w-8" rowspan="2">Lớp</th>
-                                <th colspan="3" class="p-1 text-center bg-red-50 text-red-700 text-[10px]">THÉP TRÊN
-                                </th>
-                                <th colspan="3" class="p-1 text-center bg-blue-50 text-blue-700 text-[10px]">THÉP DƯỚI
-                                </th>
-                                <th colspan="3" class="p-1 text-center bg-slate-100 text-[10px]">ĐAI</th>
-                                <th class="p-1 text-center w-12" rowspan="2">Sidebar</th>
-                            </tr>
-                            <tr class="text-[10px] text-slate-500">
-                                <th class="p-1 bg-red-50 w-12">Gối T</th>
-                                <th class="p-1 bg-red-50 w-12">Giữa</th>
-                                <th class="p-1 bg-red-50 w-12">Gối P</th>
-                                <th class="p-1 bg-blue-50 w-12">Gối T</th>
-                                <th class="p-1 bg-blue-50 w-12">Giữa</th>
-                                <th class="p-1 bg-blue-50 w-12">Gối P</th>
-                                <th class="p-1 w-12">L1</th>
-                                <th class="p-1 w-12">Mid</th>
-                                <th class="p-1 w-12">L2</th>
-                            </tr>
-                        </thead>
-                        <tbody id="spanTableBody"></tbody>
-                    </table>
-                </div>
+            <!-- Simple title bar with toggle -->
+            <div class="flex-none flex items-center gap-2 px-3 py-1 bg-slate-100 border-b border-slate-200">
+                <button onclick="toggleDetailPanel()" title="Toggle Panel"
+                    class="w-6 h-6 bg-slate-600 hover:bg-slate-500 text-white text-xs rounded flex items-center justify-center">
+                    <i id="detailPanelIcon" class="fa-solid fa-chevron-down"></i>
+                </button>
+                <span class="text-xs font-bold text-slate-600">📐 Detail View</span>
+            </div>
 
-                <div class="mt-3 flex items-center gap-3">
-                    <label class="text-xs text-slate-500">Stirrup pattern:</label>
-                    <input type="text" id="stirrupPattern" value="d8a100/150/100"
-                        class="border border-slate-300 rounded px-2 py-1 text-xs w-32">
-                    <button class="px-2 py-1 bg-slate-200 hover:bg-slate-300 rounded text-xs"
-                        onclick="applyStirrupPattern()">
-                        Apply to Active
+            <!-- Detail Canvas Container (relative for floating buttons) -->
+            <div class="flex-1 overflow-hidden bg-white relative" id="detailCanvasContainer">
+                <canvas id="detailCanvas"></canvas>
+
+                <!-- Floating toolbar (bottom right) with tabs and zoom -->
+                <div class="absolute bottom-2 right-2 z-20 flex gap-1">
+                    <button onclick="setDetailMode('long')" id="tabLong"
+                        class="w-8 h-8 bg-blue-600/80 hover:bg-blue-500 text-white text-xs rounded flex items-center justify-center"
+                        title="Long Rebar">
+                        <i class="fa-solid fa-grip-lines"></i>
+                    </button>
+                    <button onclick="setDetailMode('section')" id="tabSection"
+                        class="w-8 h-8 bg-slate-600/80 hover:bg-slate-500 text-white text-xs rounded flex items-center justify-center"
+                        title="Section">
+                        <i class="fa-solid fa-clone"></i>
+                    </button>
+                    <button onclick="setDetailMode('shear')" id="tabShear"
+                        class="w-8 h-8 bg-slate-600/80 hover:bg-slate-500 text-white text-xs rounded flex items-center justify-center"
+                        title="Shear-Web">
+                        <i class="fa-solid fa-bars"></i>
+                    </button>
+                    <button onclick="resetDetailCanvasView()" title="Zoom to fit"
+                        class="w-8 h-8 bg-slate-600/80 hover:bg-slate-500 text-white text-xs rounded flex items-center justify-center">
+                        <i class="fa-solid fa-arrows-to-dot"></i>
                     </button>
                 </div>
-            </div> <!-- End tablePanelContent -->
-        </div> <!-- End tablePanel -->
+            </div>
+        </div>
     </main>
 
     <!-- FOOTER -->
@@ -584,7 +634,8 @@
         let labelEditorEl = null;
         let activeLabelEdit = null;
         let highlightModeEnabled = false;
-        let canvasMode = 'long';
+        let canvasMode = 'plan'; // DEFAULT: Plan view is now main canvas mode
+        let detailMode = 'long';  // Detail panel mode: 'long' | 'section' | 'shear'
         let canvasZoom = 1.0;
         let canvasPanX = 0;
         let canvasPanY = 0;
@@ -597,6 +648,13 @@
         let boxZoomEndX = 0;
         let boxZoomEndY = 0;
         let tablePanelCollapsed = false;
+        // NEW: Sidebar collapse states
+        let rightSidebarCollapsed = false;
+        let detailPanelCollapsed = false;
+        // Detail canvas zoom/pan (separate from main canvas)
+        let detailZoom = 1.0;
+        let detailPanX = 0;
+        let detailPanY = 0;
         // FIX 5: Toggle group name labels on plan view
         let showGroupLabels = true;
         // FIX 3: Track selected beam (single vs group mode)
@@ -649,24 +707,24 @@
             const storyContainer = document.getElementById('storyDropdownContainer');
             const planToolbar = document.getElementById('planToolbar');
 
-            btnPlan.classList.toggle('bg-blue-600', mode === 'plan');
-            btnPlan.classList.toggle('bg-slate-600', mode !== 'plan');
-            btnSection.classList.toggle('bg-blue-600', mode === 'section');
-            btnSection.classList.toggle('bg-slate-600', mode !== 'section');
-            btnLong.classList.toggle('bg-blue-600', mode === 'long');
-            btnLong.classList.toggle('bg-slate-600', mode !== 'long');
-            btnShear.classList.toggle('bg-blue-600', mode === 'shear');
-            btnShear.classList.toggle('bg-slate-600', mode !== 'shear');
+            btnPlan?.classList.toggle('bg-blue-600', mode === 'plan');
+            btnPlan?.classList.toggle('bg-slate-600', mode !== 'plan');
+            btnSection?.classList.toggle('bg-blue-600', mode === 'section');
+            btnSection?.classList.toggle('bg-slate-600', mode !== 'section');
+            btnLong?.classList.toggle('bg-blue-600', mode === 'long');
+            btnLong?.classList.toggle('bg-slate-600', mode !== 'long');
+            btnShear?.classList.toggle('bg-blue-600', mode === 'shear');
+            btnShear?.classList.toggle('bg-slate-600', mode !== 'shear');
 
             // Show/hide Story dropdown and Plan Toolbar for Plan mode
             if (mode === 'plan') {
-                storyContainer.classList.remove('hidden');
+                storyContainer?.classList.remove('hidden');
                 planToolbar?.classList.remove('hidden');
                 selectedBeamIndex = -1; // Reset beam cycling
                 populateStoryDropdown();
                 renderPlanView();
             } else {
-                storyContainer.classList.add('hidden');
+                storyContainer?.classList.add('hidden');
                 planToolbar?.classList.add('hidden');
                 // FIX: Reset zoom/pan and auto-center when switching modes
                 canvasZoom = 1.0;
@@ -675,6 +733,390 @@
                 renderCanvas();
                 centerCanvas();  // Auto-center view
             }
+        }
+
+        // ============ NEW LAYOUT FUNCTIONS ============
+        function toggleRightSidebar() {
+            rightSidebarCollapsed = !rightSidebarCollapsed;
+            const sidebar = document.getElementById('rightSidebar');
+            const icon = document.getElementById('rightSidebarIcon');
+            const floatBtn = document.getElementById('rightSidebarFloatBtn');
+
+            if (rightSidebarCollapsed) {
+                sidebar.style.transform = 'translateX(100%)';
+                icon?.classList.remove('fa-chevron-right');
+                icon?.classList.add('fa-chevron-left');
+                floatBtn?.classList.remove('hidden');  // Show floating button
+            } else {
+                sidebar.style.transform = 'translateX(0)';
+                icon?.classList.remove('fa-chevron-left');
+                icon?.classList.add('fa-chevron-right');
+                floatBtn?.classList.add('hidden');  // Hide floating button
+            }
+
+            updateDetailPanelWidth();
+        }
+
+        function toggleDetailPanel() {
+            detailPanelCollapsed = !detailPanelCollapsed;
+            const panel = document.getElementById('detailPanel');
+            const icon = document.getElementById('detailPanelIcon');
+            const floatBtn = document.getElementById('detailPanelFloatBtn');
+
+            if (detailPanelCollapsed) {
+                panel.style.transform = 'translateY(100%)';
+                icon?.classList.remove('fa-chevron-down');
+                icon?.classList.add('fa-chevron-up');
+                floatBtn?.classList.remove('hidden');  // Show floating button
+            } else {
+                panel.style.transform = 'translateY(0)';
+                icon?.classList.remove('fa-chevron-up');
+                icon?.classList.add('fa-chevron-down');
+                floatBtn?.classList.add('hidden');  // Hide floating button
+                // Re-render detail canvas when panel is expanded
+                resizeDetailCanvas();
+            }
+        }
+
+        // NOTE: renderPlanView() is defined later (line 1212) and renders the full plan view
+        // with grids, beams, columns. highlightSpan() calls it directly.
+        // Highlight span - ONLY re-render plan view, NOT renderCanvas() 
+        // This prevents plan view from turning into span view when highlighting
+        function highlightSpan(index) {
+            if (highlightedSpanIndex === index) return;
+            highlightedSpanIndex = index;
+            renderPlanView();  // Main canvas - always plan view
+            renderDetailCanvas();  // Detail canvas - current detail mode
+        }
+
+        function clearHighlight() {
+            if (highlightedSpanIndex === -1) return;
+            highlightedSpanIndex = -1;
+            renderPlanView();  // Main canvas - always plan view
+            renderDetailCanvas();  // Detail canvas - current detail mode
+        }
+
+        function updateDetailPanelWidth() {
+            const detailPanel = document.getElementById('detailPanel');
+            if (!detailPanel) return;
+
+            // Adjust right edge based on sidebar state
+            if (rightSidebarCollapsed) {
+                detailPanel.style.right = '0px';
+            } else {
+                detailPanel.style.right = '320px'; // w-80 = 320px
+            }
+
+            resizeDetailCanvas();
+        }
+
+        function setDetailMode(mode) {
+            detailMode = mode;
+
+            // Toggle active state for tabs
+            const tabLong = document.getElementById('tabLong');
+            const tabSection = document.getElementById('tabSection');
+            const tabShear = document.getElementById('tabShear');
+
+            tabLong?.classList.toggle('bg-blue-600', mode === 'long');
+            tabLong?.classList.toggle('bg-slate-600', mode !== 'long');
+            tabSection?.classList.toggle('bg-blue-600', mode === 'section');
+            tabSection?.classList.toggle('bg-slate-600', mode !== 'section');
+            tabShear?.classList.toggle('bg-blue-600', mode === 'shear');
+            tabShear?.classList.toggle('bg-slate-600', mode !== 'shear');
+
+            // Reset detail zoom/pan
+            detailZoom = 1.0;
+            detailPanX = 0;
+            detailPanY = 0;
+
+            renderDetailCanvas();
+        }
+
+        function resizeDetailCanvas() {
+            const container = document.getElementById('detailCanvasContainer');
+            const canvas = document.getElementById('detailCanvas');
+            if (!container || !canvas) return;
+
+            canvas.width = container.clientWidth;
+            canvas.height = container.clientHeight;
+
+            renderDetailCanvas();
+        }
+
+        function resetDetailCanvasView() {
+            detailZoom = 1.0;
+            detailPanX = 0;
+            detailPanY = 0;
+            renderDetailCanvas();
+            centerDetailCanvas();
+        }
+
+        function centerDetailCanvas() {
+            const canvas = document.getElementById('detailCanvas');
+            if (!canvas || detailSpanBounds.length === 0) return;
+
+            const minX = Math.min(...detailSpanBounds.map(b => b.x));
+            const maxX = Math.max(...detailSpanBounds.map(b => b.x + b.width));
+            const minY = Math.min(...detailSpanBounds.map(b => b.y));
+            const maxY = Math.max(...detailSpanBounds.map(b => b.y + b.height));
+
+            const contentCenterX = (minX + maxX) / 2;
+            const contentCenterY = (minY + maxY) / 2;
+
+            detailPanX = canvas.width / 2 - contentCenterX * detailZoom;
+            detailPanY = canvas.height / 2 - contentCenterY * detailZoom;
+
+            renderDetailCanvas();
+        }
+
+        // Bounds for detail canvas click detection
+        let detailSpanBounds = [];
+        let detailRebarLabelBounds = [];
+
+        function renderDetailCanvas() {
+            const canvas = document.getElementById('detailCanvas');
+            if (!canvas) return;
+            const ctx = canvas.getContext('2d');
+
+            // Clear
+            ctx.fillStyle = '#f8fafc';
+            ctx.fillRect(0, 0, canvas.width, canvas.height);
+
+            if (!currentGroup?.Spans?.length) {
+                ctx.fillStyle = '#94a3b8';
+                ctx.font = '14px sans-serif';
+                ctx.textAlign = 'center';
+                ctx.fillText('Không có dữ liệu nhịp', canvas.width / 2, canvas.height / 2);
+                return;
+            }
+
+            // Reset bounds
+            detailSpanBounds = [];
+            detailRebarLabelBounds = [];
+
+            // Route to existing render functions based on mode
+            // We reuse the existing renderCanvas logic but target detailCanvas
+            const oldMode = canvasMode;
+            canvasMode = detailMode; // Temporarily set mode for render function
+
+            // Use the modified renderCanvas that renders to detail canvas
+            renderCanvasToDetailPanel(ctx, canvas);
+
+            canvasMode = oldMode; // Restore
+        }
+
+        // Wrapper to render span views to detail canvas
+        function renderCanvasToDetailPanel(ctx, canvas) {
+            if (!currentGroup?.Spans?.length) return;
+
+            const spans = currentGroup.Spans;
+            const SUPPORT_GAP = 15;
+            const equalSpanWidth = FIXED_SPAN_WIDTH;
+
+            let totalWidth = CANVAS_PADDING * 2;
+            const spanWidths = spans.map(() => {
+                totalWidth += equalSpanWidth + SUPPORT_GAP;
+                return equalSpanWidth;
+            });
+
+            // Clear
+            ctx.fillStyle = '#f8fafc';
+            ctx.fillRect(0, 0, canvas.width, canvas.height);
+
+            // Apply detail zoom and pan
+            ctx.save();
+            ctx.translate(detailPanX, detailPanY);
+            ctx.scale(detailZoom, detailZoom);
+
+            let x = CANVAS_PADDING;
+            const beamY = 90;
+
+            // Draw beams (same as original renderCanvas)
+            spans.forEach((span, i) => {
+                const w = spanWidths[i];
+
+                if (i === 0) {
+                    drawSupport(ctx, x, beamY);
+                    x += 5;
+                }
+
+                detailSpanBounds.push({ x, y: beamY, width: w, height: BEAM_HEIGHT, index: i });
+
+                const isHighlighted = i === highlightedSpanIndex;
+                ctx.fillStyle = isHighlighted ? '#dbeafe' : '#e2e8f0';
+                ctx.strokeStyle = isHighlighted ? '#3b82f6' : '#64748b';
+                ctx.lineWidth = isHighlighted ? 2 : 1;
+                ctx.fillRect(x, beamY, w, BEAM_HEIGHT);
+                ctx.strokeRect(x, beamY, w, BEAM_HEIGHT);
+
+                // Draw rebar lines
+                drawRebarLines(ctx, x, beamY, w, span);
+
+                // Draw labels based on detail mode
+                if (detailMode === 'long') {
+                    drawLongRebarLabels(ctx, x, w, beamY, span, i);
+                } else if (detailMode === 'section') {
+                    drawSectionLabels(ctx, x, w, beamY, span, i);
+                } else if (detailMode === 'shear') {
+                    drawShearLabels(ctx, x, w, beamY, span, i);
+                }
+
+                // Span label (center of beam) - EXACTLY like original renderCanvas
+                ctx.fillStyle = '#1e293b';
+                ctx.font = 'bold 11px sans-serif';
+                ctx.textAlign = 'center';
+                ctx.fillText(span.SpanId, x + w / 2, beamY + BEAM_HEIGHT / 2 + 4);
+
+                // Dimension + Section label (1 dòng below beam)
+                ctx.fillStyle = '#475569';
+                ctx.font = '9px sans-serif';
+                ctx.textAlign = 'center';
+                const dimSizeText = `L=${(span.Length || 0).toFixed(2)} | ${span.Width || 0}×${span.Height || 0}`;
+                ctx.fillText(dimSizeText, x + w / 2, beamY + BEAM_HEIGHT + 42);
+
+                x += w + SUPPORT_GAP;
+
+                // End support
+                drawSupport(ctx, x - SUPPORT_GAP, beamY);
+            });
+
+            ctx.restore();
+        }
+
+        // Helper functions for drawing labels by mode (reuse existing logic)
+        function drawLongRebarLabels(ctx, x, w, beamY, span, i) {
+            // Reuse existing long rebar label drawing code
+            const labelXs = [x + w * 0.20, x + w * 0.50, x + w * 0.80];
+            const labelPos = [0, 2, 4];
+            const maxLayers = data.settings?.MaxLayers || 2;
+
+            const topBaseY = beamY + 12;
+            const botBaseY = beamY + BEAM_HEIGHT - 12;
+
+            // Editable rebar labels (backbone)
+            for (let li = 0; li < labelXs.length; li++) {
+                const cx = labelXs[li];
+                const pos = labelPos[li];
+                drawEditableLabelDetail(ctx, getLayerRebarText(span, 'Top', 0, pos), cx, topBaseY, '#ef4444', { spanIndex: i, type: 'Top', layer: 0, pos });
+                drawEditableLabelDetail(ctx, getLayerRebarText(span, 'Bot', 0, pos), cx, botBaseY, '#3b82f6', { spanIndex: i, type: 'Bot', layer: 0, pos });
+            }
+
+            // Reinforcement layers
+            for (let layer = 1; layer < maxLayers; layer++) {
+                const dy = 14 * layer;
+                const topY = topBaseY + dy;
+                const botY = botBaseY - dy;
+                for (let li = 0; li < labelXs.length; li++) {
+                    const cx = labelXs[li];
+                    const pos = labelPos[li];
+                    drawEditableLabelDetail(ctx, getLayerRebarText(span, 'Top', layer, pos), cx, topY, '#f97316', { spanIndex: i, type: 'Top', layer, pos });
+                    drawEditableLabelDetail(ctx, getLayerRebarText(span, 'Bot', layer, pos), cx, botY, '#0ea5e9', { spanIndex: i, type: 'Bot', layer, pos });
+                }
+            }
+
+            // Required labels (outside beam): As_prv/As_req with deficit highlight
+            const reqTopY = beamY - 20;
+            const reqBotY = beamY + BEAM_HEIGHT + 28;
+            const posNames = ['L', 'M', 'R'];
+            for (let li = 0; li < labelXs.length; li++) {
+                const cx = labelXs[li];
+                const pn = posNames[li];
+                const topRatio = getAsRatioResult(span, 'Top', pn);
+                const botRatio = getAsRatioResult(span, 'Bot', pn);
+                drawInfoLabelDetail(ctx, topRatio.text, cx, reqTopY, '#b91c1c', topRatio.isDeficit);
+                drawInfoLabelDetail(ctx, botRatio.text, cx, reqBotY, '#1d4ed8', botRatio.isDeficit);
+            }
+        }
+
+        // Info label for As_prv/As_req (read-only with border, deficit highlight)
+        function drawInfoLabelDetail(ctx, text, x, y, color, isDeficit) {
+            if (!text) return;
+
+            ctx.font = '9px sans-serif';
+            ctx.textAlign = 'center';
+            ctx.textBaseline = 'middle';
+
+            const width = ctx.measureText(text).width + 8;
+            const height = 14;
+            const rx = x - width / 2;
+            const ry = y - height / 2;
+
+            // Draw rounded rectangle background for ALL As labels
+            ctx.beginPath();
+            ctx.roundRect(rx, ry, width, height, 2);
+
+            if (isDeficit) {
+                // Deficit: red background + border
+                ctx.fillStyle = '#fee2e2';
+                ctx.fill();
+                ctx.strokeStyle = '#ef4444';
+                ctx.lineWidth = 1.5;
+                ctx.stroke();
+                ctx.fillStyle = '#dc2626';  // Red text
+            } else {
+                // Normal: white background + colored border
+                ctx.fillStyle = '#fff';
+                ctx.fill();
+                ctx.strokeStyle = color;
+                ctx.lineWidth = 1;
+                ctx.stroke();
+                ctx.fillStyle = color;  // Colored text
+            }
+
+            ctx.fillText(text, x, y);
+        }
+
+        function drawSectionLabels(ctx, x, w, beamY, span, i) {
+            // Section view labels (simplified)
+            ctx.fillStyle = '#64748b';
+            ctx.font = '10px sans-serif';
+            ctx.textAlign = 'center';
+            ctx.fillText('Section View', x + w / 2, beamY + BEAM_HEIGHT / 2);
+        }
+
+        function drawShearLabels(ctx, x, w, beamY, span, i) {
+            // Shear/Web view - draw stirrup and webbar labels
+            const labelXs = [x + w * 0.18, x + w * 0.50, x + w * 0.82];
+            const labelPos = [0, 1, 2];
+            const stirY = beamY + BEAM_HEIGHT / 2 - 8;
+            const webY = beamY + BEAM_HEIGHT / 2 + 8;
+
+            for (let li = 0; li < labelXs.length; li++) {
+                const cx = labelXs[li];
+                const pos = labelPos[li];
+                drawEditableLabelDetail(ctx, getStirrupText(span, pos), cx, stirY, '#475569', { spanIndex: i, type: 'Stirrup', pos });
+                drawEditableLabelDetail(ctx, getWebBarText(span, pos), cx, webY, '#64748b', { spanIndex: i, type: 'WebBar', pos });
+            }
+        }
+
+        function drawEditableLabelDetail(ctx, text, x, y, color, meta) {
+            if (!text || text === '-') return;
+
+            ctx.font = 'bold 11px sans-serif';
+            ctx.textAlign = 'center';
+            ctx.textBaseline = 'middle';
+
+            const width = ctx.measureText(text).width + 8;
+            const height = 16;
+            const rx = x - width / 2;
+            const ry = y - height / 2;
+            const radius = 3;  // Border radius for rounded corners
+
+            // Draw rounded rectangle background
+            ctx.beginPath();
+            ctx.roundRect(rx, ry, width, height, radius);
+            ctx.fillStyle = '#fff';
+            ctx.fill();
+            ctx.strokeStyle = color;
+            ctx.lineWidth = 1;
+            ctx.stroke();
+
+            // Draw text
+            ctx.fillStyle = color;
+            ctx.fillText(text, x, y);
+
+            detailRebarLabelBounds.push({ x: rx, y: ry, width, height, ...meta });
         }
 
         // ============ PLAN VIEW FUNCTIONS ============
@@ -1156,21 +1598,24 @@
 
         // Resize canvas to fill container (proper pixel sizing, no CSS stretch)
         function resizeCanvas() {
-            const container = document.getElementById('canvasContainer');
+            // Main Plan Canvas
+            const planContainer = document.getElementById('planCanvasContainer');
             const canvas = document.getElementById('beamCanvas');
-            if (container && canvas) {
-                // Remove CSS sizing to prevent stretching
+            if (planContainer && canvas) {
                 canvas.style.width = '';
                 canvas.style.height = '';
-                // Set actual canvas resolution based on container size
-                const w = container.clientWidth || 800;
-                const h = container.clientHeight || 300;
+                const w = planContainer.clientWidth || 800;
+                const h = planContainer.clientHeight || 300;
                 if (canvas.width !== w || canvas.height !== h) {
                     canvas.width = w;
                     canvas.height = h;
-                    renderCanvas();
+                    // Always render Plan View on main canvas
+                    renderPlanView();
                 }
             }
+
+            // Also resize detail canvas
+            resizeDetailCanvas();
         }
 
         function init() {
@@ -1183,12 +1628,12 @@
             requestAnimationFrame(resizeCanvas);
             setTimeout(resizeCanvas, 100);
             setTimeout(resizeCanvas, 300);
-            window.addEventListener('resize', () => { hideInlineLabelEditor(); resizeCanvas(); });
+            window.addEventListener('resize', () => { hideInlineLabelEditor(); resizeCanvas(); updateDetailPanelWidth(); });
 
-            const canvasContainer = document.getElementById('canvasContainer');
-            if (canvasContainer) {
-                canvasContainer.addEventListener('scroll', () => hideInlineLabelEditor());
-                canvasContainer.addEventListener('wheel', () => hideInlineLabelEditor(), { passive: true });
+            const planContainer = document.getElementById('planCanvasContainer');
+            if (planContainer) {
+                planContainer.addEventListener('scroll', () => hideInlineLabelEditor());
+                planContainer.addEventListener('wheel', () => hideInlineLabelEditor(), { passive: true });
             }
 
             // Sync material grades from DtsSettings to read-only display
@@ -1209,10 +1654,10 @@
             const canvas = document.getElementById('beamCanvas');
             if (canvas) {
                 // Inline label editor overlay (canvas-first editing)
-                const canvasContainer = document.getElementById('canvasContainer');
-                if (canvasContainer && !labelEditorEl) {
+                const planCanvasContainer = document.getElementById('planCanvasContainer');
+                if (planCanvasContainer && !labelEditorEl) {
                     // ensure positioning context
-                    if (!canvasContainer.style.position) canvasContainer.style.position = 'relative';
+                    if (!planCanvasContainer.style.position) planCanvasContainer.style.position = 'relative';
                     labelEditorEl = document.createElement('input');
                     labelEditorEl.type = 'text';
                     labelEditorEl.className = 'hidden absolute z-50 border border-slate-300 rounded px-1 py-0.5 text-[11px] bg-white';
@@ -1229,7 +1674,7 @@
                     labelEditorEl.addEventListener('blur', () => {
                         if (labelEditorEl && !labelEditorEl.classList.contains('hidden')) commitInlineLabelEdit();
                     });
-                    canvasContainer.appendChild(labelEditorEl);
+                    planCanvasContainer.appendChild(labelEditorEl);
                 }
 
                 // Click: label edit (priority) or span select/copy-format
@@ -1513,6 +1958,100 @@
                 console.log('Canvas interaction system initialized');
             }
 
+            // ====== DETAIL CANVAS ZOOM/PAN EVENTS ======
+            const detailCanvas = document.getElementById('detailCanvas');
+            if (detailCanvas) {
+                let detailDragging = false;
+                let detailLastX = 0;
+                let detailLastY = 0;
+
+                // Wheel zoom
+                detailCanvas.addEventListener('wheel', (e) => {
+                    e.preventDefault();
+                    const rect = detailCanvas.getBoundingClientRect();
+                    const mouseX = e.clientX - rect.left;
+                    const mouseY = e.clientY - rect.top;
+
+                    const zoomFactor = e.deltaY > 0 ? 0.9 : 1.1;
+                    const newZoom = Math.max(0.3, Math.min(5, detailZoom * zoomFactor));
+
+                    // Zoom towards mouse position
+                    detailPanX = mouseX - (mouseX - detailPanX) * (newZoom / detailZoom);
+                    detailPanY = mouseY - (mouseY - detailPanY) * (newZoom / detailZoom);
+                    detailZoom = newZoom;
+
+                    renderDetailCanvas();
+                }, { passive: false });
+
+                // Middle click or Alt+Left click pan
+                detailCanvas.addEventListener('mousedown', (e) => {
+                    if (e.button === 1 || (e.button === 0 && e.altKey)) {
+                        detailDragging = true;
+                        detailLastX = e.clientX;
+                        detailLastY = e.clientY;
+                        detailCanvas.style.cursor = 'grabbing';
+                        e.preventDefault();
+                    }
+                });
+
+                detailCanvas.addEventListener('mousemove', (e) => {
+                    if (detailDragging) {
+                        detailPanX += e.clientX - detailLastX;
+                        detailPanY += e.clientY - detailLastY;
+                        detailLastX = e.clientX;
+                        detailLastY = e.clientY;
+                        renderDetailCanvas();
+                    }
+                });
+
+                detailCanvas.addEventListener('mouseup', () => {
+                    detailDragging = false;
+                    detailCanvas.style.cursor = 'default';
+                });
+
+                detailCanvas.addEventListener('mouseleave', () => {
+                    detailDragging = false;
+                    detailCanvas.style.cursor = 'default';
+                });
+
+                // Click: select span on detail canvas
+                detailCanvas.addEventListener('click', (e) => {
+                    const rect = detailCanvas.getBoundingClientRect();
+                    const x = (e.clientX - rect.left - detailPanX) / detailZoom;
+                    const y = (e.clientY - rect.top - detailPanY) / detailZoom;
+
+                    // Check span bounds
+                    for (let i = 0; i < detailSpanBounds.length; i++) {
+                        const b = detailSpanBounds[i];
+                        if (x >= b.x && x <= b.x + b.width && y >= b.y && y <= b.y + b.height) {
+                            highlightSpan(b.index);
+                            renderDetailCanvas();
+                            renderTable();
+                            return;
+                        }
+                    }
+                });
+
+                // Double-click: edit label on detail canvas
+                detailCanvas.addEventListener('dblclick', (e) => {
+                    const rect = detailCanvas.getBoundingClientRect();
+                    const x = (e.clientX - rect.left - detailPanX) / detailZoom;
+                    const y = (e.clientY - rect.top - detailPanY) / detailZoom;
+
+                    // Check label bounds
+                    for (let i = 0; i < detailRebarLabelBounds.length; i++) {
+                        const lb = detailRebarLabelBounds[i];
+                        if (x >= lb.x && x <= lb.x + lb.width && y >= lb.y && y <= lb.y + lb.height) {
+                            // Use inline label edit (same as main canvas)
+                            startInlineLabelEdit(lb);
+                            return;
+                        }
+                    }
+                });
+
+                console.log('Detail canvas zoom/pan initialized');
+            }
+
             // Handle error mode (from C# when data too large or serialization failed)
             if (data.mode === 'error') {
                 const canvas = document.getElementById('beamCanvas');
@@ -1567,6 +2106,9 @@
                 const storySelect = document.getElementById('storySelect');
                 if (storySelect) storySelect.value = roundedZ;
             }
+
+            // Populate story dropdown for Plan View
+            populateStoryDropdown();
 
             populateGroupSelect();
             if (data.groups && data.groups.length > 0) {
@@ -1629,16 +2171,16 @@
             // V7.0: Apply option từ span.Options trực tiếp
             applyXDataOptionToSpans(parseInt(selectedOptionKey) || 0);
 
-            // Render based on current mode
-            if (canvasMode === 'plan') {
-                renderPlanView();
-            } else {
-                canvasZoom = 1.0;
-                canvasPanX = 0;
-                canvasPanY = 0;
-                renderCanvas();
-                centerCanvas();
-            }
+            // Render: Main canvas always shows Plan View, Detail panel shows Long/Section/Shear
+            renderPlanView();  // Main canvas - always plan view
+
+            // Reset detail view zoom/pan and render
+            detailZoom = 1.0;
+            detailPanX = 0;
+            detailPanY = 0;
+            renderDetailCanvas();
+            centerDetailCanvas();
+
             renderTable();
             updateMetrics();
             updateGroupInfo();
@@ -1650,27 +2192,24 @@
             Beam.History.push();
         }
 
-        // Center canvas viewport on content
+        // Center canvas viewport on content (for Plan View)
         function centerCanvas() {
             const canvas = document.getElementById('beamCanvas');
-            if (!canvas || spanBounds.length === 0) return;
+            if (!canvas) return;
 
-            // Calculate content bounds
-            const minX = Math.min(...spanBounds.map(b => b.x));
-            const maxX = Math.max(...spanBounds.map(b => b.x + b.width));
-            const minY = Math.min(...spanBounds.map(b => b.y));
-            const maxY = Math.max(...spanBounds.map(b => b.y + b.height));
+            // For Plan View, use plan-specific centering
+            canvasPanX = 0;
+            canvasPanY = 0;
+            renderPlanView();
+            updateZoomIndicator();
+        }
 
-            const contentW = maxX - minX;
-            const contentH = maxY - minY;
-            const contentCenterX = (minX + maxX) / 2;
-            const contentCenterY = (minY + maxY) / 2;
-
-            // Center content only (DO NOT change zoom). This keeps each span's visual length stable.
-            canvasPanX = canvas.width / 2 - contentCenterX * canvasZoom;
-            canvasPanY = canvas.height / 2 - contentCenterY * canvasZoom;
-
-            renderCanvas();
+        // Reset Plan Canvas View (zoom to fit)
+        function resetPlanCanvasView() {
+            canvasZoom = 1.0;
+            canvasPanX = 0;
+            canvasPanY = 0;
+            renderPlanView();
             updateZoomIndicator();
         }
 
