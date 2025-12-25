@@ -45,6 +45,11 @@ namespace DTS_Engine.Core.Data
         /// </summary>
         public double? BaseZ { get; set; }
 
+        /// <summary>
+        /// Average Z coordinate (ưu tiên BaseZ nếu có, ngược lại dùng trung bình StartZ/EndZ)
+        /// </summary>
+        public double AverageZ => BaseZ ?? ((StartZ + EndZ) / 2);
+
         /// <summary>Section width (mm)</summary>
         public double Width { get; set; }
 

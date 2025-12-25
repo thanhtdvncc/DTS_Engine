@@ -286,34 +286,38 @@ namespace DTS_Engine.Core.Utils
             try
             {
                 Point3d parentCenter = Point3d.Origin;
+                bool hasValidParent = false;
 
                 AcadUtils.UsingTransaction(tr =>
                 {
                     var parentEnt = tr.GetObject(parentId, OpenMode.ForRead) as Entity;
-                    if (parentEnt != null)
+                    if (parentEnt != null && !parentEnt.IsErased)
                     {
                         parentCenter = AcadUtils.GetEntityCenter3d(parentEnt);
+                        hasValidParent = true; // V7.0: Use flag instead of checking Point3d.Origin
                     }
                 });
 
-                if (parentCenter == Point3d.Origin) return;
+                if (!hasValidParent) return;
 
                 foreach (var childId in childIds)
                 {
                     if (childId == ObjectId.Null || childId.IsErased) continue;
 
                     Point3d childCenter = Point3d.Origin;
+                    bool hasValidChild = false;
 
                     AcadUtils.UsingTransaction(tr =>
                     {
                         var childEnt = tr.GetObject(childId, OpenMode.ForRead) as Entity;
-                        if (childEnt != null)
+                        if (childEnt != null && !childEnt.IsErased)
                         {
                             childCenter = AcadUtils.GetEntityCenter3d(childEnt);
+                            hasValidChild = true; // V7.0: Use flag instead of checking Point3d.Origin
                         }
                     });
 
-                    if (childCenter != Point3d.Origin)
+                    if (hasValidChild)
                     {
                         DrawTransientLine(parentCenter, childCenter, colorIndex);
                     }

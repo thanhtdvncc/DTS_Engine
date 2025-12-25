@@ -17,6 +17,7 @@ namespace DTS_Engine.Core.Algorithms
         private const double AXIS_TOLERANCE = 400; // mm - Buffer zone quanh trục
         private const double COLLINEAR_TOLERANCE = 50; // mm - Tolerance cho dầm nối tiếp (Node distance)
         private const double STEP_CHANGE_THRESHOLD = 50; // mm - Ngưỡng giật cấp
+        private const double Z_LEVEL_TOLERANCE = 500; // V7.0: mm - Chênh lệch Z tối đa để coi là cùng tầng
 
         /// <summary>
         /// Nhóm dầm thành các BeamGroup dựa trên geometry và trục.
@@ -160,6 +161,10 @@ namespace DTS_Engine.Core.Algorithms
         /// </summary>
         private static bool AreBeamsConnected(BeamGeometry b1, BeamGeometry b2)
         {
+            // V7.0: Kiểm tra cao độ Z đầu tiên - Nếu lệch quá Z_LEVEL_TOLERANCE -> Không nối
+            if (Math.Abs(b1.AverageZ - b2.AverageZ) > Z_LEVEL_TOLERANCE)
+                return false;
+
             // 1. Kiểm tra khoảng cách - điểm cuối b1 gần điểm đầu b2
             double dist1 = Distance(b1.EndX, b1.EndY, b2.StartX, b2.StartY);
             double dist2 = Distance(b1.EndX, b1.EndY, b2.EndX, b2.EndY);
