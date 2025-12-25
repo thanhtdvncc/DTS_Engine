@@ -838,8 +838,12 @@
             ctx.fillRect(0, 0, canvas.width, canvas.height);
 
             // Draw grid lines from AutoCAD layer (dts_axis)
-            // FIX: Grid/axis lines are reference lines - display on ALL stories (no Z filter)
-            const gridsToDisplay = data.allGrids || [];
+            // FIX: Filter grids by LevelZ from XData (story elevation when grid was plotted)
+            const gridsOnStory = (data.allGrids || []).filter(grid => {
+                // Use LevelZ from XData if available, otherwise use geometry Z
+                const gridLevelZ = grid.LevelZ || grid.Z || 0;
+                return Math.abs(gridLevelZ - z) < Z_TOLERANCE;
+            });
 
             ctx.strokeStyle = '#cbd5e1';
             ctx.lineWidth = 1;
@@ -847,7 +851,7 @@
             ctx.font = '10px sans-serif';
             ctx.fillStyle = '#64748b';
 
-            gridsToDisplay.forEach(grid => {
+            gridsOnStory.forEach(grid => {
                 ctx.beginPath();
                 ctx.moveTo(tx(grid.StartX), ty(grid.StartY));
                 ctx.lineTo(tx(grid.EndX), ty(grid.EndY));

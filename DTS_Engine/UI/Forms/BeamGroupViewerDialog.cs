@@ -88,12 +88,16 @@ namespace DTS_Engine.UI.Forms
 
                 string html = LoadHtmlFromResource();
 
-                // Safety check: WebView2 NavigateToString has content size limits
-                if (html.Length > 2_000_000) // 2MB limit for NavigateToString
+                // Safety check: WebView2 NavigateToString has content size limits (~2MB practical limit)
+                // Use file-based approach for large content to avoid ArgumentException
+                System.Diagnostics.Debug.WriteLine($"[BeamGroupViewer] Total HTML size: {html.Length / 1024}KB");
+
+                if (html.Length > 1_500_000) // 1.5MB limit - use file-based for safety
                 {
-                    // Fallback to file-based approach
+                    // Fallback to file-based approach - more reliable for large content
                     string tempPath = Path.Combine(Path.GetTempPath(), "dts_beam_viewer.html");
                     File.WriteAllText(tempPath, html, System.Text.Encoding.UTF8);
+                    System.Diagnostics.Debug.WriteLine($"[BeamGroupViewer] Using file-based approach: {tempPath}");
                     _webView.CoreWebView2.Navigate("file:///" + tempPath.Replace("\\", "/"));
                 }
                 else
@@ -224,10 +228,17 @@ namespace DTS_Engine.UI.Forms
                         string json = JsonConvert.SerializeObject(data, jsonSettings);
 
                         // Check JSON size - WebView2 NavigateToString has ~2MB limit
-                        if (json.Length > 1_500_000) // 1.5MB limit for safety
+                        // Log data sizes for debugging
+                        System.Diagnostics.Debug.WriteLine($"[BeamGroupViewer] JSON size: {json.Length / 1024}KB, Groups: {_groups?.Count ?? 0}, Beams: {allBeams?.Count ?? 0}, Grids: {allGrids?.Count ?? 0}, Columns: {allColumns?.Count ?? 0}");
+
+                        if (json.Length > 1_800_000) // Increased to 1.8MB limit
                         {
-                            // Too large - send minimal data with error message
-                            var errorData = new { mode = "error", error = $"Data too large ({json.Length / 1024}KB). Chọn ít đối tượng hơn (tối đa ~50 groups)." };
+                            // Too large - send minimal data with detailed error message
+                            var errorData = new
+                            {
+                                mode = "error",
+                                error = $"Data quá lớn ({json.Length / 1024}KB). Groups: {_groups?.Count ?? 0}, Beams: {allBeams?.Count ?? 0}, Grids: {allGrids?.Count ?? 0}. Chọn ít tầng hơn hoặc giới hạn số đối tượng."
+                            };
                             json = JsonConvert.SerializeObject(errorData);
                         }
 
@@ -1619,6 +1630,7 @@ namespace DTS_Engine.UI.Forms
                             string gridName = "";
                             double gridCoordinate = 0;
                             string orientation = "";
+                            double levelZ = 0;
 
                             try
                             {
@@ -1628,10 +1640,16 @@ namespace DTS_Engine.UI.Forms
                                     var values = xdata.AsArray();
                                     if (values.Length >= 4)
                                     {
-                                        // Format: (appName, Name, Coordinate, Orientation)
+                                        // Format: (appName, Name, Coordinate, Orientation, LevelZ)
                                         gridName = values[1].Value?.ToString() ?? "";
                                         gridCoordinate = Convert.ToDouble(values[2].Value);
                                         orientation = values[3].Value?.ToString() ?? "";
+
+                                        // LevelZ is optional (for backward compatibility)
+                                        if (values.Length >= 5)
+                                        {
+                                            levelZ = Convert.ToDouble(values[4].Value);
+                                        }
                                     }
                                 }
                             }
@@ -1654,6 +1672,7 @@ namespace DTS_Engine.UI.Forms
                                 EndX = x2,
                                 EndY = y2,
                                 Z = z,
+                                LevelZ = levelZ,  // Story elevation from XData
                                 Orientation = orientation,
                                 Name = gridName,
                                 Coordinate = gridCoordinate

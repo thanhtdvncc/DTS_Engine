@@ -231,8 +231,8 @@ namespace DTS_Engine.Core.Algorithms
             group.GroupType = girderCount >= (chain.Count / 2.0) ? "Girder" : "Beam";
 
             // === SMART NAMING: Populate LevelZ for story matching ===
-            // Get Z from first beam's StartZ
-            group.LevelZ = chain.First().StartZ;
+            // Get Z from first beam's AverageZ (prioritizes BaseZ)
+            group.LevelZ = chain.First().AverageZ;
 
             // Tính TotalLength
             group.TotalLength = chain.Sum(b => b.Length) / 1000.0; // Convert to m

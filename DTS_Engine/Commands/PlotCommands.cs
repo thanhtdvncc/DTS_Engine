@@ -257,7 +257,7 @@ namespace DTS_Engine.Commands
                 string originHandle = CreateOriginForStory(btr, tr, insertPoint, story);
 
                 // Vẽ grid
-                PlotGridLines(btr, tr, allGrids, insertPoint, 0);
+                PlotGridLines(btr, tr, allGrids, insertPoint, 0, story.Coordinate);
 
                 // Vẽ frame (và auto link vào origin)
                 PlotFramesAt(btr, tr, framesAtStory, insertPoint, story.Coordinate, originHandle, is3D: false);
@@ -315,7 +315,7 @@ namespace DTS_Engine.Commands
                     string originHandle = CreateOriginForStory(btr, tr, insert, st);
 
                     // Vẽ grid & frame
-                    PlotGridLines(btr, tr, allGrids, insert, 0);
+                    PlotGridLines(btr, tr, allGrids, insert, 0, st.Coordinate);
                     var framesAt = FilterFramesForStory(allFrames, st.Coordinate);
                     PlotFramesAt(btr, tr, framesAt, insert, st.Coordinate, originHandle, is3D: false);
 
@@ -366,7 +366,7 @@ namespace DTS_Engine.Commands
                 //2. Vẽ Grid ở tầng thấp nhất
                 if (sortedStories.Count > 0)
                 {
-                    PlotGridLines(btr, tr, allGrids, baseInsertPoint, sortedStories[0].Coordinate);
+                    PlotGridLines(btr, tr, allGrids, baseInsertPoint, sortedStories[0].Coordinate, sortedStories[0].Coordinate);
                 }
 
                 //3. Vẽ Frames & Origin theo tầng
@@ -402,7 +402,7 @@ namespace DTS_Engine.Commands
 
         // ======================= LOW LEVEL PLOTTING =======================
 
-        private void PlotGridLines(BlockTableRecord btr, Transaction tr, List<SapUtils.GridLineRecord> grids, Point2D offset, double z)
+        private void PlotGridLines(BlockTableRecord btr, Transaction tr, List<SapUtils.GridLineRecord> grids, Point2D offset, double z, double levelZ = 0)
         {
             if (grids == null || grids.Count == 0) return;
 
@@ -423,7 +423,7 @@ namespace DTS_Engine.Commands
 
                 // Add XData to grid line for Plan View extraction
                 DBObject lineObj = tr.GetObject(lineId, OpenMode.ForWrite);
-                AddGridXData(lineObj, x.Name, x.Coordinate, "X", tr);
+                AddGridXData(lineObj, x.Name, x.Coordinate, "X", levelZ, tr);
 
                 // FIX2: Text to hơn và màu7
                 PlotAxisLabel(btr, tr, x.Name, new Point3d(p1.X, maxY + offset.Y + textH * 0.5, z), textH);
@@ -442,7 +442,7 @@ namespace DTS_Engine.Commands
 
                 // Add XData to grid line for Plan View extraction
                 DBObject lineObj = tr.GetObject(lineId, OpenMode.ForWrite);
-                AddGridXData(lineObj, y.Name, y.Coordinate, "Y", tr);
+                AddGridXData(lineObj, y.Name, y.Coordinate, "Y", levelZ, tr);
 
                 PlotAxisLabel(btr, tr, y.Name, new Point3d(minX + offset.X - textH, p1.Y, z), textH);
                 PlotAxisLabel(btr, tr, y.Name, new Point3d(maxX + offset.X + textH, p1.Y, z), textH);
@@ -758,7 +758,7 @@ namespace DTS_Engine.Commands
         /// Add XData to grid line for Plan View extraction
         /// Stores: GridName, Coordinate, Orientation
         /// </summary>
-        private void AddGridXData(DBObject obj, string name, double coordinate, string orientation, Transaction tr)
+        private void AddGridXData(DBObject obj, string name, double coordinate, string orientation, double levelZ, Transaction tr)
         {
             try
             {
@@ -776,12 +776,13 @@ namespace DTS_Engine.Commands
                     regTable.DowngradeOpen();
                 }
 
-                // Build XData: (appName, Name, Coordinate, Orientation)
+                // Build XData: (appName, Name, Coordinate, Orientation, LevelZ)
                 var rb = new ResultBuffer(
                     new TypedValue((int)DxfCode.ExtendedDataRegAppName, appName),
                     new TypedValue((int)DxfCode.ExtendedDataAsciiString, name),
                     new TypedValue((int)DxfCode.ExtendedDataReal, coordinate),
-                    new TypedValue((int)DxfCode.ExtendedDataAsciiString, orientation)
+                    new TypedValue((int)DxfCode.ExtendedDataAsciiString, orientation),
+                    new TypedValue((int)DxfCode.ExtendedDataReal, levelZ)
                 );
 
                 obj.XData = rb;
