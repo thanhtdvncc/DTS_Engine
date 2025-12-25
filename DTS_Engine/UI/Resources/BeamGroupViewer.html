@@ -1798,73 +1798,61 @@
             ctx.fillText(`Plan View - Z=${z} | ${beamsOnStory.length} beams | ${gridsOnStory.length} grids | ${columnsOnStory.length} columns`, 10, 20);
 
             // ================== LABEL RENDERING (3 modes) ==================
-            // Label Mode 1: GROUP NAME (Vẽ tại tâm Group)
+            // Label Mode 1: GROUP NAME (1 nhãn duy nhất per group, đặt trên dầm giữa)
             if (labelMode === 1 && data.groups) {
-                const groupsOnStory = data.groups.filter(g => Math.abs((g.LevelZ || 0) - z) < Z_TOLERANCE);
-
                 ctx.save();
-                ctx.font = 'bold 11px sans-serif';
+                ctx.font = 'bold 10px sans-serif';
                 ctx.textAlign = 'center';
                 ctx.textBaseline = 'middle';
 
-                groupsOnStory.forEach(g => {
-                    let cx = 0, cy = 0, count = 0;
+                // Lọc groups trên tầng hiện tại
+                const groupsOnStory = data.groups.filter(g => Math.abs((g.LevelZ || 0) - z) < Z_TOLERANCE);
 
-                    // Logic 1: Tính từ Spans Geometry
-                    if (g.Spans?.length > 0) {
-                        g.Spans.forEach(sp => {
-                            sp.Segments?.forEach(seg => {
-                                cx += (seg.StartX + seg.EndX) / 2;
-                                cy += (seg.StartY + seg.EndY) / 2;
-                                count++;
-                            });
-                        });
-                    }
+                groupsOnStory.forEach(group => {
+                    if (!group.EntityHandles || group.EntityHandles.length === 0) return;
 
-                    // Logic 2: Fallback EntityHandles (tất cả beams)
-                    if (count === 0 && g.EntityHandles?.length > 0) {
-                        const groupBeams = beamsOnStory.filter(b => g.EntityHandles.includes(b.Handle));
-                        groupBeams.forEach(b => {
-                            cx += (b.StartX + b.EndX) / 2;
-                            cy += (b.StartY + b.EndY) / 2;
-                            count++;
-                        });
-                    }
+                    // Tìm các dầm thuộc group trên mặt bằng
+                    const groupBeams = beamsOnStory.filter(b => group.EntityHandles.includes(b.Handle));
+                    if (groupBeams.length === 0) return;
 
-                    // FIX: Logic 3: Fallback Cực Đoan (Lấy dầm đầu tiên tìm thấy) - Chống tàng hình
-                    if (count === 0 && g.EntityHandles?.length > 0) {
-                        const anyBeam = beamsOnStory.find(b => g.EntityHandles.includes(b.Handle));
-                        if (anyBeam) {
-                            cx = (anyBeam.StartX + anyBeam.EndX) / 2;
-                            cy = (anyBeam.StartY + anyBeam.EndY) / 2;
-                            count = 1;
-                        }
-                    }
+                    // Chọn dầm giữa (hoặc gần giữa nhất)
+                    const midIndex = Math.floor(groupBeams.length / 2);
+                    const b = groupBeams[midIndex];
 
-                    if (count > 0) {
-                        cx /= count;
-                        cy /= count;
-                        const screenX = tx(cx);
-                        const screenY = ty(cy);
+                    const midX = (b.StartX + b.EndX) / 2;
+                    const midY = (b.StartY + b.EndY) / 2;
+                    const screenX = tx(midX);
+                    const screenY = ty(midY);
 
-                        const label = g.GroupName || `G-${(g.originalIndex || 0) + 1}`;
-                        const isSelected = currentGroup === g || (currentGroup?.GroupName === g.GroupName);
+                    // XOAY TEXT theo hướng dầm
+                    const dx = b.EndX - b.StartX;
+                    const dy = b.EndY - b.StartY;
+                    let angle = Math.atan2(dy, dx);
 
-                        // Draw Box
-                        const textMetrics = ctx.measureText(label);
-                        const w = textMetrics.width + 12;
-                        const h = 18;
-                        ctx.fillStyle = isSelected ? 'rgba(37, 99, 235, 0.95)' : 'rgba(15, 23, 42, 0.85)';
-                        ctx.beginPath();
-                        ctx.roundRect(screenX - w / 2, screenY - h / 2, w, h, 4);
-                        ctx.fill();
+                    // Chuẩn hóa góc để text không bị ngược
+                    if (angle > Math.PI / 2) angle -= Math.PI;
+                    else if (angle < -Math.PI / 2) angle += Math.PI;
 
-                        // Draw Text
-                        ctx.fillStyle = 'white';
-                        ctx.fillText(label, screenX, screenY);
-                    }
+                    ctx.save();
+                    ctx.translate(screenX, screenY);
+                    ctx.rotate(-angle);
+
+                    const label = group.GroupName || `Group ${(group.originalIndex || 0) + 1}`;
+                    const isSelected = (currentGroup === group) || (currentGroupIndex === group.originalIndex);
+
+                    // Stroke viền trắng cho dễ đọc
+                    ctx.strokeStyle = 'rgba(255,255,255,0.8)';
+                    ctx.lineWidth = 3;
+                    ctx.strokeText(label, 0, -6);
+
+                    // Fill text - màu khác nếu đang chọn
+                    ctx.fillStyle = isSelected ? '#2563eb' : '#0f172a';
+                    ctx.fillText(label, 0, -6);
+
+                    ctx.restore();
                 });
                 ctx.restore();
+
 
             } else if (labelMode === 2) {
                 // === MODE 2: SECTION LABEL ===
