@@ -210,8 +210,8 @@
                     <i class="fa-solid fa-object-group"></i>
                 </button>
                 <!-- Beam Naming -->
-                <button onclick="callBeamNaming()" title="Đặt tên dầm tự động (DTS_REBAR_BEAM_NAME)"
-                    class="w-8 h-8 bg-amber-600/80 hover:bg-amber-500 text-white text-sm rounded flex items-center justify-center">
+                <button onclick="showAutoNameConfirm()" title="Đặt tên dầm tự động"
+                    class="w-8 h-8 bg-slate-600/80 hover:bg-slate-500 text-white text-sm rounded flex items-center justify-center">
                     <i class="fa-solid fa-font"></i>
                 </button>
                 <!-- Labels Toggle (3 modes: OFF/GROUP/SECTION) -->
@@ -1808,24 +1808,21 @@
                 ctx.textBaseline = 'middle';
 
                 groupsOnStory.forEach(g => {
-                    // Tính tâm group
                     let cx = 0, cy = 0, count = 0;
 
-                    // Cách 1: Dựa vào Spans geometry (chính xác hơn)
-                    if (g.Spans && g.Spans.length > 0) {
+                    // Logic 1: Tính từ Spans Geometry
+                    if (g.Spans?.length > 0) {
                         g.Spans.forEach(sp => {
-                            if (sp.Segments) {
-                                sp.Segments.forEach(seg => {
-                                    cx += (seg.StartX + seg.EndX) / 2;
-                                    cy += (seg.StartY + seg.EndY) / 2;
-                                    count++;
-                                });
-                            }
+                            sp.Segments?.forEach(seg => {
+                                cx += (seg.StartX + seg.EndX) / 2;
+                                cy += (seg.StartY + seg.EndY) / 2;
+                                count++;
+                            });
                         });
                     }
 
-                    // Cách 2: Fallback dùng EntityHandles tìm trong allBeams
-                    if (count === 0 && g.EntityHandles && g.EntityHandles.length > 0) {
+                    // Logic 2: Fallback EntityHandles (tất cả beams)
+                    if (count === 0 && g.EntityHandles?.length > 0) {
                         const groupBeams = beamsOnStory.filter(b => g.EntityHandles.includes(b.Handle));
                         groupBeams.forEach(b => {
                             cx += (b.StartX + b.EndX) / 2;
@@ -1834,110 +1831,94 @@
                         });
                     }
 
+                    // FIX: Logic 3: Fallback Cực Đoan (Lấy dầm đầu tiên tìm thấy) - Chống tàng hình
+                    if (count === 0 && g.EntityHandles?.length > 0) {
+                        const anyBeam = beamsOnStory.find(b => g.EntityHandles.includes(b.Handle));
+                        if (anyBeam) {
+                            cx = (anyBeam.StartX + anyBeam.EndX) / 2;
+                            cy = (anyBeam.StartY + anyBeam.EndY) / 2;
+                            count = 1;
+                        }
+                    }
+
                     if (count > 0) {
                         cx /= count;
                         cy /= count;
                         const screenX = tx(cx);
                         const screenY = ty(cy);
 
-                        // Vẽ nền label
-                        const label = g.GroupName || `Group ${(g.originalIndex || 0) + 1}`;
+                        const label = g.GroupName || `G-${(g.originalIndex || 0) + 1}`;
                         const isSelected = currentGroup === g || (currentGroup?.GroupName === g.GroupName);
 
-                        ctx.fillStyle = isSelected ? 'rgba(37, 99, 235, 0.9)' : 'rgba(30, 41, 59, 0.7)';
+                        // Draw Box
                         const textMetrics = ctx.measureText(label);
-                        const textW = textMetrics.width + 12;
-                        const textH = 20;
-
-                        // Vẽ khung bo tròn
+                        const w = textMetrics.width + 12;
+                        const h = 18;
+                        ctx.fillStyle = isSelected ? 'rgba(37, 99, 235, 0.95)' : 'rgba(15, 23, 42, 0.85)';
                         ctx.beginPath();
-                        ctx.roundRect(screenX - textW / 2, screenY - textH / 2, textW, textH, 4);
+                        ctx.roundRect(screenX - w / 2, screenY - h / 2, w, h, 4);
                         ctx.fill();
 
-                        // Vẽ chữ
+                        // Draw Text
                         ctx.fillStyle = 'white';
                         ctx.fillText(label, screenX, screenY);
                     }
                 });
                 ctx.restore();
-            }
 
-            // Label Mode 2: SECTION LABEL (Vẽ tại giữa từng phần tử dầm, xoay theo hướng dầm)
-            else if (labelMode === 2) {
+            } else if (labelMode === 2) {
+                // === MODE 2: SECTION LABEL ===
                 ctx.save();
                 ctx.textAlign = 'center';
                 ctx.textBaseline = 'middle';
                 ctx.font = '10px sans-serif';
 
-                // Đếm số dầm thiếu label để hỏi user
+                // Đếm số dầm thiếu label
                 let missingLabelCount = 0;
 
-                // Lặp qua tất cả dầm trên mặt bằng hiện tại
                 beamsOnStory.forEach(b => {
-                    // Tính tọa độ màn hình điểm giữa dầm
                     const midX = (b.StartX + b.EndX) / 2;
                     const midY = (b.StartY + b.EndY) / 2;
                     const screenX = tx(midX);
                     const screenY = ty(midY);
 
-                    // Tính góc xoay của dầm
+                    // XOAY TEXT: Tính góc nghiêng
                     const dx = b.EndX - b.StartX;
                     const dy = b.EndY - b.StartY;
                     let angle = Math.atan2(dy, dx);
 
-                    // Điều chỉnh hướng: bottom→top cho X, right→left cho Y
-                    // Nếu dầm đi từ trên xuống (dy > 0), xoay thêm 180°
-                    // Nếu dầm đi từ trái sang phải (dx < 0 với phương Y), xoay thêm 180°
-                    if (Math.abs(dx) > Math.abs(dy)) {
-                        // Dầm phương X (nằm ngang) - đọc từ trái sang phải
-                        if (dx < 0) angle += Math.PI;
-                    } else {
-                        // Dầm phương Y (đứng) - đọc từ dưới lên trên
-                        if (dy > 0) angle += Math.PI;
-                    }
+                    // Chuẩn hóa góc để text không bị ngược (luôn đọc từ trái qua phải, dưới lên trên)
+                    if (angle > Math.PI / 2) angle -= Math.PI;
+                    else if (angle < -Math.PI / 2) angle += Math.PI;
 
-                    // Nội dung Label: Ưu tiên SectionLabel (xSectionLabel từ XData)
-                    let label = b.SectionLabel;
-                    if (!label || label === '-' || label === '') {
-                        missingLabelCount++;
-                        // Fallback: dùng bxh
-                        label = `${b.Width || '?'}x${b.Height || '?'}`;
-                    }
-
-                    // Vẽ với rotation
                     ctx.save();
                     ctx.translate(screenX, screenY);
-                    ctx.rotate(angle);
+                    ctx.rotate(-angle); // Canvas y-axis ngược, cẩn thận dấu
 
-                    const textMetrics = ctx.measureText(label);
-                    const pad = 4;
-                    const textW = textMetrics.width + pad * 2;
-                    const textH = 14;
+                    // FIX DỮ LIỆU: Ưu tiên xSectionLabel -> SectionLabel -> "-"
+                    let label = b.xSectionLabel || b.SectionLabel;
+                    if (!label || label.trim() === '') {
+                        label = '-';
+                        missingLabelCount++;
+                    }
 
-                    // Vẽ nền
-                    ctx.fillStyle = 'rgba(255, 255, 255, 0.9)';
-                    ctx.strokeStyle = '#64748b';
-                    ctx.lineWidth = 1;
-                    ctx.beginPath();
-                    ctx.roundRect(-textW / 2, -textH / 2, textW, textH, 2);
-                    ctx.fill();
-                    ctx.stroke();
-
-                    // Vẽ chữ
+                    // Draw Text (Simple, clean, no box for sections to avoid clutter)
+                    // Stroke viền trắng cho dễ đọc trên nền grid
+                    ctx.strokeStyle = 'rgba(255,255,255,0.8)';
+                    ctx.lineWidth = 3;
+                    ctx.strokeText(label, 0, -6); // Offset lên chút để nằm trên trục
                     ctx.fillStyle = '#0f172a';
-                    ctx.fillText(label, 0, 0);
+                    ctx.fillText(label, 0, -6);
 
                     ctx.restore();
                 });
                 ctx.restore();
 
-                // Prompt user nếu có dầm thiếu label
+                // Hiện Modal nếu có dầm thiếu label (chỉ 1 lần)
                 if (missingLabelCount > 0 && !window._labelPromptShown) {
                     window._labelPromptShown = true;
                     setTimeout(() => {
-                        if (confirm(`Có ${missingLabelCount} dầm chưa có tên (SectionLabel).\n\nBạn có muốn chạy lệnh DTS_REBAR_BEAM_NAME để đặt tên tự động không?`)) {
-                            window.chrome.webview.postMessage('CMD|DTS_REBAR_BEAM_NAME');
-                        }
+                        showAutoNameConfirm();
                     }, 100);
                 }
             }
@@ -3813,10 +3794,23 @@
             panel.classList.remove('hidden');
         }
 
-        // Call DTS_REBAR_BEAM_NAME to automatically name beams
-        function callBeamNaming() {
-            showToast('Đang gọi lệnh DTS_REBAR_BEAM_NAME...');
-            window.chrome.webview.postMessage('CMD|DTS_REBAR_BEAM_NAME');
+        // Modal functions for auto-naming confirmation
+        function showAutoNameConfirm() {
+            document.getElementById('confirmModal').classList.remove('hidden');
+        }
+
+        function closeConfirmModal() {
+            document.getElementById('confirmModal').classList.add('hidden');
+        }
+
+        function runAutoName() {
+            closeConfirmModal();
+            if (window.chrome?.webview) {
+                window.chrome.webview.postMessage('CMD|DTS_REBAR_BEAM_NAME');
+                showToast('⏳ Đang gửi lệnh đặt tên...');
+            } else {
+                console.warn('WebView2 not found');
+            }
         }
 
         // FIX 5: Toggle group name labels on plan view (3 chế độ: OFF -> GROUP -> SECTION)
@@ -4144,6 +4138,24 @@
 
         console.log('Beam Viewer initialized with namespace:', Object.keys(Beam));
     </script>
+
+    <!-- Custom Confirm Modal (replaces ugly system confirm()) -->
+    <div id="confirmModal"
+        class="hidden fixed inset-0 bg-slate-900/50 z-[100] flex items-center justify-center backdrop-blur-sm">
+        <div class="bg-white rounded-lg shadow-2xl p-4 w-80 border border-slate-200">
+            <h3 class="font-bold text-slate-700 text-sm mb-2"><i class="fa-solid fa-circle-question text-blue-600"></i>
+                Xác nhận</h3>
+            <p class="text-xs text-slate-600 mb-4">Một số dầm chưa có tên (SectionLabel).<br>Bạn có muốn chạy lệnh đặt
+                tên tự động không?</p>
+            <div class="flex justify-end gap-2">
+                <button onclick="closeConfirmModal()"
+                    class="px-3 py-1.5 rounded text-xs font-medium bg-slate-200 hover:bg-slate-300 text-slate-700">Không</button>
+                <button onclick="runAutoName()"
+                    class="px-3 py-1.5 rounded text-xs font-bold bg-blue-600 hover:bg-blue-500 text-white">Chạy
+                    ngay</button>
+            </div>
+        </div>
+    </div>
 </body>
 
 </html>
