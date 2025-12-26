@@ -1161,21 +1161,37 @@ namespace DTS_Engine.Core.Utils
                 sbT.Append(TopL0);
                 foreach (var layer in TopAddons)
                 {
-                    sbT.Append("|").Append(layer[0]);
-                    sbT.Append("|").Append(layer[1]);
-                    sbT.Append("|").Append(layer[2]);
+                    sbT.Append("|").Append(layer[0] ?? "");
+                    sbT.Append("|").Append(layer[1] ?? "");
+                    sbT.Append("|").Append(layer[2] ?? "");
                 }
 
                 var sbB = new System.Text.StringBuilder();
                 sbB.Append(BotL0);
                 foreach (var layer in BotAddons)
                 {
-                    sbB.Append("|").Append(layer[0]);
-                    sbB.Append("|").Append(layer[1]);
-                    sbB.Append("|").Append(layer[2]);
+                    sbB.Append("|").Append(layer[0] ?? "");
+                    sbB.Append("|").Append(layer[1] ?? "");
+                    sbB.Append("|").Append(layer[2] ?? "");
                 }
 
                 return $"T:{sbT};B:{sbB};S:{Stirrup ?? ""};W:{Web ?? ""}";
+            }
+
+            public string GetStirrupAt(int zoneIdx)
+            {
+                if (string.IsNullOrEmpty(Stirrup)) return "";
+                var parts = Stirrup.Split('|');
+                if (parts.Length == 1) return parts[0];
+                return parts.Length > zoneIdx ? parts[zoneIdx] : parts.Last();
+            }
+
+            public string GetWebAt(int zoneIdx)
+            {
+                if (string.IsNullOrEmpty(Web)) return "";
+                var parts = Web.Split('|');
+                if (parts.Length == 1) return parts[0];
+                return parts.Length > zoneIdx ? parts[zoneIdx] : parts.Last();
             }
 
             /// <summary>

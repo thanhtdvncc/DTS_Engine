@@ -306,6 +306,18 @@ namespace DTS_Engine.Core.Algorithms.Rebar.V4
                         if (spanResult.Stirrups.TryGetValue("Mid", out var sm)) span.Stirrup[1] = sm;
                         if (spanResult.Stirrups.TryGetValue("Right", out var sr)) span.Stirrup[2] = sr;
                     }
+
+                    // Apply web bars (side bars) if available
+                    if (spanResult.WebBars != null && spanResult.WebBars.Count > 0)
+                    {
+                        if (span.WebBar == null) span.WebBar = new string[3];
+                        if (spanResult.WebBars.TryGetValue("Left", out var wl)) span.WebBar[0] = wl;
+                        if (spanResult.WebBars.TryGetValue("Mid", out var wm)) span.WebBar[1] = wm;
+                        if (spanResult.WebBars.TryGetValue("Right", out var wr)) span.WebBar[2] = wr;
+
+                        // Also set Sidebar for legacy if needed (governing one)
+                        span.SideBar = span.WebBar[1] ?? span.WebBar[0];
+                    }
                 }
             }
             else
@@ -474,6 +486,7 @@ namespace DTS_Engine.Core.Algorithms.Rebar.V4
 
             // Lấy số nhịp
             int numSpans = spanResults.Count;
+            double safetyFactor = _settings.Rules?.SafetyFactor ?? 1.0;
 
             // Lấy thông tin nhịp từ group nếu có, nếu không tạo từ spanResults
             var spanInfos = ExtractSpanInfos(group, spanResults);
@@ -520,8 +533,12 @@ namespace DTS_Engine.Core.Algorithms.Rebar.V4
                     // Lấy diện tích yêu cầu từ result (Smart Scanning với Zone Ratio)
                     double reqTop = GetReqAreaSmartScan(result, true, zoneIdx, zonesPerSpan, torsionTop);
                     double reqBot = GetReqAreaSmartScan(result, false, zoneIdx, zonesPerSpan, torsionBot);
+                    double reqWeb = GetReqAreaSmartScan(result, false, zoneIdx, zonesPerSpan, _settings.Beam?.TorsionDist_SideBar ?? 0.5, true); // True for isWebOnly
+
                     int resultZoneIndex = MapZoneToResultIndex(zoneIdx, zonesPerSpan);
-                    double reqStirrup = result?.ShearArea?.ElementAtOrDefault(resultZoneIndex) ?? 0;
+                    double at_st = result?.TTArea?.ElementAtOrDefault(resultZoneIndex) ?? 0;
+                    double av_sv = result?.ShearArea?.ElementAtOrDefault(resultZoneIndex) ?? 0;
+                    double reqStirrup = (2 * at_st + av_sv) * safetyFactor;
 
                     string sectionId = $"{spanInfo.SpanId}_{GetZoneName(zoneIdx, zonesPerSpan)}";
 
@@ -544,6 +561,7 @@ namespace DTS_Engine.Core.Algorithms.Rebar.V4
                         ReqTop = reqTop,
                         ReqBot = reqBot,
                         ReqStirrup = reqStirrup,
+                        ReqWeb = reqWeb,
                         IsSupportLeft = isSupportLeft && spanIdx > 0, // Not for first span start
                         IsSupportRight = isSupportRight && spanIdx < numSpans - 1 // Not for last span end
                     });
@@ -713,20 +731,22 @@ namespace DTS_Engine.Core.Algorithms.Rebar.V4
         /// <param name="zoneIdx">Index của zone (0=Left, 1=Mid, 2=Right cho 3-zone)</param>
         /// <param name="zonesPerSpan">Số zones per span (VD: 3)</param>
         /// <param name="torsionFactor">Hệ số phân bổ xoắn (0.25 cho Top/Bot)</param>
-        private double GetReqAreaSmartScan(BeamResultData result, bool isTop, int zoneIdx, int zonesPerSpan, double torsionFactor)
+        private double GetReqAreaSmartScan(BeamResultData result, bool isTop, int zoneIdx, int zonesPerSpan, double torsionFactor, bool isWebOnly = false)
         {
             if (result == null) return 0;
 
             var areaList = isTop ? result.TopArea : result.BotArea;
             var torsionList = result.TorsionArea;
 
-            if (areaList == null || areaList.Length == 0) return 0;
+            if (!isWebOnly && (areaList == null || areaList.Length == 0)) return 0;
 
             // 1. Lấy Safety Factor từ Settings
             double safetyFactor = _settings.Rules?.SafetyFactor ?? 1.0;
 
             // 2. Xác định phạm vi index cần quét dựa trên Settings
-            int count = areaList.Length;
+            int count = (areaList != null && areaList.Length > 0) ? areaList.Length : (torsionList != null ? torsionList.Length : 0);
+            if (count == 0) return 0;
+
             int startIdx, endIdx;
 
             if (count <= 3) // Nếu dữ liệu nội lực quá ít (chỉ có L/M/R), fallback về logic cũ
@@ -764,9 +784,7 @@ namespace DTS_Engine.Core.Algorithms.Rebar.V4
             double maxArea = 0;
             for (int i = startIdx; i <= endIdx; i++)
             {
-                if (i >= areaList.Length) break;
-
-                double flex = areaList[i];
+                double flex = (isWebOnly || areaList == null || i >= areaList.Length) ? 0 : areaList[i];
                 double tor = (torsionList != null && i < torsionList.Length) ? torsionList[i] : 0;
 
                 // Công thức: As_req = (As_flex + As_torsion * Factor) * SafetyFactor

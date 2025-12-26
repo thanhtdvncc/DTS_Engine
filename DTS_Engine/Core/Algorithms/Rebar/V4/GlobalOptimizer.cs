@@ -795,7 +795,7 @@ namespace DTS_Engine.Core.Algorithms.Rebar.V4
             result.Stirrups = new Dictionary<string, string>();
             result.WebBars = new Dictionary<string, string>();
 
-            // Add addons for this span
+            // Add addons and auxiliary bars for this span
             foreach (var section in spanSections)
             {
                 string zoneName = GetZoneName(section);
@@ -820,6 +820,15 @@ namespace DTS_Engine.Core.Algorithms.Rebar.V4
                     string stirrupStr = RebarCalculator.CalculateStirrup(
                         section.ReqStirrup, 0, section.Width, _settings);
                     result.Stirrups[zoneName] = stirrupStr;
+                }
+
+                // Web bar calculation
+                if (section.ReqWeb > 0.01 || section.Height >= (_settings.Beam?.WebBarMinHeight ?? 700))
+                {
+                    // ReqWeb already contains torsion distribution factor from Discretization
+                    string webStr = RebarCalculator.CalculateWebBars(
+                        section.ReqWeb, 1.0, section.Height, _settings);
+                    result.WebBars[zoneName] = webStr;
                 }
             }
 
