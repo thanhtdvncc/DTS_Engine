@@ -231,33 +231,15 @@ namespace DTS_Engine.Core.Algorithms.Rebar.V4
             {
                 foreach (var spanResult in solution.SpanResults)
                 {
-                    // CRITICAL FIX: Match by SpanId OR by SpanIndex
-                    // SpanId matching takes priority
-                    SpanData span = null;
-
-                    // Try match by SpanId first
-                    if (!string.IsNullOrEmpty(spanResult.SpanId))
+                    // Map directly by SpanIndex - safest and consistent with S1, S2... keys
+                    if (spanResult.SpanIndex < 0 || spanResult.SpanIndex >= group.Spans.Count)
                     {
-                        span = group.Spans.FirstOrDefault(s => s.SpanId == spanResult.SpanId);
-                    }
-
-                    // Fallback to SpanIndex if SpanId match failed
-                    if (span == null && spanResult.SpanIndex >= 0 && spanResult.SpanIndex < group.Spans.Count)
-                    {
-                        span = group.Spans[spanResult.SpanIndex];
-
-                        // DEBUG: Log when using index fallback
-                        Utils.RebarLogger.Log($"  [WARN] SpanId '{spanResult.SpanId}' not found, using index {spanResult.SpanIndex} -> span '{span?.SpanId}'");
-                    }
-
-                    if (span == null)
-                    {
-                        Utils.RebarLogger.Log($"  [ERROR] Could not match SpanResult SpanId='{spanResult.SpanId}' Index={spanResult.SpanIndex}");
+                        Utils.RebarLogger.Log($"  [ERROR] SpanIndex {spanResult.SpanIndex} out of range for group {group.GroupName}");
                         continue;
                     }
 
-                    // DEBUG: Log successful match
-                    Utils.RebarLogger.Log($"  SpanResult[{spanResult.SpanId}] idx={spanResult.SpanIndex} -> Span[{span.SpanId}] idx={span.SpanIndex}");
+                    SpanData span = group.Spans[spanResult.SpanIndex];
+                    Utils.RebarLogger.Log($"  Mapping SpanResult[{spanResult.SpanId}] to Span[{span.SpanId}] (Index {spanResult.SpanIndex})");
 
                     // Initialize arrays if needed
                     if (span.As_Top == null || span.As_Top.Length < 6) span.As_Top = new double[6];
@@ -590,7 +572,7 @@ namespace DTS_Engine.Core.Algorithms.Rebar.V4
 
                     infos.Add(new SpanInfo
                     {
-                        SpanId = span.SpanId ?? $"S{i + 1}",
+                        SpanId = $"S{i + 1}",
                         Length = span.Length > 0 ? span.Length : 5.0,
                         Width = NormalizeToMm(span.Width > 0 ? span.Width : result?.Width ?? group.Width),
                         Height = NormalizeToMm(span.Height > 0 ? span.Height : result?.SectionHeight ?? group.Height)

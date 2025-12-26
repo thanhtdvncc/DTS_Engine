@@ -721,10 +721,12 @@ namespace DTS_Engine.Core.Data
         /// </summary>
         public List<int> SlotIndices { get; set; }
 
-        /// <summary>
-        /// Chuỗi hiển thị: "2D22"
-        /// </summary>
-        public string DisplayString => $"{Count}D{Diameter}";
+        private string _displayString;
+        public string DisplayString
+        {
+            get => !string.IsNullOrEmpty(_displayString) ? _displayString : (Count > 0 ? $"{Count}D{Diameter}" : "");
+            set => _displayString = value;
+        }
 
         /// <summary>
         /// So sánh 2 RebarSpec có tương đồng để merge không.

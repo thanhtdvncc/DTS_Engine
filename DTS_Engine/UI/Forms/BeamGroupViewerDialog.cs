@@ -942,8 +942,8 @@ namespace DTS_Engine.UI.Forms
                                         BotL0 = botL0
                                     };
 
-                                    PopulateAddonsForOption(optData, sol, spanId, "Top");
-                                    PopulateAddonsForOption(optData, sol, spanId, "Bot");
+                                    XDataUtils.RebarOptionData.PopulateAddons(optData, sol, spanId, "Top");
+                                    XDataUtils.RebarOptionData.PopulateAddons(optData, sol, spanId, "Bot");
 
                                     entityOptions.Add(optData);
                                 }
@@ -2228,39 +2228,7 @@ namespace DTS_Engine.UI.Forms
             return neighbors;
         }
 
-        private void PopulateAddonsForOption(XDataUtils.RebarOptionData opt, ContinuousBeamSolution sol, string spanId, string side)
-        {
-            if (sol?.Reinforcements == null) return;
 
-            var targetList = side == "Top" ? opt.TopAddons : opt.BotAddons;
-
-            // Collect reinforcements for all three zones
-            sol.Reinforcements.TryGetValue($"{spanId}_{side}_Left", out var rL);
-            sol.Reinforcements.TryGetValue($"{spanId}_{side}_Mid", out var rM);
-            sol.Reinforcements.TryGetValue($"{spanId}_{side}_Right", out var rR);
-
-            // Determine max layers across zones
-            int maxLayers = 0;
-            if (rL?.LayerBreakdown != null) maxLayers = Math.Max(maxLayers, rL.LayerBreakdown.Count);
-            if (rM?.LayerBreakdown != null) maxLayers = Math.Max(maxLayers, rM.LayerBreakdown.Count);
-            if (rR?.LayerBreakdown != null) maxLayers = Math.Max(maxLayers, rR.LayerBreakdown.Count);
-
-            // If no layers but count > 0, assume 1 layer (legacy)
-            if (maxLayers == 0)
-            {
-                if ((rL?.Count ?? 0) > 0 || (rM?.Count ?? 0) > 0 || (rR?.Count ?? 0) > 0)
-                    maxLayers = 1;
-            }
-
-            for (int l = 0; l < maxLayers; l++)
-            {
-                string sL = (rL?.LayerBreakdown != null && rL.LayerBreakdown.Count > l) ? $"{rL.LayerBreakdown[l]}D{rL.Diameter}" : (l == 0 && (rL?.Count ?? 0) > 0 ? rL.DisplayString : "");
-                string sM = (rM?.LayerBreakdown != null && rM.LayerBreakdown.Count > l) ? $"{rM.LayerBreakdown[l]}D{rM.Diameter}" : (l == 0 && (rM?.Count ?? 0) > 0 ? rM.DisplayString : "");
-                string sR = (rR?.LayerBreakdown != null && rR.LayerBreakdown.Count > l) ? $"{rR.LayerBreakdown[l]}D{rR.Diameter}" : (l == 0 && (rR?.Count ?? 0) > 0 ? rR.DisplayString : "");
-
-                targetList.Add(new string[] { sL, sM, sR });
-            }
-        }
 
         private class DataWrapper
         {

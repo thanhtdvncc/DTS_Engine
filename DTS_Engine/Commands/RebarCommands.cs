@@ -707,35 +707,9 @@ namespace DTS_Engine.Commands
                 var obj = tr.GetObject(topo.ObjectId, OpenMode.ForWrite);
                 if (obj == null) continue;
 
-                string spanId = group?.Spans != null && i < group.Spans.Count
-                    ? group.Spans[i].SpanId
-                    : $"S{i + 1}";
+                string spanId = $"S{i + 1}";
 
-                // Build rebar strings for 3 positions (Start/Mid/End)
-                var topStrings = new string[3] { backboneTop, backboneTop, backboneTop };
-                var botStrings = new string[3] { backboneBot, backboneBot, backboneBot };
 
-                // Add addons if present
-                if (sol.Reinforcements != null)
-                {
-                    // Left/Start (index 0)
-                    if (sol.Reinforcements.TryGetValue($"{spanId}_Top_Left", out var tl))
-                        topStrings[0] += $"+{tl.Count}D{tl.Diameter}";
-                    if (sol.Reinforcements.TryGetValue($"{spanId}_Bot_Left", out var bl))
-                        botStrings[0] += $"+{bl.Count}D{bl.Diameter}";
-
-                    // Mid (index 1)
-                    if (sol.Reinforcements.TryGetValue($"{spanId}_Top_Mid", out var tm))
-                        topStrings[1] += $"+{tm.Count}D{tm.Diameter}";
-                    if (sol.Reinforcements.TryGetValue($"{spanId}_Bot_Mid", out var bm))
-                        botStrings[1] += $"+{bm.Count}D{bm.Diameter}";
-
-                    // Right/End (index 2)
-                    if (sol.Reinforcements.TryGetValue($"{spanId}_Top_Right", out var tr2))
-                        topStrings[2] += $"+{tr2.Count}D{tr2.Diameter}";
-                    if (sol.Reinforcements.TryGetValue($"{spanId}_Bot_Right", out var br))
-                        botStrings[2] += $"+{br.Count}D{br.Diameter}";
-                }
 
                 // FIX 1.4: REMOVED flip logic - XData stores L→R canonical order
                 // Old code:
@@ -764,16 +738,12 @@ namespace DTS_Engine.Commands
                 var optUser = new XDataUtils.RebarOptionData
                 {
                     TopL0 = backboneTop,
-                    TopAddL = GetAddonForZone(sol, spanId, "Top", "Left"),
-                    TopAddM = GetAddonForZone(sol, spanId, "Top", "Mid"),
-                    TopAddR = GetAddonForZone(sol, spanId, "Top", "Right"),
                     BotL0 = backboneBot,
-                    BotAddL = GetAddonForZone(sol, spanId, "Bot", "Left"),
-                    BotAddM = GetAddonForZone(sol, spanId, "Bot", "Mid"),
-                    BotAddR = GetAddonForZone(sol, spanId, "Bot", "Right"),
                     Stirrup = stirrupStrings?[1] ?? "", // Use Mid zone
                     Web = "" // No web bar for now
                 };
+                XDataUtils.RebarOptionData.PopulateAddons(optUser, sol, spanId, "Top");
+                XDataUtils.RebarOptionData.PopulateAddons(optUser, sol, spanId, "Bot");
                 XDataUtils.WriteOptUser(obj, optUser, tr);
 
                 // V6.0: Write IsLocked (always false after initial calculation)
@@ -827,13 +797,8 @@ namespace DTS_Engine.Commands
                         BotL0 = $"{sol.BackboneCount_Bot}D{sol.BackboneDiameter}"
                     };
 
-                    // Add addons if present - separate all positions (Left, Mid, Right)
-                    optData.TopAddL = GetAddonForZone(sol, spanId, "Top", "Left");
-                    optData.TopAddM = GetAddonForZone(sol, spanId, "Top", "Mid");
-                    optData.TopAddR = GetAddonForZone(sol, spanId, "Top", "Right");
-                    optData.BotAddL = GetAddonForZone(sol, spanId, "Bot", "Left");
-                    optData.BotAddM = GetAddonForZone(sol, spanId, "Bot", "Mid");
-                    optData.BotAddR = GetAddonForZone(sol, spanId, "Bot", "Right");
+                    XDataUtils.RebarOptionData.PopulateAddons(optData, sol, spanId, "Top");
+                    XDataUtils.RebarOptionData.PopulateAddons(optData, sol, spanId, "Bot");
 
                     options.Add(optData);
                 }
@@ -843,20 +808,7 @@ namespace DTS_Engine.Commands
             }
         }
 
-        /// <summary>
-        /// [V6.0] Helper to get comma-separated addon string for a span and side.
-        /// </summary>
-        /// <summary>
-        /// [V6.0] Helper to get addon string for a specific span, side and zone.
-        /// </summary>
-        private string GetAddonForZone(ContinuousBeamSolution sol, string spanId, string side, string zone)
-        {
-            if (sol?.Reinforcements != null && sol.Reinforcements.TryGetValue($"{spanId}_{side}_{zone}", out var rs) && rs != null && rs.Count > 0)
-            {
-                return $"{rs.Count}D{rs.Diameter}";
-            }
-            return "";
-        }
+
 
         // NOTE: EnsureGroupIdentity đã xóa - việc tạo GroupIdentity là của lệnh Group beam
 
