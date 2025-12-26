@@ -764,9 +764,13 @@ namespace DTS_Engine.Commands
                 var optUser = new XDataUtils.RebarOptionData
                 {
                     TopL0 = backboneTop,
-                    TopL1 = "", // Addon - not used in backbone
+                    TopAddL = GetAddonForZone(sol, spanId, "Top", "Left"),
+                    TopAddM = GetAddonForZone(sol, spanId, "Top", "Mid"),
+                    TopAddR = GetAddonForZone(sol, spanId, "Top", "Right"),
                     BotL0 = backboneBot,
-                    BotL1 = "",
+                    BotAddL = GetAddonForZone(sol, spanId, "Bot", "Left"),
+                    BotAddM = GetAddonForZone(sol, spanId, "Bot", "Mid"),
+                    BotAddR = GetAddonForZone(sol, spanId, "Bot", "Right"),
                     Stirrup = stirrupStrings?[1] ?? "", // Use Mid zone
                     Web = "" // No web bar for now
                 };
@@ -823,26 +827,13 @@ namespace DTS_Engine.Commands
                         BotL0 = $"{sol.BackboneCount_Bot}D{sol.BackboneDiameter}"
                     };
 
-                    // Add addons if present - check all positions (Left, Mid, Right)
-                    // Per spec, option stores ONE addon representative (backbone is continuous)
-                    if (sol.Reinforcements != null)
-                    {
-                        // Try Left, then Mid, then Right to find top addon
-                        if (sol.Reinforcements.TryGetValue($"{spanId}_Top_Left", out var tl))
-                            optData.TopL1 = $"{tl.Count}D{tl.Diameter}";
-                        else if (sol.Reinforcements.TryGetValue($"{spanId}_Top_Mid", out var tm))
-                            optData.TopL1 = $"{tm.Count}D{tm.Diameter}";
-                        else if (sol.Reinforcements.TryGetValue($"{spanId}_Top_Right", out var trRight))
-                            optData.TopL1 = $"{trRight.Count}D{trRight.Diameter}";
-
-                        // Try Left, then Mid, then Right to find bot addon
-                        if (sol.Reinforcements.TryGetValue($"{spanId}_Bot_Left", out var bl))
-                            optData.BotL1 = $"{bl.Count}D{bl.Diameter}";
-                        else if (sol.Reinforcements.TryGetValue($"{spanId}_Bot_Mid", out var bm))
-                            optData.BotL1 = $"{bm.Count}D{bm.Diameter}";
-                        else if (sol.Reinforcements.TryGetValue($"{spanId}_Bot_Right", out var br))
-                            optData.BotL1 = $"{br.Count}D{br.Diameter}";
-                    }
+                    // Add addons if present - separate all positions (Left, Mid, Right)
+                    optData.TopAddL = GetAddonForZone(sol, spanId, "Top", "Left");
+                    optData.TopAddM = GetAddonForZone(sol, spanId, "Top", "Mid");
+                    optData.TopAddR = GetAddonForZone(sol, spanId, "Top", "Right");
+                    optData.BotAddL = GetAddonForZone(sol, spanId, "Bot", "Left");
+                    optData.BotAddM = GetAddonForZone(sol, spanId, "Bot", "Mid");
+                    optData.BotAddR = GetAddonForZone(sol, spanId, "Bot", "Right");
 
                     options.Add(optData);
                 }
@@ -850,6 +841,21 @@ namespace DTS_Engine.Commands
                 // Write options to entity
                 XDataUtils.WriteRebarOptions(obj, options, tr);
             }
+        }
+
+        /// <summary>
+        /// [V6.0] Helper to get comma-separated addon string for a span and side.
+        /// </summary>
+        /// <summary>
+        /// [V6.0] Helper to get addon string for a specific span, side and zone.
+        /// </summary>
+        private string GetAddonForZone(ContinuousBeamSolution sol, string spanId, string side, string zone)
+        {
+            if (sol?.Reinforcements != null && sol.Reinforcements.TryGetValue($"{spanId}_{side}_{zone}", out var rs) && rs != null && rs.Count > 0)
+            {
+                return $"{rs.Count}D{rs.Diameter}";
+            }
+            return "";
         }
 
         // NOTE: EnsureGroupIdentity đã xóa - việc tạo GroupIdentity là của lệnh Group beam
@@ -894,74 +900,39 @@ namespace DTS_Engine.Commands
                             var obj = tr.GetObject(objId, OpenMode.ForWrite);
                             if (obj == null) continue;
 
-                            // Build rebar strings from structured data
-                            var topStrings = new string[3];
-                            var botStrings = new string[3];
-                            var stirrupStrings = span.Stirrup ?? new string[3];
-                            var webStrings = span.WebBar ?? new string[3];
+                            // V6.1: Extract directly from internal rebar arrays (Single Source of Truth)
+                            // Layers: 0 = Backbone, 1 = Addon
+                            // Positions: 0 = Left, 2 = Mid, 4 = Right
 
-                            // Zone 0 = Left
-                            topStrings[0] = BuildRebarString(span.TopBackbone, span.TopAddLeft);
-                            botStrings[0] = BuildRebarString(span.BotBackbone, span.BotAddLeft);
-
-                            // Zone 1 = Mid
-                            topStrings[1] = BuildRebarString(span.TopBackbone, span.TopAddMid);
-                            botStrings[1] = BuildRebarString(span.BotBackbone, span.BotAddMid);
-
-                            // Zone 2 = Right
-                            topStrings[2] = BuildRebarString(span.TopBackbone, span.TopAddRight);
-                            botStrings[2] = BuildRebarString(span.BotBackbone, span.BotAddRight);
-
-                            // Check if geometry is reversed (need to flip back)
+                            // Check reversed geometry
                             bool isReversed = CheckIfEntityReversed(obj);
-                            if (isReversed)
-                            {
-                                topStrings = FlipArrayStatic(topStrings);
-                                botStrings = FlipArrayStatic(botStrings);
-                                stirrupStrings = FlipArrayStatic(stirrupStrings);
-                                webStrings = FlipArrayStatic(webStrings);
-                            }
+                            int idxL = isReversed ? 4 : 0;
+                            int idxM = 2;
+                            int idxR = isReversed ? 0 : 4;
 
-                            // NOTE: UpdateBeamSolutionXData (legacy) đã xóa - dùng OptUser
-                            // V6.0: Write IsLocked flag
-                            XDataUtils.WriteIsLocked(obj, isLocked, tr);
-
-                            // V5.0: Write current state in separated layer format for consistency
-                            // Convert RebarInfo to string format "nDd" (e.g., "2D16")
-                            string backboneTopStr = span.TopBackbone != null && span.TopBackbone.Count > 0
-                                ? $"{span.TopBackbone.Count}D{span.TopBackbone.Diameter}" : "";
-                            string backboneBotStr = span.BotBackbone != null && span.BotBackbone.Count > 0
-                                ? $"{span.BotBackbone.Count}D{span.BotBackbone.Diameter}" : "";
-
-                            var topL0 = new string[3] { backboneTopStr, backboneTopStr, backboneTopStr };
-                            var botL0 = new string[3] { backboneBotStr, backboneBotStr, backboneBotStr };
-                            var topL1 = new string[3] {
-                                span.TopAddLeft != null && span.TopAddLeft.Count > 0 ? $"{span.TopAddLeft.Count}D{span.TopAddLeft.Diameter}" : "",
-                                span.TopAddMid != null && span.TopAddMid.Count > 0 ? $"{span.TopAddMid.Count}D{span.TopAddMid.Diameter}" : "",
-                                span.TopAddRight != null && span.TopAddRight.Count > 0 ? $"{span.TopAddRight.Count}D{span.TopAddRight.Diameter}" : ""
-                            };
-                            var botL1 = new string[3] {
-                                span.BotAddLeft != null && span.BotAddLeft.Count > 0 ? $"{span.BotAddLeft.Count}D{span.BotAddLeft.Diameter}" : "",
-                                span.BotAddMid != null && span.BotAddMid.Count > 0 ? $"{span.BotAddMid.Count}D{span.BotAddMid.Diameter}" : "",
-                                span.BotAddRight != null && span.BotAddRight.Count > 0 ? $"{span.BotAddRight.Count}D{span.BotAddRight.Diameter}" : ""
-                            };
-
-                            // V6.0: Write OptUser instead of separate Lx arrays
                             var optUser = new XDataUtils.RebarOptionData
                             {
-                                TopL0 = isReversed ? topL0[2] : topL0[0], // After flip, use correct position
-                                TopL1 = isReversed ? topL1[2] : topL1[0],
-                                BotL0 = isReversed ? botL0[2] : botL0[0],
-                                BotL1 = isReversed ? botL1[2] : botL1[0],
-                                Stirrup = span.Stirrup != null && span.Stirrup.Length > 1 ? span.Stirrup[1] : "", // Mid zone
-                                Web = span.WebBar != null && span.WebBar.Length > 1 ? span.WebBar[1] : "" // Mid zone
-                            };
-                            XDataUtils.WriteOptUser(obj, optUser, tr);
+                                TopL0 = span.TopRebarInternal[0, idxM] ?? "", // Backbone (typically same across all)
+                                TopAddL = span.TopRebarInternal[1, idxL] ?? "",
+                                TopAddM = span.TopRebarInternal[1, idxM] ?? "",
+                                TopAddR = span.TopRebarInternal[1, idxR] ?? "",
 
-                            // V6.0: Use SetIsManual for manual modification flag
+                                BotL0 = span.BotRebarInternal[0, idxM] ?? "",
+                                BotAddL = span.BotRebarInternal[1, idxL] ?? "",
+                                BotAddM = span.BotRebarInternal[1, idxM] ?? "",
+                                BotAddR = span.BotRebarInternal[1, idxR] ?? "",
+
+                                Stirrup = span.Stirrup != null && span.Stirrup.Length > idxM ? span.Stirrup[idxM] : "",
+                                Web = span.WebBar != null && span.WebBar.Length > idxM ? span.WebBar[idxM] : ""
+                            };
+
+                            XDataUtils.WriteOptUser(obj, optUser, tr);
+                            XDataUtils.WriteIsLocked(obj, group.IsLocked, tr);
+
+                            // V6.0: Manual modification flag (sycned with IsLocked)
                             if (span.IsManualModified)
                             {
-                                XDataUtils.SetIsManual(obj, true, tr);
+                                XDataUtils.WriteIsLocked(obj, true, tr);
                             }
                         }
                     }
@@ -1477,12 +1448,8 @@ namespace DTS_Engine.Commands
                     }
                 }
 
-                // V5.0: Read IsManual flag (replaces legacy DesignLocked check)
-                bool isManualV5 = XDataUtils.ReadIsManual(obj);
-                if (isManualV5)
-                {
-                    span.IsManualModified = true;
-                }
+                // V5.0: Read IsLocked flag
+                span.IsManualModified = XDataUtils.ReadIsLocked(obj);
                 // NOTE: DesignLocked legacy key fallback đã xóa
             }
         }

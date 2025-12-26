@@ -909,48 +909,59 @@ namespace DTS_Engine.UI.Forms
                 group.SelectedBackboneIndex = 0;
 
                 // ===== FIX 1.2: PERSIST BackboneOptions TO XDATA IMMEDIATELY =====
-                // This ensures calculation results are saved even if viewer is closed unexpectedly
                 using (doc.LockDocument())
                 using (var tr = doc.Database.TransactionManager.StartTransaction())
                 {
                     try
                     {
-                        // Convert ContinuousBeamSolution to RebarOptionData format
-                        var optionDataList = new List<XDataUtils.RebarOptionData>();
-                        foreach (var sol in proposals)
+                        if (group.EntityHandles != null)
                         {
-                            if (sol == null) continue;
-                            string topL0 = $"{sol.BackboneCount_Top}D{sol.BackboneDiameter}";
-                            string botL0 = $"{sol.BackboneCount_Bot}D{sol.BackboneDiameter}";
-                            optionDataList.Add(new XDataUtils.RebarOptionData
+                            for (int i = 0; i < group.EntityHandles.Count; i++)
                             {
-                                TopL0 = topL0,
-                                TopL1 = "",  // Addons handled separately
-                                BotL0 = botL0,
-                                BotL1 = ""
-                            });
-                        }
-
-                        // Write options to all entities in group
-                        if (group.EntityHandles != null && group.EntityHandles.Count > 0)
-                        {
-                            foreach (var handle in group.EntityHandles)
-                            {
+                                var handle = group.EntityHandles[i];
                                 var objId = Core.Utils.AcadUtils.GetObjectIdFromHandle(handle);
                                 if (objId.IsNull) continue;
 
                                 var obj = tr.GetObject(objId, OpenMode.ForWrite);
                                 if (obj == null) continue;
 
-                                // Write all 5 options to XData (Opt0-4)
-                                XDataUtils.WriteRebarOptions(obj, optionDataList, tr);
+                                string spanId = (group.Spans != null && i < group.Spans.Count) ? group.Spans[i].SpanId : $"S{i + 1}";
 
-                                // V6.0: Write OptUser = first option (default selection) + IsLocked = false
-                                if (optionDataList.Count > 0)
+                                // 4. Update span options for later LOCK
+                                var entityOptions = new List<XDataUtils.RebarOptionData>();
+                                for (int optIdx = 0; optIdx < proposals.Count; optIdx++)
                                 {
-                                    XDataUtils.WriteOptUser(obj, optionDataList[0], tr);
-                                    XDataUtils.WriteIsLocked(obj, false, tr);
+                                    var sol = proposals[optIdx];
+                                    if (sol == null) continue;
+
+                                    string topL0 = $"{sol.BackboneCount_Top}D{sol.BackboneDiameter}";
+                                    string botL0 = $"{sol.BackboneCount_Bot}D{sol.BackboneDiameter}";
+                                    entityOptions.Add(new XDataUtils.RebarOptionData
+                                    {
+                                        TopL0 = topL0,
+                                        TopAddL = GetAddonForZone(sol, spanId, "Top", "Left"),
+                                        TopAddM = GetAddonForZone(sol, spanId, "Top", "Mid"),
+                                        TopAddR = GetAddonForZone(sol, spanId, "Top", "Right"),
+                                        BotL0 = botL0,
+                                        BotAddL = GetAddonForZone(sol, spanId, "Bot", "Left"),
+                                        BotAddM = GetAddonForZone(sol, spanId, "Bot", "Mid"),
+                                        BotAddR = GetAddonForZone(sol, spanId, "Bot", "Right")
+                                    });
                                 }
+                                group.Spans[i].Options = entityOptions;
+
+                                // 5. Build OptUser for the entity (use first proposal as default)
+                                if (entityOptions.Count > 0)
+                                {
+                                    var firstOpt = entityOptions[0];
+                                    firstOpt.Stirrup = group.Spans[i].Stirrup != null && group.Spans[i].Stirrup.Length > 1 ? group.Spans[i].Stirrup[1] : "";
+                                    firstOpt.Web = group.Spans[i].WebBar != null && group.Spans[i].WebBar.Length > 1 ? group.Spans[i].WebBar[1] : "";
+
+                                    XDataUtils.WriteOptUser(obj, firstOpt, tr);
+                                    XDataUtils.WriteIsLocked(obj, false, tr); // Also unlock by default
+                                }
+                                // Write all 5 options to XData (Opt0-4)
+                                XDataUtils.WriteRebarOptions(obj, entityOptions, tr);
                             }
                         }
                         tr.Commit();
@@ -1130,19 +1141,32 @@ namespace DTS_Engine.UI.Forms
                                 }
                                 if (isReversed) ReverseBeamResultData(rebarData);
 
-                                // V7.0: Load 5 options (Opt0-4) trực tiếp vào span.Options
-                                var options = XDataUtils.ReadRebarOptionsV5(obj);
-                                span.Options = options ?? new List<XDataUtils.RebarOptionData>();
+                                // V7.0: Load 5 options (Opt0-4) + OptUser
+                                span.Options = XDataUtils.ReadRebarOptionsV5(obj) ?? new List<XDataUtils.RebarOptionData>();
+                                span.UserOption = XDataUtils.ReadOptUser(obj);
 
-                                // Hiển thị mặc định theo option đầu tiên (Opt0)
-                                if (span.Options.Count > 0 && !string.IsNullOrEmpty(span.Options[0].TopL0))
+                                // Read IsLocked flag
+                                span.IsManualModified = XDataUtils.ReadIsLocked(obj);
+
+                                // Hiển thị mặc định (Ưu tiên UserOption nếu đã chốt)
+                                var defaultOpt = (span.IsManualModified && span.UserOption != null)
+                                    ? span.UserOption
+                                    : (span.Options.Count > 0 ? span.Options[0] : null);
+
+                                if (defaultOpt != null && !string.IsNullOrEmpty(defaultOpt.TopL0))
                                 {
-                                    span.TopRebarInternal[0, 0] = span.Options[0].TopL0 ?? "";
-                                    span.TopRebarInternal[0, 2] = span.Options[0].TopL0 ?? "";
-                                    span.TopRebarInternal[0, 4] = span.Options[0].TopL0 ?? "";
-                                    span.BotRebarInternal[0, 0] = span.Options[0].BotL0 ?? "";
-                                    span.BotRebarInternal[0, 2] = span.Options[0].BotL0 ?? "";
-                                    span.BotRebarInternal[0, 4] = span.Options[0].BotL0 ?? "";
+                                    // Layer 0: Backbone (positions 0, 2, 4 = Left, Mid, Right)
+                                    span.TopRebarInternal[0, 0] = span.TopRebarInternal[0, 2] = span.TopRebarInternal[0, 4] = defaultOpt.TopL0;
+                                    span.BotRebarInternal[0, 0] = span.BotRebarInternal[0, 2] = span.BotRebarInternal[0, 4] = defaultOpt.BotL0;
+
+                                    // Layer 1: Addons (Properly map 3 zones)
+                                    span.TopRebarInternal[1, 0] = defaultOpt.TopAddL;
+                                    span.TopRebarInternal[1, 2] = defaultOpt.TopAddM;
+                                    span.TopRebarInternal[1, 4] = defaultOpt.TopAddR;
+
+                                    span.BotRebarInternal[1, 0] = defaultOpt.BotAddL;
+                                    span.BotRebarInternal[1, 2] = defaultOpt.BotAddM;
+                                    span.BotRebarInternal[1, 4] = defaultOpt.BotAddR;
                                 }
 
                                 // Read IsLocked
@@ -1171,9 +1195,9 @@ namespace DTS_Engine.UI.Forms
                                 // Apply same formula as TopologyBuilder.PopulateSpanRequirements
                                 for (int zi = 0; zi < 3; zi++)
                                 {
-                                    double asTopReq = (zi < topArea.Length ? topArea[zi] : 0) + 
+                                    double asTopReq = (zi < topArea.Length ? topArea[zi] : 0) +
                                                       (zi < torsionArea.Length ? torsionArea[zi] : 0) * torsTop;
-                                    double asBotReq = (zi < botArea.Length ? botArea[zi] : 0) + 
+                                    double asBotReq = (zi < botArea.Length ? botArea[zi] : 0) +
                                                       (zi < torsionArea.Length ? torsionArea[zi] : 0) * torsBot;
 
                                     int p0 = zi == 0 ? 0 : (zi == 1 ? 2 : 4);
@@ -1184,7 +1208,7 @@ namespace DTS_Engine.UI.Forms
                                     span.As_Bot[p0] = asBotReq;
                                     span.As_Bot[p1] = asBotReq;
 
-                                    span.StirrupReq[zi] = (zi < shearArea.Length ? shearArea[zi] : 0) + 
+                                    span.StirrupReq[zi] = (zi < shearArea.Length ? shearArea[zi] : 0) +
                                                           (zi < ttArea.Length ? ttArea[zi] : 0);
                                     span.WebReq[zi] = (zi < torsionArea.Length ? torsionArea[zi] : 0) * torsSide;
                                 }
@@ -2186,6 +2210,18 @@ namespace DTS_Engine.UI.Forms
             }
 
             return neighbors;
+        }
+
+        /// <summary>
+        /// [V6.0] Helper to get addon string for a specific span, side and zone.
+        /// </summary>
+        private string GetAddonForZone(ContinuousBeamSolution sol, string spanId, string side, string zone)
+        {
+            if (sol?.Reinforcements != null && sol.Reinforcements.TryGetValue($"{spanId}_{side}_{zone}", out var rs) && rs != null && rs.Count > 0)
+            {
+                return $"{rs.Count}D{rs.Diameter}";
+            }
+            return "";
         }
 
         private class DataWrapper

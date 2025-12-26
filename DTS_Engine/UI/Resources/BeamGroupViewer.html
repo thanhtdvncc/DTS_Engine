@@ -2802,8 +2802,8 @@
         function parseRebarArea(rebarStr) {
             if (!rebarStr || typeof rebarStr !== 'string') return 0;
             let total = 0;
-            // Split by '+' for combined bars (e.g., "2D16+2D18")
-            const parts = rebarStr.split('+');
+            // Split by '+' or ',' for combined bars (e.g., "2D16+2D18" or "2D20,2D25")
+            const parts = rebarStr.split(/[+,]/);
             for (const part of parts) {
                 const match = part.trim().match(/(\d+)D(\d+)/i);
                 if (match) {
@@ -2929,11 +2929,15 @@
             const firstSpan = currentGroup?.Spans?.[0];
             const options = firstSpan?.Options || [];
 
-            console.log('populateOptionSelect V7:', {
-                groupName: currentGroup?.GroupName,
-                spanCount: currentGroup?.Spans?.length || 0,
-                optionsCount: options.length
-            });
+            // [V7.1] Hiển thị User Option nếu có
+            if (firstSpan?.UserOption && firstSpan.UserOption.TopL0) {
+                const el = document.createElement('option');
+                el.value = 'user';
+                const topStr = firstSpan.UserOption.TopL0 || '-';
+                const botStr = firstSpan.UserOption.BotL0 || '-';
+                el.textContent = `⭐ User: T:${topStr} / B:${botStr}`;
+                sel.appendChild(el);
+            }
 
             // Hiển thị 5 options (Opt0-4)
             if (options.length > 0) {
@@ -2945,8 +2949,8 @@
                     el.textContent = `Opt${idx}: T:${topStr} / B:${botStr}`;
                     sel.appendChild(el);
                 });
-            } else {
-                // Không có options
+            } else if (!firstSpan?.UserOption) {
+                // Không có options và không có UserOption
                 const noOpt = document.createElement('option');
                 noOpt.value = 'none';
                 noOpt.textContent = 'Chua tinh thep';
@@ -2955,20 +2959,31 @@
             }
 
             // Chọn option mặc định
-            const selectedIdx = currentGroup?.SelectedBackboneIndex || 0;
-            sel.value = String(selectedIdx);
-            selectedOptionKey = String(selectedIdx);
+            if (currentGroup?.IsLocked && firstSpan?.UserOption) {
+                sel.value = 'user';
+                selectedOptionKey = 'user';
+            } else {
+                const selectedIdx = currentGroup?.SelectedBackboneIndex || 0;
+                // Dự phòng nếu index > options.length
+                const valueToSet = (selectedIdx >= 0 && selectedIdx < options.length) ? String(selectedIdx) : (options.length > 0 ? '0' : 'none');
+                sel.value = valueToSet;
+                selectedOptionKey = valueToSet;
+            }
         }
 
         function selectOption(index) {
-            const parsed = parseInt(index);
-            if (isNaN(parsed)) return;
+            if (index === 'user') {
+                selectedOptionKey = 'user';
+                // currentGroup.SelectedBackboneIndex = -1; // Optional indicator
+            } else {
+                const parsed = parseInt(index);
+                if (isNaN(parsed)) return;
+                selectedOptionKey = String(parsed);
+                currentGroup.SelectedBackboneIndex = parsed;
+            }
 
-            selectedOptionKey = String(parsed);
-            currentGroup.SelectedBackboneIndex = parsed;
-
-            // V7.0: Đọc trực tiếp từ span.Options[index] - XData là nguồn duy nhất
-            applyXDataOptionToSpans(parsed);
+            // V7.0: Đọc trực tiếp từ XData options
+            applyXDataOptionToSpans(index);
 
             updateMetrics();
             renderCanvas();
@@ -2977,13 +2992,13 @@
 
         // V7.0: Xóa getSelectedOption obsolete - không còn sử dụng BackboneOptions
 
-        // V7.0: Đọc trực tiếp từ span.Options[index] - XData là nguồn duy nhất
+        // V7.0: Đọc trực tiếp từ span.Options[index] hoặc span.UserOption
         function applyXDataOptionToSpans(optionIndex) {
             if (!currentGroup?.Spans?.length) return;
 
             currentGroup.Spans.forEach(span => {
-                // Đọc trực tiếp từ span.Options[optionIndex]
-                const opt = span.Options?.[optionIndex];
+                // Đọc trực tiếp từ Options hoặc UserOption
+                const opt = (optionIndex === 'user') ? span.UserOption : span.Options?.[optionIndex];
                 if (!opt) return;
 
                 // Initialize arrays - MUST be 6 elements to match C# [3,6] structure
@@ -2991,21 +3006,12 @@
                 if (!span.BotRebar) span.BotRebar = [[], []];
 
                 // Layer 0: Backbone (positions 0,2,4 = Left,Mid,Right)
-                // Array MUST be 6 elements: [0,1,2,3,4,5] for C# compatibility
                 span.TopRebar[0] = [opt.TopL0 || '', '', opt.TopL0 || '', '', opt.TopL0 || '', ''];
                 span.BotRebar[0] = [opt.BotL0 || '', '', opt.BotL0 || '', '', opt.BotL0 || '', ''];
 
-                // Layer 1: Addon (L1 positions) - nếu có
-                if (opt.TopL1) {
-                    span.TopRebar[1] = [opt.TopL1, '', opt.TopL1, '', opt.TopL1, ''];
-                } else {
-                    span.TopRebar[1] = ['', '', '', '', '', ''];
-                }
-                if (opt.BotL1) {
-                    span.BotRebar[1] = [opt.BotL1, '', opt.BotL1, '', opt.BotL1, ''];
-                } else {
-                    span.BotRebar[1] = ['', '', '', '', '', ''];
-                }
+                // Layer 1: Addons (Properly map 3 zones L, M, R to positions 0, 2, 4)
+                span.TopRebar[1] = [opt.TopAddL || '', '', opt.TopAddM || '', '', opt.TopAddR || '', ''];
+                span.BotRebar[1] = [opt.BotAddL || '', '', opt.BotAddM || '', '', opt.BotAddR || '', ''];
             });
         }
 

@@ -1076,32 +1076,7 @@ namespace DTS_Engine.Core.Utils
             SetRawData(obj, dict, tr);
         }
 
-        /// <summary>
-        /// [V5.0] Overload for legacy compatibility - accepts separate Top/Bot arrays.
-        /// </summary>
-        public static void WriteRebarOptions(DBObject obj, List<string[]> topOptions, List<string[]> botOptions, Transaction tr)
-        {
-            if (obj == null || tr == null) return;
 
-            var options = new List<RebarOptionData>();
-            int count = Math.Max(topOptions?.Count ?? 0, botOptions?.Count ?? 0);
-
-            for (int i = 0; i < Math.Min(5, count); i++)
-            {
-                var top = topOptions != null && i < topOptions.Count ? topOptions[i] : null;
-                var bot = botOptions != null && i < botOptions.Count ? botOptions[i] : null;
-
-                options.Add(new RebarOptionData
-                {
-                    TopL0 = top?.Length > 0 ? top[0] : "",
-                    TopL1 = top?.Length > 1 ? top[1] : "",
-                    BotL0 = bot?.Length > 0 ? bot[0] : "",
-                    BotL1 = bot?.Length > 1 ? bot[1] : ""
-                });
-            }
-
-            WriteRebarOptions(obj, options, tr);
-        }
 
         /// <summary>
         /// [V6.0] Read rebar options from entity.
@@ -1115,55 +1090,21 @@ namespace DTS_Engine.Core.Utils
 
             for (int i = 0; i < 5; i++)
             {
-                // V6.0: Only compact format (Opt0-4), no legacy fallback
                 if (dict.TryGetValue($"Opt{i}", out var optVal) && optVal != null)
                 {
-                    result.Add(ParseCompactOption(optVal.ToString()));
+                    result.Add(RebarOptionData.Parse(optVal.ToString()));
                 }
                 else
                 {
-                    // V6.0: No fallback - add empty option if key not found
                     result.Add(new RebarOptionData());
                 }
             }
-
             return result;
         }
 
         // V6.0: ReadRebarOptions legacy wrapper đã xóa - dùng ReadRebarOptionsV5 trực tiếp
 
-        /// <summary>
-        /// [V5.0] Parse compact option format "T:L0|L1;B:L0|L1".
-        /// </summary>
-        private static RebarOptionData ParseCompactOption(string optStr)
-        {
-            var result = new RebarOptionData();
-            if (string.IsNullOrEmpty(optStr)) return result;
 
-            try
-            {
-                // Format: "T:2d20|1d12;B:3d18"
-                var sections = optStr.Split(';');
-                foreach (var section in sections)
-                {
-                    if (section.StartsWith("T:"))
-                    {
-                        var layers = section.Substring(2).Split('|');
-                        result.TopL0 = layers.Length > 0 ? layers[0] : "";
-                        result.TopL1 = layers.Length > 1 ? layers[1] : "";
-                    }
-                    else if (section.StartsWith("B:"))
-                    {
-                        var layers = section.Substring(2).Split('|');
-                        result.BotL0 = layers.Length > 0 ? layers[0] : "";
-                        result.BotL1 = layers.Length > 1 ? layers[1] : "";
-                    }
-                }
-            }
-            catch { }
-
-            return result;
-        }
 
         // V6.0: ParseOptionString legacy helper đã xóa - không còn caller
 
@@ -1174,11 +1115,23 @@ namespace DTS_Engine.Core.Utils
         public class RebarOptionData
         {
             public string TopL0 { get; set; } = "";  // Top backbone (e.g., "2D22")
-            public string TopL1 { get; set; } = "";  // Top addon (e.g., "1D12")
+            public string TopAddL { get; set; } = ""; // Top Addon Left
+            public string TopAddM { get; set; } = ""; // Top Addon Mid
+            public string TopAddR { get; set; } = ""; // Top Addon Right
+
             public string BotL0 { get; set; } = "";  // Bot backbone
-            public string BotL1 { get; set; } = "";  // Bot addon
+            public string BotAddL { get; set; } = "";
+            public string BotAddM { get; set; } = "";
+            public string BotAddR { get; set; } = "";
+
             public string Stirrup { get; set; } = ""; // Stirrup (e.g., "2-d10a150")
             public string Web { get; set; } = "";     // Web bar (e.g., "2D12")
+
+            // Properties for legacy compatibility (if needed during transition, but will be removed)
+            [Newtonsoft.Json.JsonIgnore]
+            public string TopL1 { get => $"{TopAddL}|{TopAddM}|{TopAddR}"; set { } }
+            [Newtonsoft.Json.JsonIgnore]
+            public string BotL1 { get => $"{BotAddL}|{BotAddM}|{BotAddR}"; set { } }
 
             /// <summary>
             /// Build OptUser string from this data.
@@ -1186,9 +1139,7 @@ namespace DTS_Engine.Core.Utils
             /// </summary>
             public string ToOptString()
             {
-                string top = string.IsNullOrEmpty(TopL1) ? $"T:{TopL0}" : $"T:{TopL0}|{TopL1}";
-                string bot = string.IsNullOrEmpty(BotL1) ? $"B:{BotL0}" : $"B:{BotL0}|{BotL1}";
-                return $"{top};{bot};S:{Stirrup ?? ""};W:{Web ?? ""}";
+                return $"T:{TopL0}|{TopAddL}|{TopAddM}|{TopAddR};B:{BotL0}|{BotAddL}|{BotAddM}|{BotAddR};S:{Stirrup ?? ""};W:{Web ?? ""}";
             }
 
             /// <summary>
@@ -1207,13 +1158,17 @@ namespace DTS_Engine.Core.Utils
                     {
                         var layers = part.Substring(2).Split('|');
                         result.TopL0 = layers.Length > 0 ? layers[0] : "";
-                        result.TopL1 = layers.Length > 1 ? layers[1] : "";
+                        result.TopAddL = layers.Length > 1 ? layers[1] : "";
+                        result.TopAddM = layers.Length > 2 ? layers[2] : "";
+                        result.TopAddR = layers.Length > 3 ? layers[3] : "";
                     }
                     else if (part.StartsWith("B:"))
                     {
                         var layers = part.Substring(2).Split('|');
                         result.BotL0 = layers.Length > 0 ? layers[0] : "";
-                        result.BotL1 = layers.Length > 1 ? layers[1] : "";
+                        result.BotAddL = layers.Length > 1 ? layers[1] : "";
+                        result.BotAddM = layers.Length > 2 ? layers[2] : "";
+                        result.BotAddR = layers.Length > 3 ? layers[3] : "";
                     }
                     else if (part.StartsWith("S:"))
                     {
@@ -1263,7 +1218,7 @@ namespace DTS_Engine.Core.Utils
             if (obj == null || tr == null) return;
 
             var dict = GetRawData(obj) ?? new Dictionary<string, object>();
-            dict["IsLocked"] = isLocked ? "1" : "0";
+            dict[KEY_IS_MANUAL] = isLocked ? "1" : "0";
             SetRawData(obj, dict, tr);
         }
 
@@ -1275,7 +1230,7 @@ namespace DTS_Engine.Core.Utils
             var dict = GetRawData(obj);
             if (dict == null) return false;
 
-            if (dict.TryGetValue("IsLocked", out var val) && val != null)
+            if (dict.TryGetValue(KEY_IS_MANUAL, out var val) && val != null)
             {
                 return val.ToString() == "1";
             }
@@ -1284,33 +1239,7 @@ namespace DTS_Engine.Core.Utils
 
         // NOTE: WriteCurrentRebar/ReadCurrentRebar (TopL0/TopL1/BotL0/BotL1) đã xóa - dùng WriteOptUser/ReadOptUser
 
-        /// <summary>
-        /// [V5.0] Set IsManual flag on entity.
-        /// </summary>
-        public static void SetIsManual(DBObject obj, bool isManual, Transaction tr)
-        {
-            if (obj == null || tr == null) return;
 
-            var dict = GetRawData(obj) ?? new Dictionary<string, object>();
-            dict[KEY_IS_MANUAL] = isManual ? "1" : "0";
-            SetRawData(obj, dict, tr);
-        }
-
-        /// <summary>
-        /// [V5.0] Read IsManual flag from entity.
-        /// </summary>
-        public static bool ReadIsManual(DBObject obj)
-        {
-            var dict = GetRawData(obj);
-            if (dict == null) return false;
-
-            if (dict.TryGetValue(KEY_IS_MANUAL, out var val) && val != null)
-            {
-                return val.ToString() == "1";
-            }
-
-            return false;
-        }
 
         // NOTE: ReadCalculatedAt đã xóa - không còn ghi CalculatedAt
 
