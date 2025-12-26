@@ -1167,8 +1167,17 @@
             renderDetailCanvas();
         }
 
-        function showCalculationReport() {
-            window.Beam?.Actions?.showCalculationReport(-1);
+        function showCalculationReport(spanIndex = -1) {
+            if (window.chrome?.webview) {
+                const payload = {
+                    GroupIndex: currentGroupIndex,
+                    SpanIndex: spanIndex,
+                    Groups: data.groups
+                };
+                window.chrome.webview.postMessage('SHOW_REPORT|' + JSON.stringify(payload));
+            } else {
+                console.warn('WebView2 not found. Cannot show report.');
+            }
         }
 
         function resizeDetailCanvas() {
@@ -1300,8 +1309,8 @@
                 }
 
                 // Span label (center of beam) - Format: "S1 | 2GY2 🔒" or "S1 | 🔓"
-                // NGHIÊM CẤM FALLBACK - section label != group name
-                const sectionLabel = span.xSectionLabel || ''; // Empty if not set, NO FALLBACK
+                // FIX: Fallback về currentGroup.Name để thống nhất với sidebar table
+                const sectionLabel = span.xSectionLabel || currentGroup.Name || '';
                 const isLocked = span.xSectionLabelLocked === true;
                 const lockIcon = isLocked ? ' 🔒' : ' 🔓'; // Always show icon at END
                 const fullLabel = `${span.SpanId} | ${sectionLabel}${lockIcon}`;
@@ -2523,17 +2532,26 @@
                     }
                 });
 
-                // Double-click: edit label on detail canvas (inline text input)
+                // Double-click: open calculation report for span OR edit label
                 detailCanvas.addEventListener('dblclick', (e) => {
                     const rect = detailCanvas.getBoundingClientRect();
                     const x = (e.clientX - rect.left - detailPanX) / detailZoom;
                     const y = (e.clientY - rect.top - detailPanY) / detailZoom;
 
-                    // Check label bounds and start inline edit
+                    // 1. Priority: Edit label if clicked
                     for (let i = 0; i < detailRebarLabelBounds.length; i++) {
                         const lb = detailRebarLabelBounds[i];
                         if (x >= lb.x && x <= lb.x + lb.width && y >= lb.y && y <= lb.y + lb.height) {
                             startInlineLabelEdit(lb);
+                            return;
+                        }
+                    }
+
+                    // 2. Secondary: Open report for span if clicked on span body
+                    for (let i = 0; i < detailSpanBounds.length; i++) {
+                        const b = detailSpanBounds[i];
+                        if (x >= b.x && x <= b.x + b.width && y >= b.y && y <= b.y + b.height) {
+                            showCalculationReport(b.index);
                             return;
                         }
                     }
@@ -3497,7 +3515,8 @@
                     // First row shows span info with rowspan, other rows only show layer data
                     if (isFirstRow) {
                         // Format: "SpanId | xSectionLabel" with editable section label
-                        const sectionLabel = span.xSectionLabel || '-';
+                        // FIX: Fallback về currentGroup.Name (giống plan view) thay vì '-' để thống nhất nguồn dữ liệu
+                        const sectionLabel = span.xSectionLabel || currentGroup.Name || '-';
                         const isLocked = span.xSectionLabelLocked === true;
 
                         tr.innerHTML = `
@@ -4322,6 +4341,7 @@
             doCancel,
             applyToDrawing,
             quickCalc,
+            showCalculationReport,
             copyFormat,
 
             // UI

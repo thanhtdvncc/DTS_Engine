@@ -58,6 +58,7 @@ namespace DTS_Engine.UI.Forms
             await InitializeWebView();
         }
 
+
         private async System.Threading.Tasks.Task InitializeWebView()
         {
             try
@@ -68,28 +69,32 @@ namespace DTS_Engine.UI.Forms
                 webView.CoreWebView2.WebMessageReceived += CoreWebView2_WebMessageReceived;
                 webView.CoreWebView2.DOMContentLoaded += CoreWebView2_DOMContentLoaded;
 
-                // Load HTML from resources
-                string assemblyPath = Path.GetDirectoryName(System.Reflection.Assembly.GetExecutingAssembly().Location);
-                string htmlPath = Path.Combine(assemblyPath, "UI", "Resources", "CalculationReport.html");
-
-                if (!File.Exists(htmlPath))
-                {
-                    // Fallback to local source if dev mode
-                    htmlPath = Path.Combine(assemblyPath, "..", "..", "UI", "Resources", "CalculationReport.html");
-                }
-
-                if (File.Exists(htmlPath))
-                {
-                    webView.CoreWebView2.Navigate("file:///" + htmlPath.Replace("\\", "/"));
-                }
-                else
-                {
-                    MessageBox.Show("Không tìm thấy file CalculationReport.html tại: " + htmlPath);
-                }
+                // Load HTML from embedded resource (same pattern as BeamGroupViewerDialog)
+                string html = LoadHtmlFromResource();
+                webView.CoreWebView2.NavigateToString(html);
             }
             catch (Exception ex)
             {
                 MessageBox.Show("Lỗi khởi tạo WebView2: " + ex.Message);
+            }
+        }
+
+        private string LoadHtmlFromResource()
+        {
+            string resourceName = "DTS_Engine.UI.Resources.CalculationReport.html";
+            var assembly = System.Reflection.Assembly.GetExecutingAssembly();
+
+            using (var stream = assembly.GetManifestResourceStream(resourceName))
+            {
+                if (stream == null)
+                {
+                    return "<html><body><h1>CalculationReport.html not found</h1></body></html>";
+                }
+
+                using (var reader = new StreamReader(stream))
+                {
+                    return reader.ReadToEnd();
+                }
             }
         }
 
@@ -103,8 +108,9 @@ namespace DTS_Engine.UI.Forms
         {
             if (string.IsNullOrEmpty(_jsonReportData)) return;
 
-            // Thoát chuỗi JSON để truyền vào JS
-            string script = $"initReport({JsonConvert.ToString(_jsonReportData)})";
+            // FIX: _jsonReportData đã là JSON string, không cần JsonConvert.ToString() 
+            // vì nó sẽ double-escape string. Truyền trực tiếp vào initReport.
+            string script = $"initReport({_jsonReportData})";
             webView.CoreWebView2.ExecuteScriptAsync(script);
         }
 

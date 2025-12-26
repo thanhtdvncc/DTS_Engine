@@ -234,13 +234,14 @@ namespace DTS_Engine.Core.Utils
         }
 
         // --- HELPERS DETAILED ---
+        // --- HELPERS DETAILED ---
         private static int WriteDtlRow(IXLWorksheet ws, int row, string item, ReportSpanData span, Func<ReportStationData, ReportForceResult> sel, bool fill)
         {
             ws.Cell(row, 2).Value = item;
             ws.Cell(row, 3).Value = "Demand req.";
-            ws.Cell(row, 4).Value = sel(span.Left).AsCalc;
-            ws.Cell(row, 5).Value = sel(span.Mid).AsCalc;
-            ws.Cell(row, 6).Value = sel(span.Right).AsCalc;
+            SetCellValue(ws.Cell(row, 4), sel(span.Left).AsCalc);
+            SetCellValue(ws.Cell(row, 5), sel(span.Mid).AsCalc);
+            SetCellValue(ws.Cell(row, 6), sel(span.Right).AsCalc);
             row++;
             ws.Cell(row, 3).Value = "Element No. (LC)";
             ws.Cell(row, 4).Value = sel(span.Left).ElementId + " (" + sel(span.Left).LoadCase + ")";
@@ -255,13 +256,13 @@ namespace DTS_Engine.Core.Utils
             return row;
         }
 
-        private static int WriteDtlForce(IXLWorksheet ws, int row, string item, string sub, ReportSpanData span, Func<ReportStationData, double> valSel, Func<ReportStationData, string> comboSel)
+        private static int WriteDtlForce(IXLWorksheet ws, int row, string item, string sub, ReportSpanData span, Func<ReportStationData, double?> valSel, Func<ReportStationData, string> comboSel)
         {
             ws.Cell(row, 2).Value = item;
             ws.Cell(row, 3).Value = sub;
-            ws.Cell(row, 4).Value = valSel(span.Left);
-            ws.Cell(row, 5).Value = valSel(span.Mid);
-            ws.Cell(row, 6).Value = valSel(span.Right);
+            SetCellValue(ws.Cell(row, 4), valSel(span.Left));
+            SetCellValue(ws.Cell(row, 5), valSel(span.Mid));
+            SetCellValue(ws.Cell(row, 6), valSel(span.Right));
             row++;
             ws.Cell(row, 3).Value = "Element (LC)";
             ws.Cell(row, 4).Value = comboSel(span.Left);
@@ -282,31 +283,31 @@ namespace DTS_Engine.Core.Utils
             ApplyResult(ws.Cell(row, 7), sel(span.Left).Conclusion);
             row++;
             ws.Cell(row, 3).Value = "Provide (mm²)";
-            ws.Cell(row, 4).Value = sel(span.Left).AsProv;
-            ws.Cell(row, 5).Value = sel(span.Mid).AsProv;
-            ws.Cell(row, 6).Value = sel(span.Right).AsProv;
+            SetCellValue(ws.Cell(row, 4), sel(span.Left).AsProv);
+            SetCellValue(ws.Cell(row, 5), sel(span.Mid).AsProv);
+            SetCellValue(ws.Cell(row, 6), sel(span.Right).AsProv);
             row++;
             ws.Cell(row, 3).Value = "Ratio / Check";
-            ws.Cell(row, 4).Value = sel(span.Left).Ratio;
-            ws.Cell(row, 5).Value = sel(span.Mid).Ratio;
-            ws.Cell(row, 6).Value = sel(span.Right).Ratio;
-            ws.Cell(row, 7).Value = sel(span.Left).AsCalc; // Reference
+            SetCellValue(ws.Cell(row, 4), sel(span.Left).Ratio);
+            SetCellValue(ws.Cell(row, 5), sel(span.Mid).Ratio);
+            SetCellValue(ws.Cell(row, 6), sel(span.Right).Ratio);
+            SetCellValue(ws.Cell(row, 7), sel(span.Left).AsCalc); // Reference
             row++;
             return row;
         }
 
-        private static int WriteDtlCheck(IXLWorksheet ws, int row, string sub, ReportSpanData span, Func<ReportStationData, double> prvSel, Func<ReportStationData, string> conSel, Func<ReportStationData, double> refSel)
+        private static int WriteDtlCheck(IXLWorksheet ws, int row, string sub, ReportSpanData span, Func<ReportStationData, double?> prvSel, Func<ReportStationData, string> conSel, Func<ReportStationData, double?> refSel)
         {
             ws.Cell(row, 3).Value = sub;
-            ws.Cell(row, 4).Value = prvSel(span.Left);
-            ws.Cell(row, 5).Value = prvSel(span.Mid);
-            ws.Cell(row, 6).Value = prvSel(span.Right);
+            SetCellValue(ws.Cell(row, 4), prvSel(span.Left));
+            SetCellValue(ws.Cell(row, 5), prvSel(span.Mid));
+            SetCellValue(ws.Cell(row, 6), prvSel(span.Right));
             ApplyResult(ws.Cell(row, 7), conSel(span.Left));
             row++;
             ws.Cell(row, 3).Value = "Ref SAP demand";
-            ws.Cell(row, 4).Value = refSel(span.Left);
-            ws.Cell(row, 5).Value = refSel(span.Mid);
-            ws.Cell(row, 6).Value = refSel(span.Right);
+            SetCellValue(ws.Cell(row, 4), refSel(span.Left));
+            SetCellValue(ws.Cell(row, 5), refSel(span.Mid));
+            SetCellValue(ws.Cell(row, 6), refSel(span.Right));
             row++;
             return row;
         }
@@ -316,7 +317,9 @@ namespace DTS_Engine.Core.Utils
         {
             ws.Cell(row, 2).Value = item;
             ws.Cell(row, 3).Value = "Demand req.";
-            ws.Range(row, 4, row, 5).Merge().Value = Math.Max(sel(span.Left).AsCalc, sel(span.Right).AsCalc);
+            double vLeft = sel(span.Left).AsCalc ?? 0;
+            double vRight = sel(span.Right).AsCalc ?? 0;
+            ws.Range(row, 4, row, 5).Merge().Value = Math.Max(vLeft, vRight);
             row++;
             ws.Cell(row, 3).Value = "Element No. (LC)";
             ws.Range(row, 4, row, 5).Merge().Value = sel(span.Left).ElementId + " (" + sel(span.Left).LoadCase + ")";
@@ -327,12 +330,14 @@ namespace DTS_Engine.Core.Utils
             return row;
         }
 
-        private static int WriteRedForce(IXLWorksheet ws, int row, string item, string sub, ReportSpanData span, Func<ReportStationData, double> valSel, Func<ReportStationData, string> comboSel)
+        private static int WriteRedForce(IXLWorksheet ws, int row, string item, string sub, ReportSpanData span, Func<ReportStationData, double?> valSel, Func<ReportStationData, string> comboSel)
         {
             ws.Cell(row, 2).Value = item;
             ws.Cell(row, 3).Value = sub;
-            ws.Cell(row, 4).Value = Math.Max(valSel(span.Left), valSel(span.Right));
-            ws.Cell(row, 5).Value = valSel(span.Mid);
+            double vLeft = valSel(span.Left) ?? 0;
+            double vRight = valSel(span.Right) ?? 0;
+            ws.Cell(row, 4).Value = Math.Max(vLeft, vRight);
+            SetCellValue(ws.Cell(row, 5), valSel(span.Mid));
             row++;
             ws.Cell(row, 3).Value = "Element (LC)";
             ws.Range(row, 4, row, 5).Merge().Value = comboSel(span.Left);
@@ -352,28 +357,38 @@ namespace DTS_Engine.Core.Utils
             row++;
             ws.Cell(row, 3).Value = "Provide (mm²)";
             ws.Range(row, 4, row, 5).Merge().Value = sel(span.Left).AsProv;
-            ws.Range(row, 6, row, 7).Merge().Value = Math.Max(sel(span.Left).AsCalc, sel(span.Right).AsCalc);
+            double vLeft = sel(span.Left).AsCalc ?? 0;
+            double vRight = sel(span.Right).AsCalc ?? 0;
+            ws.Range(row, 6, row, 7).Merge().Value = Math.Max(vLeft, vRight);
             row++;
             return row;
         }
 
-        private static int WriteRedCheck(IXLWorksheet ws, int row, string item, string sub, ReportSpanData span, Func<ReportStationData, double> prvSel, Func<ReportStationData, string> conSel, Func<ReportStationData, double> refSel)
+        private static int WriteRedCheck(IXLWorksheet ws, int row, string item, string sub, ReportSpanData span, Func<ReportStationData, double?> prvSel, Func<ReportStationData, string> conSel, Func<ReportStationData, double?> refSel)
         {
             ws.Cell(row, 2).Value = item;
-            ws.Cell(row, 3).Value = prvSel(span.Left); // Row logic slightly diff in spec
-            ws.Cell(row, 4).Value = prvSel(span.Left);
-            ws.Cell(row, 5).Value = prvSel(span.Mid);
+            ws.Cell(row, 3).Value = sub;
+            SetCellValue(ws.Cell(row, 4), prvSel(span.Left));
+            SetCellValue(ws.Cell(row, 5), prvSel(span.Mid));
             ws.Range(row, 6, row, 7).Merge();
             ApplyResult(ws.Cell(row, 6), conSel(span.Left));
             row++;
             ws.Cell(row, 3).Value = "SAP demand";
-            ws.Cell(row, 4).Value = Math.Max(refSel(span.Left), refSel(span.Right));
-            ws.Cell(row, 5).Value = refSel(span.Mid);
+            double vLeft = refSel(span.Left) ?? 0;
+            double vRight = refSel(span.Right) ?? 0;
+            ws.Cell(row, 4).Value = Math.Max(vLeft, vRight);
+            SetCellValue(ws.Cell(row, 5), refSel(span.Mid));
             row++;
             return row;
         }
 
         // --- COMMON ---
+        private static void SetCellValue(IXLCell cell, double? val)
+        {
+            if (val.HasValue) cell.Value = val.Value;
+            else cell.Value = "-";
+        }
+
         private static void StyleBlockLabel(IXLCell cell)
         {
             cell.Style.Alignment.Vertical = XLAlignmentVerticalValues.Center;

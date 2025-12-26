@@ -287,9 +287,35 @@
             background: #e9ecef;
         }
 
-        .btn-sm {
-            padding: 6px 12px;
+        .form-row {
+            display: flex;
+            align-items: center;
+            gap: 12px;
+            margin-bottom: 10px;
+        }
+
+        .form-row label {
+            flex: 0 0 160px;
+            margin-bottom: 0;
+            font-size: 12px;
+            color: #333;
+            font-weight: 500;
+        }
+
+        .form-row .input-wrapper {
+            flex: 1;
+            min-width: 120px;
+        }
+
+        .form-row .hint {
+            flex: 0 0 200px;
+            margin-top: 0;
             font-size: 11px;
+            color: #999;
+        }
+
+        .check-group {
+            padding: 5px 0 5px 172px;
         }
     </style>
 </head>
@@ -434,50 +460,58 @@
             <div class="section">
                 <div class="section-header">Phạm vi thép (Rebar Selection)</div>
                 <div class="section-body">
-                    <div class="row">
-                        <div class="row">
-                            <div class="col"><label>Thép chủ (Main)</label><input type="text" id="MainBarRange"
-                                    placeholder="16-25"></div>
-                            <div class="col"><label>Thép đai (Stirrup)</label><input type="text" id="StirrupBarRange"
-                                    placeholder="8-10"></div>
-                            <div class="col"><label>Thép hông (Side)</label><input type="text" id="SideBarRange"
-                                    placeholder="12-14"></div>
+                    <div class="form-row">
+                        <label>Thép chủ (Main)</label>
+                        <div class="input-wrapper"><input type="text" id="MainBarRange" placeholder="16-25"></div>
+                        <div class="hint">Khoảng Ø: "16-25" hoặc "18, 20, 22"</div>
+                    </div>
+                    <div class="form-row">
+                        <label>Thép đai (Stirrup)</label>
+                        <div class="input-wrapper"><input type="text" id="StirrupBarRange" placeholder="8-10"></div>
+                        <div class="hint">Thường dùng Ø8-10</div>
+                    </div>
+                    <div class="form-row">
+                        <label>Thép hông (Side)</label>
+                        <div class="input-wrapper"><input type="text" id="SideBarRange" placeholder="12-14"></div>
+                        <div class="hint">Thép cấu tạo/xoắn Ø12-14</div>
+                    </div>
+
+                    <div style="margin-top:15px; border-top: 1px dashed #eee; padding-top:15px;"></div>
+
+                    <div class="form-row">
+                        <label style="color:#1a73e8;">Đai gối L1, L2 (Support)</label>
+                        <div class="input-wrapper"><input type="text" id="StirrupSpacings_Support"
+                                placeholder="100, 150">
                         </div>
-                        <div class="row" style="margin-top:10px;">
-                            <div class="col" style="flex:1;">
-                                <label style="color:#1a73e8;font-weight:600;">Bước đai L1, L2 (Support)</label>
-                                <input type="text" id="StirrupSpacings_Support" placeholder="100, 150">
-                            </div>
-                            <div class="col" style="flex:1;">
-                                <label style="color:#1a73e8;font-weight:600;">Bước đai Mid (Span)</label>
-                                <input type="text" id="StirrupSpacings_Span" placeholder="150, 200">
-                            </div>
+                        <div class="hint">Khoảng cách đai tại gối (mm)</div>
+                    </div>
+                    <div class="form-row">
+                        <label style="color:#1a73e8;">Đai giữa Mid (Span)</label>
+                        <div class="input-wrapper"><input type="text" id="StirrupSpacings_Span" placeholder="150, 200">
                         </div>
-                        <div class="row" style="margin-top:10px;">
-                            <div class="col" style="flex:1;">
-                                <label style="color:#e91e63;font-weight:600;">Bước đai Chung (Common)</label>
-                                <input type="text" id="StirrupSpacings" placeholder="100, 150, 200">
-                            </div>
-                            <div class="col" style="flex:1;">
-                                <label style="color:#ff9800;font-weight:600;">Dầm hẫng (Cantilever)</label>
-                                <input type="text" id="StirrupSpacings_Cantilever" placeholder="100, 150">
-                            </div>
+                        <div class="hint">Khoảng cách đai giữa nhịp (mm)</div>
+                    </div>
+                    <div class="form-row">
+                        <label style="color:#e91e63;">Đai Chung (Common)</label>
+                        <div class="input-wrapper"><input type="text" id="StirrupSpacings" placeholder="100, 150, 200">
                         </div>
-                        <div class="row" style="margin-top:10px;">
-                            <div class="col">
-                                <label
-                                    style="display:flex;align-items:center;gap:8px;cursor:pointer;font-weight:600;color:#1e293b;">
-                                    <input type="checkbox" id="SymmetricStirrupSupports"
-                                        style="width:16px;height:16px;">
-                                    Đồng bộ bước đai 2 đầu gối dầm (L1 = L2)
-                                </label>
-                                <div class="hint" style="margin-left:24px;">Nếu bật, hệ thống sẽ lấy bước đai nhỏ nhất
-                                    giữa 2 gối để áp dụng cho cả hai đầu dầm.</div>
-                            </div>
+                        <div class="hint">Giá trị mặc định cho toàn dầm</div>
+                    </div>
+                    <div class="form-row">
+                        <label style="color:#ff9800;">Dầm hẫng (Cantilever)</label>
+                        <div class="input-wrapper"><input type="text" id="StirrupSpacings_Cantilever"
+                                placeholder="100, 150">
                         </div>
-                        <div class="hint">Nhập khoảng: "16-25" hoặc liệt kê: "18, 20, 22". Bước đai cách nhau dấu phẩy.
-                            Nếu bỏ trống các ô chuyên biệt, hệ thống sẽ dùng giá trị "Chung".
-                        </div>
+                        <div class="hint">Vùng dầm hẫng/console</div>
+                    </div>
+
+                    <div class="check-group">
+                        <label
+                            style="display:flex;align-items:center;gap:8px;cursor:pointer;font-weight:600;color:#1e293b;">
+                            <input type="checkbox" id="SymmetricStirrupSupports" style="width:16px;height:16px;">
+                            Đồng bộ bước đai 2 đầu gối dầm (L1 = L2)
+                        </label>
+                        <div class="hint" style="margin-top:4px;">Nếu bật, lấy bước đai nhỏ nhất giữa 2 gối.</div>
                     </div>
                 </div>
 
@@ -2042,7 +2076,7 @@
                 setId('StirrupSpacings_Support', data.Beam?.StirrupSpacings_Support?.join(',') ?? '100,150');
                 setId('StirrupSpacings_Span', data.Beam?.StirrupSpacings_Span?.join(',') ?? '150,200');
                 setId('StirrupSpacings_Cantilever', data.Beam?.StirrupSpacings_Cantilever?.join(',') ?? '100,150');
-                setCheck('SymmetricStirrupSupports', data.Beam?.SymmetricStirrupSupports ?? true);
+                setChk('SymmetricStirrupSupports', data.Beam?.SymmetricStirrupSupports ?? true);
                 setId('CoverTop', data.Beam?.CoverTop);
                 setId('CoverBot', data.Beam?.CoverBot);
                 setId('CoverSide', data.Beam?.CoverSide);
@@ -2185,6 +2219,10 @@
                 console.log('[loadForm] StoryConfigs length:', data.StoryConfigs?.length || 0);
                 loadStoryTable(data.StoryConfigs || []);
                 setId('StoryTolerance', data.StoryTolerance ?? 500);
+
+                // Tab 6: Stirrup Rules - Render tables for beam and column
+                renderStirrupTables();
+                renderColStirrupTables();
             }
 
             // ===== STORY CONFIGURATION FUNCTIONS (NEW) =====
