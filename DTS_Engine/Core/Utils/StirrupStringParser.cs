@@ -8,9 +8,9 @@ namespace DTS_Engine.Core.Utils
     /// </summary>
     public static class StirrupStringParser
     {
-        // Pattern: [n]d[dia]@[spacing] or d[dia]@[spacing]([n]l)
+        // Pattern: [n]-d[dia]a[spacing] or d[dia]@[spacing]([n]l)
         private static readonly Regex StirrupPattern = new Regex(
-            @"(\d*)\s*[dDfF]?(?:phi|fi|Ø)?\s*(\d+)\s*@\s*(\d+)(?:\s*\(\s*(\d+)\s*[lL]\s*\))?",
+            @"(\d*)\s*[-]?\s*[dDfF]?(?:phi|fi|Ø)?\s*(\d+)\s*[@asAS]\s*(\d+)(?:\s*\(\s*(\d+)\s*[lL]\s*\))?",
             RegexOptions.IgnoreCase | RegexOptions.Compiled);
 
         /// <summary>
@@ -54,8 +54,10 @@ namespace DTS_Engine.Core.Utils
                 // Ưu tiên prefix: 2d8 -> 2
                 string prefixLegs = match.Groups[1].Value;
                 if (!string.IsNullOrEmpty(prefixLegs)) return int.Parse(prefixLegs);
+
+                return 2; // Default to 2 legs if regex matched but no legs specified
             }
-            return 0; // No default, force explicit
+            return 0;
         }
     }
 }

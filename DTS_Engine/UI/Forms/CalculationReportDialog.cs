@@ -1,4 +1,4 @@
-using System;
+﻿using System;
 using System.Collections.Generic;
 using System.IO;
 using System.Windows.Forms;
@@ -14,6 +14,15 @@ namespace DTS_Engine.UI.Forms
     {
         private WebView2 webView;
         private string _jsonReportData;
+        private List<BeamGroup> _groups;
+
+        public CalculationReportDialog(List<BeamGroup> groups)
+        {
+            InitializeComponent();
+            _groups = groups;
+            _jsonReportData = ReportDataManager.BuildReportJson(_groups);
+            this.Load += CalculationReportDialog_Load;
+        }
 
         public CalculationReportDialog(string jsonReportData)
         {
@@ -36,7 +45,7 @@ namespace DTS_Engine.UI.Forms
             this.webView.Dock = System.Windows.Forms.DockStyle.Fill;
             this.webView.Location = new System.Drawing.Point(0, 0);
             this.webView.Name = "webView";
-            this.webView.Size = new System.Drawing.Size(1200, 800);
+            this.webView.Size = new System.Drawing.Size(726, 466);
             this.webView.TabIndex = 0;
             this.webView.ZoomFactor = 1D;
             // 
@@ -44,13 +53,14 @@ namespace DTS_Engine.UI.Forms
             // 
             this.AutoScaleDimensions = new System.Drawing.SizeF(6F, 13F);
             this.AutoScaleMode = System.Windows.Forms.AutoScaleMode.Font;
-            this.ClientSize = new System.Drawing.Size(1200, 800);
+            this.ClientSize = new System.Drawing.Size(726, 466);
             this.Controls.Add(this.webView);
             this.Name = "CalculationReportDialog";
             this.StartPosition = System.Windows.Forms.FormStartPosition.CenterScreen;
             this.Text = "Thuyết Minh Tính Toán Chi Tiết Thép Dầm - DTS Engine";
             ((System.ComponentModel.ISupportInitialize)(this.webView)).EndInit();
             this.ResumeLayout(false);
+
         }
 
         private async void CalculationReportDialog_Load(object sender, EventArgs e)
@@ -116,16 +126,43 @@ namespace DTS_Engine.UI.Forms
 
         private void CoreWebView2_WebMessageReceived(object sender, CoreWebView2WebMessageReceivedEventArgs e)
         {
-            string message = e.TryGetWebMessageAsString();
-            if (string.IsNullOrEmpty(message)) return;
+            // FIX: Use WebMessageAsJson because JS posts an object, not a string.
+            // TryGetWebMessageAsString throws ArgumentException for object messages.
+            string json = e.WebMessageAsJson;
+            if (string.IsNullOrEmpty(json)) return;
 
-            var obj = JsonConvert.DeserializeObject<dynamic>(message);
-            string command = obj.command;
-
-            if (command == "export_excel")
+            try
             {
-                bool isSimple = obj.isSimple ?? false;
-                HandleExcelExport(obj.data, isSimple);
+                var obj = JsonConvert.DeserializeObject<dynamic>(json);
+                string command = obj?.command;
+
+                if (command == "export_excel")
+                {
+                    bool isSimple = obj.isSimple ?? false;
+                    HandleExcelExport(obj.data, isSimple);
+                }
+                else if (command == "refresh_data")
+                {
+                    HandleRefresh();
+                }
+            }
+            catch (Exception ex)
+            {
+                System.Diagnostics.Debug.WriteLine($"WebMessageReceived error: {ex.Message}");
+            }
+        }
+
+        private void HandleRefresh()
+        {
+            if (_groups == null || _groups.Count == 0) return;
+            try
+            {
+                _jsonReportData = ReportDataManager.BuildReportJson(_groups);
+                InjectData();
+            }
+            catch (Exception ex)
+            {
+                MessageBox.Show("Lỗi làm mới dữ liệu: " + ex.Message);
             }
         }
 

@@ -104,17 +104,44 @@
         },
 
         /**
-         * Resize canvas to fill container
+         * Resize canvas to fill container with DPI awareness
          * @param {string} containerId - Container element ID
          */
         resizeToContainer(containerId) {
             const container = document.getElementById(containerId);
             if (!container || !this._canvas) return;
 
-            this._canvas.style.width = '100%';
-            this._canvas.style.height = '100%';
-            this._canvas.height = container.clientHeight || 300;
-            this._canvas.width = container.clientWidth || 800;
+            const dpr = window.devicePixelRatio || 1;
+            const rect = container.getBoundingClientRect();
+
+            // Set display size (CSS pixels)
+            this._canvas.style.width = rect.width + 'px';
+            this._canvas.style.height = rect.height + 'px';
+
+            // Set actual render size (Device pixels) scaled by DPR
+            this._canvas.width = rect.width * dpr;
+            this._canvas.height = rect.height * dpr;
+
+            const ctx = this._ctx;
+            if (ctx) {
+                // Reset transform then scale for DPR
+                ctx.setTransform(1, 0, 0, 1, 0, 0);
+                ctx.scale(dpr, dpr);
+
+                // Standard CAD-like settings
+                ctx.imageSmoothingEnabled = false;
+                ctx.textBaseline = 'middle';
+                ctx.textAlign = 'center';
+            }
+        },
+
+        /**
+         * Snap value to pixel grid to avoid sub-pixel blurring
+         * @param {number} value - Coordinate value
+         * @param {boolean} isStroke - True if drawing a line (adds 0.5 offset)
+         */
+        snap(value, isStroke = true) {
+            return isStroke ? Math.round(value) + 0.5 : Math.round(value);
         }
     };
 

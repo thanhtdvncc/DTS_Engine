@@ -125,19 +125,35 @@
         },
 
         _drawSpan(ctx, x, y, w, span, isHighlighted) {
+            const renderer = global.Dts?.Renderer;
+            const snap = renderer ? renderer.snap : (v) => v;
+
             ctx.fillStyle = isHighlighted ? this.colors.highlightFill : this.colors.beamFill;
             ctx.strokeStyle = isHighlighted ? this.colors.highlightStroke : this.colors.beamStroke;
             ctx.lineWidth = isHighlighted ? 2 : 1;
-            ctx.fillRect(x, y, w, this.config.BEAM_HEIGHT);
-            ctx.strokeRect(x, y, w, this.config.BEAM_HEIGHT);
+
+            // Use fillSnap (no offset) and strokeSnap (0.5 offset)
+            const sx = snap(x, true);
+            const sy = snap(y, true);
+            const sw = Math.round(w);
+            const sh = Math.round(this.config.BEAM_HEIGHT);
+
+            ctx.fillRect(snap(x, false), snap(y, false), sw, sh);
+            ctx.strokeRect(sx, sy, sw, sh);
         },
 
         _drawSupport(ctx, x, y) {
+            const renderer = global.Dts?.Renderer;
+            const snap = renderer ? renderer.snap : (v) => v;
+
+            const sx = snap(x, false);
+            const sy = snap(y + this.config.BEAM_HEIGHT, false);
             const h = 15;
+
             ctx.beginPath();
-            ctx.moveTo(x, y + this.config.BEAM_HEIGHT);
-            ctx.lineTo(x - 6, y + this.config.BEAM_HEIGHT + h);
-            ctx.lineTo(x + 6, y + this.config.BEAM_HEIGHT + h);
+            ctx.moveTo(sx, sy);
+            ctx.lineTo(snap(x - 6, false), snap(sy + h, false));
+            ctx.lineTo(snap(x + 6, false), snap(sy + h, false));
             ctx.closePath();
             ctx.fillStyle = this.colors.supportFill;
             ctx.fill();
@@ -165,6 +181,9 @@
         _drawRebarLine(ctx, startX, startY, length, info, pos, startLayer, isBackbone) {
             if (!info || !info.Count || info.Count <= 0) return;
 
+            const renderer = global.Dts?.Renderer;
+            const snap = renderer ? renderer.snap : (v) => v;
+
             const isTop = pos === 'top';
             const color = isBackbone
                 ? (isTop ? this.colors.rebarTop : this.colors.rebarBot)
@@ -181,8 +200,8 @@
                 const offset = layerIdx * this.config.LAYER_OFFSET * (isTop ? 1 : -1);
 
                 ctx.beginPath();
-                ctx.moveTo(startX, startY + offset);
-                ctx.lineTo(startX + length, startY + offset);
+                ctx.moveTo(snap(startX, true), snap(startY + offset, true));
+                ctx.lineTo(snap(startX + length, true), snap(startY + offset, true));
                 ctx.stroke();
             });
         },
@@ -194,19 +213,19 @@
         },
 
         _drawLabels(ctx, x, y, w, span, beamState, spanIndex) {
-            ctx.font = 'bold 11px sans-serif';
+            ctx.font = '600 12px "Segoe UI", Tahoma, sans-serif';
             ctx.textAlign = 'center';
             ctx.textBaseline = 'middle';
             ctx.fillStyle = this.colors.label;
-            ctx.fillText(span.SpanId || '', x + w / 2, y + this.config.BEAM_HEIGHT / 2);
+            ctx.fillText(span.SpanId || '', Math.round(x + w / 2), Math.round(y + this.config.BEAM_HEIGHT / 2));
 
-            ctx.font = '10px sans-serif';
+            ctx.font = '11px "Segoe UI", sans-serif';
 
             // === TOP LABEL & HIT BOX ===
             const topLabel = this._getSummaryLabel(span.TopBackbone, span.TopAddLeft, span.TopAddMid, span.TopAddRight);
             ctx.fillStyle = this.colors.rebarTop;
-            const topY = y - 12;
-            ctx.fillText(topLabel, x + w / 2, topY);
+            const topY = Math.round(y - 12);
+            ctx.fillText(topLabel, Math.round(x + w / 2), topY);
 
             // Register Top Hit (approximate text metrics)
             const topMetrics = ctx.measureText(topLabel);
@@ -224,8 +243,8 @@
             // === BOT LABEL & HIT BOX ===
             const botLabel = this._getSummaryLabel(span.BotBackbone, span.BotAddMid, span.BotAddLeft, span.BotAddRight);
             ctx.fillStyle = this.colors.rebarBot;
-            const botY = y + this.config.BEAM_HEIGHT + 24;
-            ctx.fillText(botLabel, x + w / 2, botY);
+            const botY = Math.round(y + this.config.BEAM_HEIGHT + 24);
+            ctx.fillText(botLabel, Math.round(x + w / 2), botY);
 
             // Register Bot Hit
             const botMetrics = ctx.measureText(botLabel);
@@ -242,10 +261,10 @@
 
             ctx.fillStyle = this.colors.dimension;
             const lengthText = `${(span.Length || 0).toFixed(2)}m`;
-            ctx.fillText(lengthText, x + w / 2, y + this.config.BEAM_HEIGHT + 12);
+            ctx.fillText(lengthText, Math.round(x + w / 2), Math.round(y + this.config.BEAM_HEIGHT + 12));
 
             const sectionText = `${span.Width || 0}×${span.Height || 0}`;
-            ctx.fillText(sectionText, x + w / 2, y - 2);
+            ctx.fillText(sectionText, Math.round(x + w / 2), Math.round(y - 2));
         },
 
         _getSummaryLabel(backbone, ...addons) {

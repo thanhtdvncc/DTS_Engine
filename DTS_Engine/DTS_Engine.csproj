@@ -283,6 +283,9 @@
     <None Include="REFACTOR_V5_SUMMARY.md" />
   </ItemGroup>
   <ItemGroup>
+    <EmbeddedResource Include="UI\Forms\CalculationReportDialog.resx">
+      <DependentUpon>CalculationReportDialog.cs</DependentUpon>
+    </EmbeddedResource>
     <EmbeddedResource Include="UI\Resources\RebarConfig.html" />
     <EmbeddedResource Include="UI\Resources\CalculationReport.html" />
     <EmbeddedResource Include="UI\Resources\BeamGroupViewer.html" />

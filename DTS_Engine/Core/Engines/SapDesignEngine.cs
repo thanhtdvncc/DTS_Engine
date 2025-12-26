@@ -150,13 +150,34 @@ namespace DTS_Engine.Core.Engines
                             if (idxShear >= 0) data.ShearCombo[z] = vMajorCombo[idxShear];
                             if (idxTor >= 0) data.TorsionCombo[z] = tlCombo[idxTor];
 
-                            // Traceability: Element No and Location (mm)
-                            // We use idxTop as primary reference for zone location metadata
+                            // Detailed Traceability: Unique locations for each rebar type
+                            if (idxTop >= 0)
+                            {
+                                data.TopSapNo[z] = frames[idxTop];
+                                data.TopLocMm[z] = Math.Round(location[idxTop] * 10.0);
+                            }
+                            if (idxBot >= 0)
+                            {
+                                data.BotSapNo[z] = frames[idxBot];
+                                data.BotLocMm[z] = Math.Round(location[idxBot] * 10.0);
+                            }
+                            if (idxShear >= 0)
+                            {
+                                data.ShearSapNo[z] = frames[idxShear];
+                                data.ShearLocMm[z] = Math.Round(location[idxShear] * 10.0);
+                            }
+                            if (idxTor >= 0)
+                            {
+                                data.TorsionSapNo[z] = frames[idxTor];
+                                data.TorsionLocMm[z] = Math.Round(location[idxTor] * 10.0);
+                            }
+
+                            // Legacy primary reference (keep for compatibility)
                             int refIdx = idxTop >= 0 ? idxTop : (idxShear >= 0 ? idxShear : (idxBot >= 0 ? idxBot : -1));
                             if (refIdx >= 0)
                             {
                                 data.SapElementNos[z] = frames[refIdx];
-                                data.LocationMm[z] = Math.Round(location[refIdx] * 1000.0); // Assume location is in Meters (Standard SAP API)
+                                data.LocationMm[z] = Math.Round(location[refIdx] * 10.0); // kN_cm_C context, location is in cm. mm = cm * 10.
                             }
 
                             // Fetch Forces for each critical point in this zone

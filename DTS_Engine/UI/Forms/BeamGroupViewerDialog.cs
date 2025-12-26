@@ -118,8 +118,7 @@ namespace DTS_Engine.UI.Forms
         {
             try
             {
-                var reportJson = ReportDataManager.BuildReportJson(new List<BeamGroup> { group });
-                var dialog = new CalculationReportDialog(reportJson);
+                var dialog = new CalculationReportDialog(new List<BeamGroup> { group });
                 dialog.Show();
 
                 if (spanIndex >= 0)

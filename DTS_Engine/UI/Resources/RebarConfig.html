@@ -2800,9 +2800,23 @@
             }
 
             // Initialize form on load
-            loadForm();
-            renderStirrupTables();
-            renderColStirrupTables();
+            try {
+                loadForm();
+            } catch (e) {
+                console.error('Error in loadForm:', e);
+            }
+
+            try {
+                renderStirrupTables();
+            } catch (e) {
+                console.error('Error in renderStirrupTables:', e);
+            }
+
+            try {
+                renderColStirrupTables();
+            } catch (e) {
+                console.error('Error in renderColStirrupTables:', e);
+            }
         </script>
 </body>
 

@@ -62,6 +62,16 @@ namespace DTS_Engine.Core.Data
             clone.TorsionCombo = (string[])TorsionCombo?.Clone();
             clone.SapElementNos = (string[])SapElementNos?.Clone();
             clone.LocationMm = (double[])LocationMm?.Clone();
+
+            clone.TopSapNo = (string[])TopSapNo?.Clone();
+            clone.TopLocMm = (double[])TopLocMm?.Clone();
+            clone.BotSapNo = (string[])BotSapNo?.Clone();
+            clone.BotLocMm = (double[])BotLocMm?.Clone();
+            clone.ShearSapNo = (string[])ShearSapNo?.Clone();
+            clone.ShearLocMm = (double[])ShearLocMm?.Clone();
+            clone.TorsionSapNo = (string[])TorsionSapNo?.Clone();
+            clone.TorsionLocMm = (double[])TorsionLocMm?.Clone();
+
             clone.ConcreteGrade = ConcreteGrade;
             clone.SteelGrade = SteelGrade;
 
@@ -105,8 +115,20 @@ namespace DTS_Engine.Core.Data
         public string[] ShearCombo { get; set; } = new string[3];
         public string[] TorsionCombo { get; set; } = new string[3];
 
-        public string[] SapElementNos { get; set; } = new string[3]; // Traceability: "9", "580", ...
-        public double[] LocationMm { get; set; } = new double[3];   // Traceability: 5417, 2167, ...
+        public string[] SapElementNos { get; set; } = new string[3]; // Legacy / Ref
+        public double[] LocationMm { get; set; } = new double[3];   // Legacy / Ref
+
+        public string[] TopSapNo { get; set; } = new string[3];
+        public double[] TopLocMm { get; set; } = new double[3];
+
+        public string[] BotSapNo { get; set; } = new string[3];
+        public double[] BotLocMm { get; set; } = new double[3];
+
+        public string[] ShearSapNo { get; set; } = new string[3];
+        public double[] ShearLocMm { get; set; } = new double[3];
+
+        public string[] TorsionSapNo { get; set; } = new string[3];
+        public double[] TorsionLocMm { get; set; } = new double[3];
 
         public string ConcreteGrade { get; set; } = "";
         public string SteelGrade { get; set; } = "";
@@ -232,6 +254,15 @@ namespace DTS_Engine.Core.Data
             dict["xSapNos"] = SapElementNos;
             dict["xLocMm"] = RoundArray(LocationMm);
 
+            dict["xTopSap"] = TopSapNo;
+            dict["xTopLoc"] = RoundArray(TopLocMm);
+            dict["xBotSap"] = BotSapNo;
+            dict["xBotLoc"] = RoundArray(BotLocMm);
+            dict["xShearSap"] = ShearSapNo;
+            dict["xShearLoc"] = RoundArray(ShearLocMm);
+            dict["xTorSap"] = TorsionSapNo;
+            dict["xTorLoc"] = RoundArray(TorsionLocMm);
+
             return dict;
         }
 
@@ -307,6 +338,15 @@ namespace DTS_Engine.Core.Data
 
             if (dict.TryGetValue("xSapNos", out var xsnos)) SapElementNos = ConvertToStringArray(xsnos);
             if (dict.TryGetValue("xLocMm", out var xloc)) LocationMm = ConvertToDoubleArray(xloc);
+
+            if (dict.TryGetValue("xTopSap", out var xts)) TopSapNo = ConvertToStringArray(xts);
+            if (dict.TryGetValue("xTopLoc", out var xtl)) TopLocMm = ConvertToDoubleArray(xtl);
+            if (dict.TryGetValue("xBotSap", out var xbs)) BotSapNo = ConvertToStringArray(xbs);
+            if (dict.TryGetValue("xBotLoc", out var xbl)) BotLocMm = ConvertToDoubleArray(xbl);
+            if (dict.TryGetValue("xShearSap", out var xss)) ShearSapNo = ConvertToStringArray(xss);
+            if (dict.TryGetValue("xShearLoc", out var xsl)) ShearLocMm = ConvertToDoubleArray(xsl);
+            if (dict.TryGetValue("xTorSap", out var xtors)) TorsionSapNo = ConvertToStringArray(xtors);
+            if (dict.TryGetValue("xTorLoc", out var xtorl)) TorsionLocMm = ConvertToDoubleArray(xtorl);
         }
 
         private double[] ConvertToDoubleArray(object obj)

@@ -337,7 +337,13 @@ namespace DTS_Engine.Core.Utils
             double? sectionHeight = null,    // NOT SAVED - dùng xDepth
             double? torsionFactorUsed = null,
             string sapElementName = null,    // NOT SAVED - dùng xSapFrameName
-            string mappingSource = null)     // NOT SAVED - không cần thiết
+            string mappingSource = null,     // NOT SAVED - không cần thiết
+            string[] topCombo = null,
+            string[] botCombo = null,
+            string[] shearCombo = null,
+            string[] torsionCombo = null,
+            string[] sapNos = null,
+            double[] locationMm = null)
         {
             if (obj == null || tr == null) return;
 
@@ -350,7 +356,16 @@ namespace DTS_Engine.Core.Utils
             if (shearArea != null) dict["ShearArea"] = RoundRebarArray(Normalize3(shearArea));
             if (ttArea != null) dict["TTArea"] = RoundRebarArray(Normalize3(ttArea));
 
-            // NOTE: DesignCombo và TorsionFactorUsed không còn được ghi vào XData
+            // Metadata for report traceability
+            if (topCombo != null) dict["TopC"] = Normalize3(topCombo);
+            if (botCombo != null) dict["BotC"] = Normalize3(botCombo);
+            if (shearCombo != null) dict["ShearC"] = Normalize3(shearCombo);
+            if (torsionCombo != null) dict["TorC"] = Normalize3(torsionCombo);
+
+            if (sapNos != null) dict["xSapNos"] = Normalize3(sapNos);
+            if (locationMm != null) dict["xLocMm"] = RoundRebarArray(Normalize3(locationMm));
+
+            // NOTE: DesignCombo, TorsionFactorUsed và Nội lực (M, V, T) không được ghi để tối ưu API
 
             SetRawData(obj, dict, tr);
         }
@@ -1272,6 +1287,48 @@ namespace DTS_Engine.Core.Utils
 
                     targetList.Add(new string[] { sL, sM, sR });
                 }
+            }
+
+            public string GetCombinedRebarString(int posIndex, bool isTop)
+            {
+                string bb = isTop ? TopL0 : BotL0;
+                if (string.IsNullOrEmpty(bb)) bb = "-";
+
+                var addonsList = isTop ? TopAddons : BotAddons;
+                string addons = "";
+                if (addonsList != null)
+                {
+                    foreach (var layer in addonsList)
+                    {
+                        if (layer != null && posIndex < layer.Length)
+                        {
+                            string s = layer[posIndex];
+                            if (!string.IsNullOrEmpty(s) && s != "-")
+                                addons += "+" + s;
+                        }
+                    }
+                }
+                return bb + addons;
+            }
+
+            public double GetAreaProv(int posIndex, bool isTop)
+            {
+                string bb = isTop ? TopL0 : BotL0;
+                double asBb = RebarCalculator.ParseRebarArea(bb);
+                double asAdd = 0;
+
+                var addonsList = isTop ? TopAddons : BotAddons;
+                if (addonsList != null)
+                {
+                    foreach (var layer in addonsList)
+                    {
+                        if (layer != null && posIndex < layer.Length)
+                        {
+                            asAdd += RebarCalculator.ParseRebarArea(layer[posIndex]);
+                        }
+                    }
+                }
+                return asBb + asAdd;
             }
         }
 

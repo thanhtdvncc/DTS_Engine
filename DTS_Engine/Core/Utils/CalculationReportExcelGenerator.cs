@@ -55,12 +55,23 @@ namespace DTS_Engine.Core.Utils
                 {
                     string tempFolder = Path.GetTempPath();
                     string tag = isSimple ? "Reduced" : "Full";
-                    outputPath = Path.Combine(tempFolder, $"DTS_Report_{tag}_{groupData.GroupName.Replace(" ", "_")}_{DateTime.Now:yyyyMMdd_HHmm}.xlsx");
+                    string safeGroupName = SanitizeFileName(groupData.GroupName);
+                    outputPath = Path.Combine(tempFolder, $"DTS_Report_{tag}_{safeGroupName}_{DateTime.Now:yyyyMMdd_HHmm}.xlsx");
                 }
 
                 workbook.SaveAs(outputPath);
                 return outputPath;
             }
+        }
+
+        private static string SanitizeFileName(string name)
+        {
+            if (string.IsNullOrEmpty(name)) return "Unnamed";
+            foreach (char c in Path.GetInvalidFileNameChars())
+            {
+                name = name.Replace(c, '_');
+            }
+            return name;
         }
 
         private static int WriteSpanDetailed(IXLWorksheet ws, ReportSpanData span, int row)

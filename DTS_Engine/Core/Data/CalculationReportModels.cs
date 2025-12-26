@@ -35,7 +35,8 @@ namespace DTS_Engine.Core.Data
         public ReportForceResult TopResult { get; set; }
         public ReportForceResult BotResult { get; set; }
         public ReportForceResult StirrupResult { get; set; } // Tổng Av/s + 2At/s
-        public ReportForceResult StirrupOnlyResult { get; set; } // Chỉ Av/s (dòng 4.6 trong spec)
+        public ReportForceResult StirrupOnlyResult { get; set; } // Chỉ 2At/s (dòng 4.6 trong spec)
+        public ReportForceResult ShearResult { get; set; }   // Chỉ Av/s (Shear only)
         public ReportForceResult WebResult { get; set; }
         public ReportForceResult AlResult { get; set; } // Thép dọc xoắn (Al - dòng 4.7)
     }

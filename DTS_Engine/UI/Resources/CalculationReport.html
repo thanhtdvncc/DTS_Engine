@@ -1,4 +1,4 @@
-<!DOCTYPE html>
+﻿<!DOCTYPE html>
 <html lang="vi">
 
 <head>
@@ -17,55 +17,109 @@
             --success-color: #198754;
             --warning-color: #fd7e14;
             --danger-color: #dc3545;
+            --sidebar-width: 200px;
         }
 
         * {
             box-sizing: border-box;
+            margin: 0;
+            padding: 0;
         }
 
         body {
             font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
-            margin: 0;
-            padding: 0;
             display: flex;
             height: 100vh;
             overflow: hidden;
             color: var(--text-color);
             background-color: white;
-            font-size: 13px;
+            font-size: 12px;
         }
 
         /* --- SIDEBAR --- */
         .sidebar {
-            width: 250px;
+            width: var(--sidebar-width);
+            min-width: var(--sidebar-width);
             background-color: var(--bg-sidebar);
             border-right: 1px solid var(--border-color);
             display: flex;
             flex-direction: column;
+            transition: margin-left 0.3s ease, min-width 0.3s ease, width 0.3s ease;
+        }
+
+        .sidebar.compact {
+            width: 60px;
+            min-width: 60px;
+        }
+
+        .sidebar.compact .sidebar-header span,
+        .sidebar.compact .section-count,
+        .sidebar.compact .section-name {
+            display: none;
+        }
+
+        .sidebar.compact .group-item {
+            text-align: center;
+            padding: 8px 4px;
+            font-size: 10px;
+            word-wrap: break-word;
+            line-height: 1.1;
+        }
+
+        .sidebar.compact .group-item .section-name {
+            display: block;
+            /* Hiện tên tiết diện kể cả khi compact */
+            overflow: hidden;
+            text-overflow: ellipsis;
+            white-space: nowrap;
+        }
+
+        .sidebar.compact .group-item::before {
+            display: none;
+            /* Bỏ dấu chấm */
+        }
+
+        .sidebar.compact .group-item.active::before {
+            color: white;
         }
 
         .sidebar-header {
-            padding: 15px;
-            font-weight: 700;
+            padding: 10px 12px;
+            font-weight: 600;
             background-color: #f1f3f5;
             border-bottom: 1px solid var(--border-color);
-            font-size: 14px;
+            font-size: 12px;
             color: #495057;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+        }
+
+        .sidebar-toggle {
+            background: none;
+            border: none;
+            cursor: pointer;
+            padding: 4px 8px;
+            border-radius: 4px;
+            color: #666;
+            font-size: 14px;
+        }
+
+        .sidebar-toggle:hover {
+            background: #e9ecef;
         }
 
         .group-list {
             flex: 1;
             overflow-y: auto;
             list-style: none;
-            padding: 0;
-            margin: 0;
         }
 
         .group-item {
-            padding: 12px 15px;
+            padding: 8px 12px;
             cursor: pointer;
             border-bottom: 1px solid #e9ecef;
-            transition: all 0.2s;
+            transition: all 0.15s;
         }
 
         .group-item:hover {
@@ -75,19 +129,18 @@
         .group-item.active {
             background-color: var(--primary-color);
             color: white;
-            border-left: 4px solid #005a9e;
-            padding-left: 11px;
-            /* Adjust for border */
+            border-left: 3px solid #005a9e;
+            padding-left: 9px;
         }
 
         .section-name {
             font-weight: 600;
-            font-size: 14px;
-            margin-bottom: 4px;
+            font-size: 12px;
+            margin-bottom: 2px;
         }
 
         .section-count {
-            font-size: 12px;
+            font-size: 10px;
             color: #6c757d;
         }
 
@@ -101,23 +154,35 @@
             display: flex;
             flex-direction: column;
             overflow: hidden;
+            min-width: 0;
         }
 
         /* --- TOP BAR --- */
         .top-bar {
-            padding: 8px 20px;
+            padding: 6px 12px;
             border-bottom: 1px solid var(--border-color);
             display: flex;
             justify-content: space-between;
             align-items: center;
             background: var(--bg-header);
-            box-shadow: 0 1px 3px rgba(0, 0, 0, 0.05);
-            height: 50px;
+            gap: 12px;
+            flex-wrap: wrap;
         }
 
+        .top-bar-left {
+            display: flex;
+            align-items: center;
+            gap: 8px;
+        }
+
+        .sidebar-expand-btn {
+            display: none;
+        }
+
+        /* Ẩn expand btn vì chúng ta dùng sidebar compact */
+
         .report-title h2 {
-            margin: 0;
-            font-size: 16px;
+            font-size: 14px;
             font-weight: 600;
         }
 
@@ -129,25 +194,25 @@
         .view-controls {
             display: flex;
             align-items: center;
-            gap: 12px;
+            gap: 8px;
         }
 
         .switch-wrapper {
             display: flex;
             align-items: center;
-            gap: 8px;
-            font-size: 13px;
+            gap: 6px;
+            font-size: 11px;
             background: #f8f9fa;
-            padding: 4px 10px;
-            border-radius: 20px;
+            padding: 3px 8px;
+            border-radius: 16px;
             border: 1px solid #dee2e6;
         }
 
         .switch {
             position: relative;
             display: inline-block;
-            width: 36px;
-            height: 18px;
+            width: 32px;
+            height: 16px;
         }
 
         .switch input {
@@ -164,19 +229,19 @@
             right: 0;
             bottom: 0;
             background-color: #adb5bd;
-            transition: .4s;
-            border-radius: 34px;
+            transition: .3s;
+            border-radius: 16px;
         }
 
         .slider:before {
             position: absolute;
             content: "";
-            height: 14px;
-            width: 14px;
+            height: 12px;
+            width: 12px;
             left: 2px;
             bottom: 2px;
             background-color: white;
-            transition: .4s;
+            transition: .3s;
             border-radius: 50%;
         }
 
@@ -185,7 +250,38 @@
         }
 
         input:checked+.slider:before {
-            transform: translateX(18px);
+            transform: translateX(16px);
+        }
+
+        /* Zoom Controls */
+        .zoom-controls {
+            display: flex;
+            align-items: center;
+            gap: 4px;
+            background: #f8f9fa;
+            padding: 2px 6px;
+            border-radius: 4px;
+            border: 1px solid #dee2e6;
+        }
+
+        .zoom-btn {
+            background: none;
+            border: none;
+            cursor: pointer;
+            padding: 2px 6px;
+            font-size: 14px;
+            color: #666;
+            border-radius: 2px;
+        }
+
+        .zoom-btn:hover {
+            background: #e9ecef;
+        }
+
+        .zoom-label {
+            font-size: 10px;
+            min-width: 36px;
+            text-align: center;
         }
 
         /* --- SPAN TABS --- */
@@ -193,14 +289,14 @@
             display: flex;
             background-color: #f8f9fa;
             border-bottom: 1px solid var(--border-color);
-            padding: 0 10px;
+            padding: 0 8px;
             overflow-x: auto;
-            min-height: 40px;
+            min-height: 32px;
             align-items: flex-end;
         }
 
         .tab-btn {
-            padding: 8px 25px;
+            padding: 6px 16px;
             border: 1px solid transparent;
             border-bottom: none;
             background: none;
@@ -209,7 +305,8 @@
             color: #666;
             margin-right: 2px;
             border-radius: 4px 4px 0 0;
-            transition: all 0.2s;
+            transition: all 0.15s;
+            font-size: 11px;
         }
 
         .tab-btn:hover {
@@ -220,76 +317,90 @@
         .tab-btn.active {
             background-color: white;
             color: var(--primary-color);
-            font-weight: 700;
+            font-weight: 600;
             border-color: var(--border-color);
             border-bottom: 2px solid white;
             margin-bottom: -1px;
-            box-shadow: 0 -2px 5px rgba(0, 0, 0, 0.02);
         }
 
         /* --- DATA AREA --- */
         .data-container {
             flex: 1;
-            padding: 20px;
-            overflow-y: auto;
-            background: #fff;
+            padding: 12px;
+            overflow: auto;
+            background: #fafafa;
         }
 
         .span-info-panel {
-            margin-bottom: 20px;
-            padding: 15px;
-            background-color: #f8f9fa;
+            margin-bottom: 12px;
+            padding: 10px 14px;
+            background-color: #fff;
             border: 1px solid #dee2e6;
             border-radius: 6px;
-            display: grid;
-            grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
-            gap: 15px;
+            display: flex;
+            align-items: center;
+            gap: 24px;
+            box-shadow: 0 1px 2px rgba(0, 0, 0, 0.05);
         }
 
-        .info-box label {
-            font-size: 11px;
-            text-transform: uppercase;
-            color: #868e96;
-            display: block;
-            margin-bottom: 4px;
-            font-weight: 600;
-        }
-
-        .info-box span {
+        .span-info-panel .span-title {
             font-size: 15px;
-            font-weight: 600;
-            color: #343a40;
+            font-weight: 700;
+            color: #333;
         }
 
-        /* --- TABLE STYLES --- */
+        .span-info-panel .span-details {
+            display: flex;
+            gap: 16px;
+            color: #666;
+            font-size: 12px;
+        }
+
+        /* --- TABLE STYLES (COMPACT) --- */
+        .table-wrapper {
+            background: white;
+            border-radius: 6px;
+            border: 1px solid #ccc;
+            overflow: auto;
+            /* Changed to auto to handle transformed scale overflow */
+            box-shadow: 0 1px 3px rgba(0, 0, 0, 0.08);
+            display: flex;
+            justify-content: center;
+        }
+
         table.calc-table {
             width: 100%;
             border-collapse: collapse;
-            font-size: 13px;
-            border: 2px solid #333;
-            /* Thick outer border */
-            box-shadow: 0 4px 10px rgba(0, 0, 0, 0.1);
-            margin-bottom: 30px;
+            font-size: 11px;
+            transform-origin: top center;
+            backface-visibility: hidden;
+            /* Force hardware acceleration for sharper text */
         }
 
         .calc-table th,
         .calc-table td {
-            border: 1px solid #ced4da;
-            padding: 8px 10px;
+            border: 1px solid #e0e0e0;
+            padding: 4px 6px;
             text-align: center;
             vertical-align: middle;
         }
 
         .calc-table thead th {
-            background-color: var(--table-header-bg);
-            font-weight: 700;
-            color: #333;
-            border: 1px solid #333;
-            border-bottom: 2px solid #333;
+            background-color: #4a5568;
+            color: white;
+            font-weight: 600;
+            font-size: 10px;
+            text-transform: uppercase;
+            letter-spacing: 0.3px;
+            border-color: #3d4852;
         }
 
         .calc-table tbody tr {
             transition: background 0.1s;
+        }
+
+        .calc-table tbody tr:nth-child(even) {
+            background-color: #fafafa;
         }
 
         .calc-table tbody tr:hover {
@@ -298,55 +409,90 @@
 
         /* Section Separators */
         .row-separator td {
-            background-color: #e9ecef;
-            height: 8px;
+            background-color: #e2e8f0;
+            height: 4px;
             padding: 0;
-            border-top: 2px solid #dee2e6;
-            border-bottom: 1px solid #dee2e6;
+            border: none;
+        }
+
+        /* Category cells */
+        .cat-cell {
+            font-weight: 600;
+            background: #f1f5f9 !important;
+            color: #334155;
+            font-size: 10px;
+            text-transform: uppercase;
+        }
+
+        .item-cell {
+            font-weight: 600;
+            text-align: left !important;
+            color: #475569;
+            font-size: 11px;
+        }
+
+        .sub-cell {
+            text-align: left !important;
+            color: #64748b;
+            font-size: 10px;
         }
 
         /* Value Colors */
         .val-safe {
             color: var(--success-color);
-            font-weight: bold;
+            font-weight: 600;
         }
 
         .val-unsafe {
             color: var(--danger-color);
-            font-weight: bold;
+            font-weight: 600;
         }
 
         .val-warning {
             color: var(--warning-color);
-            font-weight: bold;
+            font-weight: 600;
         }
 
         .val-rebar {
-            background-color: #fff9db !important;
-            font-weight: bold;
-            color: #a67c00;
+            background-color: #fef3c7 !important;
+            font-weight: 600;
+            color: #92400e;
+            font-family: 'Consolas', monospace;
         }
 
         .font-bold {
-            font-weight: bold;
-        }
-
-        .txt-rebar {
-            font-family: 'Consolas', monospace;
-            color: #0078d4;
-            font-weight: bold;
+            font-weight: 600;
         }
 
         .txt-combo {
             font-style: italic;
-            color: #555;
-            font-size: 12px;
+            color: #64748b;
+            font-size: 10px;
         }
 
         .txt-location {
             font-family: 'Consolas', monospace;
-            color: #666;
-            font-size: 12px;
+            color: #64748b;
+            font-size: 10px;
+        }
+
+        /* Excel-like selection */
+        .cell-selected {
+            outline: 2px solid #1a73e8 !important;
+            outline-offset: -2px;
+            background-color: #e8f0fe !important;
+            z-index: 10;
+            position: relative;
+        }
+
+        #reportTable td {
+            cursor: cell;
+            user-select: text;
+        }
+
+        .cat-cell,
+        .item-cell {
+            background: #f8f9fa;
         }
 
         /* Mode Visibility */
@@ -366,21 +512,24 @@
             display: table-cell !important;
         }
 
-        body.mode-simple .col-simple {
-            display: table-cell;
+        /* Result row */
+        .result-row td {
+            background: #f0fdf4 !important;
+            font-weight: 600;
+            font-size: 12px;
         }
 
         .btn-export {
             background-color: #217346;
             color: white;
             border: none;
-            padding: 6px 15px;
+            padding: 5px 12px;
             border-radius: 4px;
             cursor: pointer;
-            font-size: 13px;
+            font-size: 11px;
             display: flex;
             align-items: center;
-            gap: 6px;
+            gap: 5px;
             transition: background 0.2s;
         }
 
@@ -389,29 +538,42 @@
         }
 
         .btn-export svg {
-            width: 14px;
-            height: 14px;
+            width: 12px;
+            height: 12px;
             fill: currentColor;
         }
     </style>
 </head>
 
 <body class="mode-detailed">
-    <div class="sidebar">
-        <div class="sidebar-header">Danh sách Tiết diện</div>
-        <ul class="group-list" id="groupList">
-            <!-- Items generated by JS -->
-        </ul>
+    <div class="sidebar" id="sidebar">
+        <div class="sidebar-header">
+            <span>Danh sách Tiết diện</span>
+            <button class="sidebar-toggle" onclick="toggleSidebar()" title="Thu gọn">◀</button>
+        </div>
+        <ul class="group-list" id="groupList"></ul>
     </div>
 
     <div class="main-content">
         <div class="top-bar">
-            <div class="report-title">
-                <h2>Thuyết minh: <span id="lblGroupName">---</span> <small id="lblProjectName"
-                        style="font-weight: normal; color: #888; margin-left:10px"></small></h2>
+            <div class="top-bar-left">
+                <button class="sidebar-expand-btn" onclick="toggleSidebar()" title="Mở sidebar">☰</button>
+                <div class="report-title">
+                    <h2>Thuyết minh: <span id="lblGroupName">---</span>
+                        <small id="lblProjectName"
+                            style="font-weight: normal; color: #888; margin-left:8px; font-size:11px;"></small>
+                    </h2>
+                </div>
             </div>
 
             <div class="view-controls">
+                <div class="zoom-controls">
+                    <button class="zoom-btn" onclick="zoomOut()" title="Thu nhỏ">−</button>
+                    <span class="zoom-label" id="zoomLabel">100%</span>
+                    <button class="zoom-btn" onclick="zoomIn()" title="Phóng to">+</button>
+                    <button class="zoom-btn" onclick="refreshData()" title="Làm mới dữ liệu từ XData">⟲</button>
+                </div>
+
                 <div class="switch-wrapper">
                     <span>Chi tiết</span>
                     <label class="switch">
@@ -431,49 +593,75 @@
             </div>
         </div>
 
-        <div class="span-tabs" id="spanTabs">
-            <!-- Tabs generated by JS -->
-        </div>
+        <div class="span-tabs" id="spanTabs"></div>
 
         <div class="data-container">
-            <div class="span-info-panel" id="spanInfoPanel">
-                <!-- Will be updated by selectSpan -->
+            <div class="span-info-panel" id="spanInfoPanel"></div>
+            <div class="table-wrapper">
+                <table class="calc-table" id="reportTable">
+                    <thead>
+                        <tr>
+                            <th style="width: 70px;">Group</th>
+                            <th style="width: 100px;">Design Items</th>
+                            <th style="width: 80px;">Sub-item</th>
+                            <th class="col-detailed" style="width: 90px;">L1 (Left)</th>
+                            <th class="col-detailed" style="width: 90px;">Center</th>
+                            <th class="col-detailed" style="width: 90px;">L2 (Right)</th>
+                            <th class="col-simple" style="width: 120px;">End (Envelope)</th>
+                            <th class="col-simple" style="width: 120px;">Center</th>
+                        </tr>
+                    </thead>
+                    <tbody id="tableBody"></tbody>
+                </table>
             </div>
-
-            <table class="calc-table" id="reportTable">
-                <thead>
-                    <tr>
-                        <th style="width: 100px;">Group</th>
-                        <th style="width: 180px;">Design Items</th>
-                        <th style="width: 140px;">Sub-item</th>
-                        <th class="col-detailed" style="width: 18%;">L1 (Left)</th>
-                        <th class="col-detailed" style="width: 18%;">Center</th>
-                        <th class="col-detailed" style="width: 18%;">L2 (Right)</th>
-                        <th class="col-simple" style="width: 27%;">End (Envelope)</th>
-                        <th class="col-simple" style="width: 27%;">Center</th>
-                        <th style="width: 10%;">Result</th>
-                    </tr>
-                </thead>
-                <tbody id="tableBody">
-                    <!-- Data generated by JS -->
-                </tbody>
-            </table>
         </div>
     </div>
 
     <script>
-        // --- DATA STORE ---
+        // --- STATE ---
         let reportData = [];
         let currentGroupIndex = 0;
         let currentSpanIndex = 0;
+        let zoomLevel = 100;
 
+        // --- SAFE DATA ACCESS HELPERS ---
+        function safe(obj, path, def = '-') {
+            if (!obj) return def;
+            const keys = path.split('.');
+            let val = obj;
+            for (const k of keys) {
+                if (val == null) return def;
+                val = val[k];
+            }
+            return val ?? def;
+        }
+
+        function safeNum(obj, path, decimals = 2) {
+            const val = safe(obj, path, null);
+            if (val === null || val === undefined || val === '') return '-';
+            const num = parseFloat(val);
+            if (isNaN(num)) return '-';
+            return num.toFixed(decimals);
+        }
+
+        // --- INIT ---
         function initReport(data) {
-            if (typeof data === 'string') reportData = JSON.parse(data);
-            else reportData = data;
+            try {
+                if (typeof data === 'string') reportData = JSON.parse(data);
+                else if (Array.isArray(data)) reportData = data;
+                else if (data && typeof data === 'object') reportData = [data];
+                else reportData = [];
+            } catch (e) {
+                console.error('initReport parse error:', e);
+                reportData = [];
+            }
 
-            if (reportData && reportData.length > 0) {
+            if (reportData.length > 0) {
                 renderGroupList();
                 selectGroup(0);
+            } else {
+                document.getElementById('tableBody').innerHTML =
+                    '<tr><td colspan="8" style="text-align:center;padding:20px;color:#999;">Không có dữ liệu</td></tr>';
             }
         }
 
@@ -482,26 +670,24 @@
             list.innerHTML = '';
             reportData.forEach((group, index) => {
                 const li = document.createElement('li');
-                li.className = 'group-item';
+                li.className = 'group-item' + (index === currentGroupIndex ? ' active' : '');
                 li.innerHTML = `
-                    <div class="section-name">${group.GroupName}</div>
-                    <div class="section-count">Gồm ${group.Spans.length} nhịp tính toán</div>
+                    <div class="section-name">${group.GroupName || 'Group ' + (index + 1)}</div>
+                    <div class="section-count">Gồm ${(group.Spans || []).length} nhịp</div>
                 `;
                 li.onclick = () => selectGroup(index);
-                if (index === currentGroupIndex) li.classList.add('active');
                 list.appendChild(li);
             });
         }
 
         function selectGroup(index) {
             currentGroupIndex = index;
-            document.getElementById('lblGroupName').textContent = reportData[index].GroupName;
-            document.getElementById('lblProjectName').textContent = reportData[index].ProjectName || "";
+            const group = reportData[index] || {};
+            document.getElementById('lblGroupName').textContent = group.GroupName || '---';
+            document.getElementById('lblProjectName').textContent = group.ProjectName || '';
 
-            const items = document.querySelectorAll('.group-item');
-            items.forEach((item, i) => {
-                if (i === index) item.classList.add('active');
-                else item.classList.remove('active');
+            document.querySelectorAll('.group-item').forEach((item, i) => {
+                item.classList.toggle('active', i === index);
             });
 
             renderSpanTabs();
@@ -509,14 +695,15 @@
         }
 
         function renderSpanTabs() {
-            const group = reportData[currentGroupIndex];
+            const group = reportData[currentGroupIndex] || {};
+            const spans = group.Spans || [];
             const tabsContainer = document.getElementById('spanTabs');
             tabsContainer.innerHTML = '';
 
-            group.Spans.forEach((span, index) => {
+            spans.forEach((span, index) => {
                 const btn = document.createElement('button');
                 btn.className = 'tab-btn';
-                btn.textContent = span.SpanId;
+                btn.textContent = span.SpanId || `S${index + 1}`;
                 btn.onclick = () => selectSpan(index);
                 tabsContainer.appendChild(btn);
             });
@@ -524,26 +711,27 @@
 
         function selectSpan(index) {
             currentSpanIndex = index;
-            const group = reportData[currentGroupIndex];
-            if (!group.Spans || group.Spans.length === 0) return;
+            const group = reportData[currentGroupIndex] || {};
+            const spans = group.Spans || [];
+            if (spans.length === 0) {
+                document.getElementById('spanInfoPanel').innerHTML = '<span style="color:#999;">Không có nhịp</span>';
+                document.getElementById('tableBody').innerHTML = '';
+                return;
+            }
 
-            const span = group.Spans[index];
+            const span = spans[index] || {};
 
-            const tabs = document.querySelectorAll('.tab-btn');
-            tabs.forEach((tab, i) => {
-                if (i === index) tab.classList.add('active');
-                else tab.classList.remove('active');
+            document.querySelectorAll('.tab-btn').forEach((tab, i) => {
+                tab.classList.toggle('active', i === index);
             });
 
-            // Update Header for Span
+            // Update info panel
             const infoPanel = document.getElementById('spanInfoPanel');
             infoPanel.innerHTML = `
-                <div style="font-size:18px; font-weight:700; color:#333; margin-bottom:5px">
-                    ${span.SpanId} (RC${span.Section})
-                </div>
-                <div style="display:flex; gap:20px; color:#666; font-size:13px">
-                    <span><b>L:</b> ${span.Length} mm</span>
-                    <span><b>Mat:</b> ${span.Material}</span>
+                <div class="span-title">${span.SpanId || 'S' + (index + 1)} (RC${span.Section || '?'})</div>
+                <div class="span-details">
+                    <span><b>L:</b> ${span.Length || '-'} mm</span>
+                    <span><b>Mat:</b> ${span.Material || '-'}</span>
                 </div>
             `;
 
@@ -551,145 +739,265 @@
         }
 
         function renderTable() {
-            const group = reportData[currentGroupIndex];
-            if (!group.Spans || group.Spans.length === 0) return;
+            const group = reportData[currentGroupIndex] || {};
+            const spans = group.Spans || [];
+            if (spans.length === 0) return;
 
-            const span = group.Spans[currentSpanIndex];
+            const span = spans[currentSpanIndex] || {};
             const tbody = document.getElementById('tableBody');
             tbody.innerHTML = '';
 
-            const l = span.Left;
-            const m = span.Mid;
-            const r = span.Right;
+            const l = span.Left || {};
+            const m = span.Mid || {};
+            const r = span.Right || {};
 
-            // --- RENDER HELPERS ---
-            const rRow = (cat, item, sub, vL, vM, vR, res = '', opts = {}) => {
-                const style = (val, isRebar) => {
-                    if (isRebar) return 'val-rebar';
+            // Helper to build row
+            const rRow = (cat, item, sub, vL, vM, vR, opts = {}) => {
+                const style = (val) => {
+                    if (opts.type === 'rebar') return 'val-rebar';
                     if (opts.type === 'combo') return 'txt-combo';
                     if (opts.type === 'loc') return 'txt-location';
                     if (opts.type === 'res') {
                         if (val === 'OK') return 'val-safe';
                         if (val === 'NG') return 'val-unsafe';
                         const num = parseFloat(val);
-                        if (!isNaN(num)) {
-                            // Logic Safe: Ratio >= 0.95 (hoặc 1.0 tùy threshold gán từ backend)
-                            return num >= 0.95 ? 'val-safe' : 'val-unsafe';
-                        }
+                        if (!isNaN(num)) return num >= 0.95 ? 'val-safe' : 'val-unsafe';
                     }
                     return '';
                 };
 
                 const formatVal = (v) => {
-                    if (v === undefined || v === null || v === "" || v === "-") return "-";
+                    if (v === undefined || v === null || v === '' || v === '-') return '-';
                     if (opts.type === 'rebar' || opts.type === 'combo' || opts.type === 'loc') return v;
-                    if (typeof v === 'number') return v.toFixed(opts.precision || (v % 1 === 0 ? 0 : 2));
+                    if (typeof v === 'number') return v.toFixed(opts.precision ?? 2);
                     return v;
-                }
+                };
 
-                // Envelope logic for Simple Mode (End = Max(L, R))
-                let vE = "-";
-                if (typeof vL === 'number' && typeof vR === 'number') {
-                    vE = Math.max(vL, vR);
-                } else if (typeof vL === 'number') {
-                    vE = vL;
-                } else if (typeof vR === 'number') {
-                    vE = vR;
-                } else {
-                    vE = (vL !== undefined && vL !== null && vL !== "-") ? vL : vR;
-                }
+                // Envelope for simple mode
+                let vE = '-';
+                if (typeof vL === 'number' && typeof vR === 'number') vE = Math.max(vL, vR);
+                else if (typeof vL === 'number') vE = vL;
+                else if (typeof vR === 'number') vE = vR;
+                else vE = (vL && vL !== '-') ? vL : vR;
 
                 return `
-                    <tr>
-                        ${cat ? `<td rowspan="${cat.rowspan}" style="font-weight:bold; background:#f1f3f5">${cat.text}</td>` : ''}
-                        ${item ? `<td rowspan="${item.rowspan}" style="font-weight:bold; text-align:left">${item.text}</td>` : ''}
-                        <td style="text-align:left; color:#666">${sub}</td>
-                        <td class="col-detailed ${style(vL, opts.type === 'rebar')}">${formatVal(vL)}</td>
-                        <td class="col-detailed ${style(vM, opts.type === 'rebar')}">${formatVal(vM)}</td>
-                        <td class="col-detailed ${style(vR, opts.type === 'rebar')}">${formatVal(vR)}</td>
-                        <td class="col-simple ${style(vE, opts.type === 'rebar')}">${formatVal(vE)}</td>
-                        <td class="col-simple ${style(vM, opts.type === 'rebar')}">${formatVal(vM)}</td>
-                        <td class="${style(res, false)} font-bold">${res}</td>
+                    <tr data-row-cat="${cat ? cat.text : ''}" data-row-sub="${sub}">
+                        ${cat ? `<td rowspan="${cat.rowspan}" class="cat-cell" onclick="handleCellClick(this)">${cat.text}</td>` : ''}
+                        ${item ? `<td rowspan="${item.rowspan}" class="item-cell" onclick="handleCellClick(this)">${item.text}</td>` : ''}
+                        <td class="sub-cell" onclick="handleCellClick(this)">${sub}</td>
+                        <td class="col-detailed ${style(vL)}" onclick="handleCellClick(this)">${formatVal(vL)}</td>
+                        <td class="col-detailed ${style(vM)}" onclick="handleCellClick(this)">${formatVal(vM)}</td>
+                        <td class="col-detailed ${style(vR)}" onclick="handleCellClick(this)">${formatVal(vR)}</td>
+                        <td class="col-simple ${style(vE)}" onclick="handleCellClick(this)">${formatVal(vE)}</td>
+                        <td class="col-simple ${style(vM)}" onclick="handleCellClick(this)">${formatVal(vM)}</td>
                     </tr>
                 `;
             };
 
-            // --- BLOCK: BY SAP2000 ---
-            // 1. As, top
-            tbody.innerHTML += rRow({ text: 'By SAP2000', rowspan: 12 }, { text: 'As, top (mm²)', rowspan: 3 }, 'Demand req.', l.TopResult.AsCalc, m.TopResult.AsCalc, r.TopResult.AsCalc);
-            tbody.innerHTML += rRow(null, null, 'Element No. (LC)', l.TopResult.ElementId, m.TopResult.ElementId, r.TopResult.ElementId, '', { type: 'combo' });
-            tbody.innerHTML += rRow(null, null, 'Location (mm)', l.TopResult.LocationMm, m.TopResult.LocationMm, r.TopResult.LocationMm, '', { type: 'loc' });
+            const cleanStirrupStr = (str) => {
+                if (!str || str === '-') return '-';
+                // This regex matches "2-d10a150" and extracts "d10a150"
+                const match = str.match(/(\d+[-])?(.+)/);
+                return match ? match[2] : str;
+            };
 
-            // 2. As, bot
-            tbody.innerHTML += rRow(null, { text: 'As, bot (mm²)', rowspan: 3 }, 'Demand req.', l.BotResult.AsCalc, m.BotResult.AsCalc, r.BotResult.AsCalc);
-            tbody.innerHTML += rRow(null, null, 'Element No. (LC)', l.BotResult.ElementId, m.BotResult.ElementId, r.BotResult.ElementId, '', { type: 'combo' });
-            tbody.innerHTML += rRow(null, null, 'Location (mm)', l.BotResult.LocationMm, m.BotResult.LocationMm, r.BotResult.LocationMm, '', { type: 'loc' });
+            // --- BY SAP2000 BLOCK --- (14 rows)
+            tbody.innerHTML += rRow({ text: 'By SAP2000', rowspan: 14 }, { text: 'As, top (mm²)', rowspan: 3 }, 'Demand req.',
+                safe(l, 'TopResult.AsCalc'), safe(m, 'TopResult.AsCalc'), safe(r, 'TopResult.AsCalc'));
+            tbody.innerHTML += rRow(null, null, 'Element (LC)',
+                safe(l, 'TopResult.ElementId'), safe(m, 'TopResult.ElementId'), safe(r, 'TopResult.ElementId'), { type: 'combo' });
+            tbody.innerHTML += rRow(null, null, 'Location (mm)',
+                safe(l, 'TopResult.LocationMm'), safe(m, 'TopResult.LocationMm'), safe(r, 'TopResult.LocationMm'), { type: 'loc' });
 
-            // 3. Shear
-            tbody.innerHTML += rRow(null, { text: '2At/st + Av/sv', rowspan: 2 }, 'mm²/mm (Total)', l.StirrupResult.AsCalc, m.StirrupResult.AsCalc, r.StirrupResult.AsCalc);
-            tbody.innerHTML += rRow(null, null, 'Element (LC)', l.StirrupResult.LoadCase, m.StirrupResult.LoadCase, r.StirrupResult.LoadCase, '', { type: 'combo' });
+            tbody.innerHTML += rRow(null, { text: 'As, bot (mm²)', rowspan: 3 }, 'Demand req.',
+                safe(l, 'BotResult.AsCalc'), safe(m, 'BotResult.AsCalc'), safe(r, 'BotResult.AsCalc'));
+            tbody.innerHTML += rRow(null, null, 'Element (LC)',
+                safe(l, 'BotResult.ElementId'), safe(m, 'BotResult.ElementId'), safe(r, 'BotResult.ElementId'), { type: 'combo' });
+            tbody.innerHTML += rRow(null, null, 'Location (mm)',
+                safe(l, 'BotResult.LocationMm'), safe(m, 'BotResult.LocationMm'), safe(r, 'BotResult.LocationMm'), { type: 'loc' });
 
-            tbody.innerHTML += rRow(null, { text: '2At/sv', rowspan: 2 }, 'mm²/mm (Stirrup)', l.StirrupOnlyResult.AsCalc, m.StirrupOnlyResult.AsCalc, r.StirrupOnlyResult.AsCalc);
-            tbody.innerHTML += rRow(null, null, 'Element (LC)', l.StirrupOnlyResult.LoadCase, m.StirrupOnlyResult.LoadCase, r.StirrupOnlyResult.LoadCase, '', { type: 'combo' });
+            tbody.innerHTML += rRow(null, { text: '2At/st + Av/sv', rowspan: 2 }, 'mm²/mm',
+                safe(l, 'StirrupResult.AsCalc'), safe(m, 'StirrupResult.AsCalc'), safe(r, 'StirrupResult.AsCalc'));
+            tbody.innerHTML += rRow(null, null, 'Element (LC)',
+                safe(l, 'StirrupResult.LoadCase'), safe(m, 'StirrupResult.LoadCase'), safe(r, 'StirrupResult.LoadCase'), { type: 'combo' });
 
-            // 4. Al
-            tbody.innerHTML += rRow(null, { text: 'Al (mm²)', rowspan: 2 }, 'Torsion Long.', l.AlResult.AsCalc, m.AlResult.AsCalc, r.AlResult.AsCalc);
-            tbody.innerHTML += rRow(null, null, 'Load Case', l.AlResult.LoadCase, m.AlResult.LoadCase, r.AlResult.LoadCase, '', { type: 'combo' });
+            tbody.innerHTML += rRow(null, { text: '2At/sv', rowspan: 2 }, 'mm²/mm (Torsion)',
+                safe(l, 'StirrupOnlyResult.AsCalc'), safe(m, 'StirrupOnlyResult.AsCalc'), safe(r, 'StirrupOnlyResult.AsCalc'));
+            tbody.innerHTML += rRow(null, null, 'Element (LC)',
+                safe(l, 'StirrupOnlyResult.LoadCase'), safe(m, 'StirrupOnlyResult.LoadCase'), safe(r, 'StirrupOnlyResult.LoadCase'), { type: 'combo' });
 
-            tbody.innerHTML += `<tr class="row-separator"><td colspan="7"></td></tr>`;
+            tbody.innerHTML += rRow(null, { text: 'Av/sv', rowspan: 2 }, 'mm²/mm (Shear Only)',
+                safe(l, 'ShearResult.AsCalc'), safe(m, 'ShearResult.AsCalc'), safe(r, 'ShearResult.AsCalc'));
+            tbody.innerHTML += rRow(null, null, 'Element (LC)',
+                safe(l, 'ShearResult.LoadCase'), safe(m, 'ShearResult.LoadCase'), safe(r, 'ShearResult.LoadCase'), { type: 'combo' });
 
-            // --- BLOCK: FINAL USE ---
-            // 5. Top bar
-            tbody.innerHTML += rRow({ text: 'Final Use', rowspan: 15 }, { text: 'Top bar', rowspan: 3 }, 'Rebar config', l.TopResult.RebarStr, m.TopResult.RebarStr, r.TopResult.RebarStr, '', { type: 'rebar' });
-            tbody.innerHTML += rRow(null, null, 'Provide (mm²)', l.TopResult.AsProv, m.TopResult.AsProv, r.TopResult.AsProv);
-            tbody.innerHTML += rRow(null, null, 'Ratio / Check', l.TopResult.Ratio, m.TopResult.Ratio, r.TopResult.Ratio, l.TopResult.Conclusion, { type: 'res' });
+            tbody.innerHTML += rRow(null, { text: 'Al (mm²)', rowspan: 2 }, 'Torsion Long.',
+                safe(l, 'AlResult.AsCalc'), safe(m, 'AlResult.AsCalc'), safe(r, 'AlResult.AsCalc'));
+            tbody.innerHTML += rRow(null, null, 'Element (LC)',
+                safe(l, 'AlResult.LoadCase'), safe(m, 'AlResult.LoadCase'), safe(r, 'AlResult.LoadCase'), { type: 'combo' });
 
-            // 6. Bottom bar
-            tbody.innerHTML += rRow(null, { text: 'Bottom bar', rowspan: 3 }, 'Rebar config', l.BotResult.RebarStr, m.BotResult.RebarStr, r.BotResult.RebarStr, '', { type: 'rebar' });
-            tbody.innerHTML += rRow(null, null, 'Provide (mm²)', l.BotResult.AsProv, m.BotResult.AsProv, r.BotResult.AsProv);
-            tbody.innerHTML += rRow(null, null, 'Ratio / Check', l.BotResult.Ratio, m.BotResult.Ratio, r.BotResult.Ratio, l.BotResult.Conclusion, { type: 'res' });
+            tbody.innerHTML += '<tr class="row-separator"><td colspan="8"></td></tr>';
 
-            // 7. Stirrup
-            tbody.innerHTML += rRow(null, { text: 'Stirrup', rowspan: 6 }, 'No. Leg', span.Left.Legs, span.Mid.Legs, span.Right.Legs, 'Don', { type: 'rebar' });
-            tbody.innerHTML += rRow(null, null, 'Rebar', l.StirrupResult.RebarStr, m.StirrupResult.RebarStr, r.StirrupResult.RebarStr, '', { type: 'rebar' });
-            tbody.innerHTML += rRow(null, null, '2At/st+Av/sv (Prv)', l.StirrupResult.AsProv, m.StirrupResult.AsProv, r.StirrupResult.AsProv, l.StirrupResult.Conclusion, { type: 'res' });
-            tbody.innerHTML += rRow(null, null, 'Ref SAP demand', l.StirrupResult.AsCalc, m.StirrupResult.AsCalc, r.StirrupResult.AsCalc, '', { precision: 3, type: 'loc' });
-            tbody.innerHTML += rRow(null, null, '2At/sv (Prv)', l.StirrupOnlyResult.AsProv, m.StirrupOnlyResult.AsProv, r.StirrupOnlyResult.AsProv, l.StirrupOnlyResult.Conclusion, { type: 'res' });
-            tbody.innerHTML += rRow(null, null, 'Ref SAP demand', l.StirrupOnlyResult.AsCalc, m.StirrupOnlyResult.AsCalc, r.StirrupOnlyResult.AsCalc, '', { precision: 3, type: 'loc' });
+            // --- FINAL USE BLOCK --- (15 rows)
+            tbody.innerHTML += rRow({ text: 'Final Use', rowspan: 15 }, { text: 'Top bar', rowspan: 3 }, 'Rebar config',
+                safe(l, 'TopResult.RebarStr'), safe(m, 'TopResult.RebarStr'), safe(r, 'TopResult.RebarStr'), { type: 'rebar' });
+            tbody.innerHTML += rRow(null, null, 'Provide (mm²)',
+                safe(l, 'TopResult.AsProv'), safe(m, 'TopResult.AsProv'), safe(r, 'TopResult.AsProv'));
+            tbody.innerHTML += rRow(null, null, 'Ratio / Check',
+                safe(l, 'TopResult.Ratio'), safe(m, 'TopResult.Ratio'), safe(r, 'TopResult.Ratio'), { type: 'res' });
 
-            // 8. Web bar
-            tbody.innerHTML += rRow(null, { text: 'Web bar', rowspan: 3 }, 'Rebar config', l.WebResult.RebarStr, m.WebResult.RebarStr, r.WebResult.RebarStr, '', { type: 'rebar' });
-            tbody.innerHTML += rRow(null, null, 'Provide (mm²)', l.WebResult.AsProv, m.WebResult.AsProv, r.WebResult.AsProv);
-            tbody.innerHTML += rRow(null, null, 'Check Torsion', '', '', '', l.AlResult.Conclusion, { type: 'res' });
+            tbody.innerHTML += rRow(null, { text: 'Bottom bar', rowspan: 3 }, 'Rebar config',
+                safe(l, 'BotResult.RebarStr'), safe(m, 'BotResult.RebarStr'), safe(r, 'BotResult.RebarStr'), { type: 'rebar' });
+            tbody.innerHTML += rRow(null, null, 'Provide (mm²)',
+                safe(l, 'BotResult.AsProv'), safe(m, 'BotResult.AsProv'), safe(r, 'BotResult.AsProv'));
+            tbody.innerHTML += rRow(null, null, 'Ratio / Check',
+                safe(l, 'BotResult.Ratio'), safe(m, 'BotResult.Ratio'), safe(r, 'BotResult.Ratio'), { type: 'res' });
 
-            tbody.innerHTML += `<tr class="row-separator"><td colspan="7"></td></tr>`;
+            tbody.innerHTML += rRow(null, { text: 'Stirrup – Đai cắt', rowspan: 6 }, 'a) No. Leg',
+                safe(l, 'Legs'), safe(m, 'Legs'), safe(r, 'Legs'), { type: 'rebar' });
+            tbody.innerHTML += rRow(null, null, 'b) Rebar',
+                cleanStirrupStr(safe(l, 'StirrupResult.RebarStr')), cleanStirrupStr(safe(m, 'StirrupResult.RebarStr')), cleanStirrupStr(safe(r, 'StirrupResult.RebarStr')), { type: 'rebar' });
+            tbody.innerHTML += rRow(null, null, 'c) Check 2At/st + Av/sv',
+                safe(l, 'StirrupResult.AsProv'), safe(m, 'StirrupResult.AsProv'), safe(r, 'StirrupResult.AsProv'), { precision: 3, type: 'res' });
+            tbody.innerHTML += rRow(null, null, 'Ref SAP demand',
+                safe(l, 'StirrupResult.AsCalc'), safe(m, 'StirrupResult.AsCalc'), safe(r, 'StirrupResult.AsCalc'), { precision: 3, type: 'loc' });
+            tbody.innerHTML += rRow(null, null, 'd) Check 2At/sv',
+                safe(l, 'StirrupOnlyResult.AsProv'), safe(m, 'StirrupOnlyResult.AsProv'), safe(r, 'StirrupOnlyResult.AsProv'), { precision: 3, type: 'res' });
+            tbody.innerHTML += rRow(null, null, 'Ref SAP demand',
+                safe(l, 'StirrupOnlyResult.AsCalc'), safe(m, 'StirrupOnlyResult.AsCalc'), safe(r, 'StirrupOnlyResult.AsCalc'), { precision: 3, type: 'loc' });
 
-            // Result Check Line
-            const finalOk = (l.TopResult.Conclusion === 'OK' && l.BotResult.Conclusion === 'OK' && l.StirrupResult.Conclusion === 'OK' && l.AlResult.Conclusion === 'OK') ? 'OK' : 'NG';
-            tbody.innerHTML += `
-                <tr style="background:#f8f9fa; font-size:15px">
-                    <td colspan="3" style="font-weight:bold; text-align:right; padding-right:20px">RESULT CHECK</td>
-                    <td colspan="3" class="col-detailed" style="text-align:center; font-weight:bold; color:#666">ALL REQUIREMENTS SATISFIED</td>
-                    <td colspan="2" class="col-simple" style="text-align:center; font-weight:bold; color:#666">ALL REQUIREMENTS SATISFIED</td>
-                    <td class="${finalOk === 'OK' ? 'val-safe' : 'val-unsafe'} font-bold">${finalOk}</td>
-                </tr>
-            `;
+            tbody.innerHTML += rRow(null, { text: 'Web bar', rowspan: 3 }, 'Rebar config',
+                safe(l, 'WebResult.RebarStr'), safe(m, 'WebResult.RebarStr'), safe(r, 'WebResult.RebarStr'), { type: 'rebar' });
+            tbody.innerHTML += rRow(null, null, 'Provide (mm²)',
+                safe(l, 'WebResult.AsProv'), safe(m, 'WebResult.AsProv'), safe(r, 'WebResult.AsProv'));
+            tbody.innerHTML += rRow(null, null, 'Ratio / Check',
+                safe(l, 'AlResult.Ratio'), safe(m, 'AlResult.Ratio'), safe(r, 'AlResult.Ratio'), { type: 'res' });
         }
 
-        // --- UTILS ---
+        // --- UTILITIES ---
         function toggleMode() {
             const isSimple = document.getElementById('modeSwitch').checked;
             document.body.className = isSimple ? 'mode-simple' : 'mode-detailed';
-            renderTable(); // Re-render to update envelope values if needed
+            renderTable();
+        }
+
+        function toggleSidebar() {
+            const sidebar = document.getElementById('sidebar');
+            const toggleBtn = document.querySelector('.sidebar-toggle');
+            sidebar.classList.toggle('compact');
+
+            if (sidebar.classList.contains('compact')) {
+                toggleBtn.textContent = '▶';
+                toggleBtn.title = 'Mở rộng';
+            } else {
+                toggleBtn.textContent = '◀';
+                toggleBtn.title = 'Thu gọn';
+            }
+        }
+
+        function zoomIn() {
+            if (zoomLevel < 150) {
+                zoomLevel += 10;
+                applyZoom();
+            }
+        }
+
+        function zoomOut() {
+            if (zoomLevel > 50) {
+                zoomLevel -= 10;
+                applyZoom();
+            }
+        }
+
+        function applyZoom() {
+            document.getElementById('zoomLabel').textContent = zoomLevel + '%';
+            const table = document.getElementById('reportTable');
+            const scale = zoomLevel / 100;
+            table.style.transform = `scale(${scale})`;
+
+            // Adjust width to compensate for scaling so the container scrollbars work correctly
+            table.style.width = (100 / scale) + '%';
+        }
+
+        // --- EXCEL-LIKE INTERACTION ---
+        let activeCell = null;
+
+        function handleCellClick(td) {
+            if (activeCell) activeCell.classList.remove('cell-selected');
+            activeCell = td;
+            activeCell.classList.add('cell-selected');
+            activeCell.focus();
+        }
+
+        document.addEventListener('keydown', (e) => {
+            if (!activeCell) return;
+
+            const key = e.key;
+            if (key === 'ArrowUp' || key === 'ArrowDown' || key === 'ArrowLeft' || key === 'ArrowRight') {
+                e.preventDefault();
+                moveSelection(key);
+            } else if (e.ctrlKey && key === 'c') {
+                copyToClipboard(activeCell.innerText);
+            }
+        });
+
+        function moveSelection(key) {
+            const tr = activeCell.parentElement;
+            const cells = Array.from(tr.querySelectorAll('td'));
+            let colIdx = cells.indexOf(activeCell);
+
+            // Adjust colIdx for rowspan if needed (simplification: just find by bounding box)
+            const rect = activeCell.getBoundingClientRect();
+            let targetX = rect.left + rect.width / 2;
+            let targetY = rect.top + rect.height / 2;
+
+            if (key === 'ArrowUp') targetY -= rect.height;
+            if (key === 'ArrowDown') targetY += rect.height;
+            if (key === 'ArrowLeft') targetX -= rect.width;
+            if (key === 'ArrowRight') targetX += rect.width;
+
+            const targetElement = document.elementFromPoint(targetX, targetY);
+            if (targetElement && targetElement.tagName === 'TD') {
+                handleCellClick(targetElement);
+            }
+        }
+
+        function copyToClipboard(text) {
+            const el = document.createElement('textarea');
+            el.value = text;
+            document.body.appendChild(el);
+            el.select();
+            document.execCommand('copy');
+            document.body.removeChild(el);
+
+            // Small visual feedback? 
+            // activeCell.style.backgroundColor = '#c8e6c9';
+            // setTimeout(() => activeCell.style.backgroundColor = '', 200);
+        }
+
+        function refreshData() {
+            if (window.chrome && window.chrome.webview) {
+                window.chrome.webview.postMessage({
+                    command: 'refresh_data'
+                });
+            }
         }
 
         function exportExcel() {
             const isSimple = document.body.classList.contains('mode-simple');
-            window.chrome.webview.postMessage({
-                command: 'export_excel',
-                data: reportData[currentGroupIndex],
-                isSimple: isSimple
-            });
+            const group = reportData[currentGroupIndex] || null;
+            if (!group) {
+                alert('Không có dữ liệu để xuất');
+                return;
+            }
+            // Post message to C# - object will be received via WebMessageAsJson
+            if (window.chrome && window.chrome.webview) {
+                window.chrome.webview.postMessage({
+                    command: 'export_excel',
+                    data: group,
+                    isSimple: isSimple
+                });
+            }
         }
     </script>
 </body>

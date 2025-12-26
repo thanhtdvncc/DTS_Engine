@@ -244,7 +244,13 @@ namespace DTS_Engine.Commands
                                     width: designData.Width,
                                     sectionHeight: designData.SectionHeight,
                                     torsionFactorUsed: designData.TorsionFactorUsed,
-                                    sapElementName: designData.SapElementName);
+                                    sapElementName: designData.SapElementName,
+                                    topCombo: designData.TopCombo,
+                                    botCombo: designData.BotCombo,
+                                    shearCombo: designData.ShearCombo,
+                                    torsionCombo: designData.TorsionCombo,
+                                    sapNos: designData.SapElementNos,
+                                    locationMm: designData.LocationMm);
                                 // NOTE: mappingSource đã loại bỏ
                             }
                             catch (System.Exception ex2)
