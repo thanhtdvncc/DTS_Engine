@@ -4,9 +4,10 @@ using Autodesk.AutoCAD.Geometry;
 using Autodesk.AutoCAD.Runtime;
 using DTS_Engine.Core.Algorithms;
 using DTS_Engine.Core.Algorithms.Rebar;
-using DTS_Engine.Core.Data;
 using DTS_Engine.Core.Engines;
 using DTS_Engine.Core.Utils;
+using DTS_Engine.Core.Data;
+using DTS_Engine.UI.Forms;
 using System;
 using System.Collections.Generic;
 using System.IO;
@@ -555,13 +556,15 @@ namespace DTS_Engine.Commands
                                     string webStr = optUser?.GetWebAt(i) ?? "-";
 
                                     // Top Label: Stirrup 2At/st + Av/sv
-                                    double at_st2 = 2 * (reqData?.TTArea?[i] ?? 0);
-                                    double av_sv = reqData?.ShearArea?[i] ?? 0;
+                                    // Scale by 10 to show in mm2/mm (user preference)
+                                    double scale = 10.0;
+                                    double at_st2 = 2 * (reqData?.TTArea?[i] ?? 0) * scale;
+                                    double av_sv = (reqData?.ShearArea?[i] ?? 0) * scale;
                                     double stirrupTotalReq = at_st2 + av_sv;
-                                    double stirrupPrv = RebarCalculator.ParseStirrupAreaPerLen(stirrupStr);
+                                    double stirrupPrv = RebarCalculator.ParseStirrupAreaPerLen(stirrupStr) * scale;
 
-                                    displayTopStr[i] = "2At/st+Av/sv (mm2/mm)\n" +
-                                                       $"[{FormatValue(at_st2)}+{FormatValue(av_sv)}={FormatValue(stirrupTotalReq)}]\n" +
+                                    displayTopStr[i] = "2At/st+Av/sv\n" +
+                                                       $"{FormatValue(at_st2)}+{FormatValue(av_sv)}={FormatValue(stirrupTotalReq)}\n" +
                                                        $"{stirrupStr} = {FormatValue(stirrupPrv)}";
 
                                     // Bottom Label: Web Rebar
@@ -1149,6 +1152,55 @@ namespace DTS_Engine.Commands
                             XDataUtils.WriteOptUser(obj, optUser, tr);
                             XDataUtils.WriteIsLocked(obj, group.IsLocked, tr);
 
+                            // V6.5: Sync provided data back to BeamResultData for Reports
+                            var resData = XDataUtils.ReadElementData<BeamResultData>(obj);
+                            if (resData != null)
+                            {
+                                // Sync Top
+                                string topTotal = CombineBackboneAndAddon(optUser.TopL0, optUser.TopAddons, 0, isReversed);
+                                string topMid = CombineBackboneAndAddon(optUser.TopL0, optUser.TopAddons, 1, isReversed);
+                                string topRight = CombineBackboneAndAddon(optUser.TopL0, optUser.TopAddons, 2, isReversed);
+
+                                resData.TopRebarString = new string[] { topTotal, topMid, topRight };
+                                resData.TopAreaProv = new double[] {
+                                    RebarStringParser.Parse(topTotal),
+                                    RebarStringParser.Parse(topMid),
+                                    RebarStringParser.Parse(topRight)
+                                };
+
+                                // Sync Bot
+                                string botTotal = CombineBackboneAndAddon(optUser.BotL0, optUser.BotAddons, 0, isReversed);
+                                string botMid = CombineBackboneAndAddon(optUser.BotL0, optUser.BotAddons, 1, isReversed);
+                                string botRight = CombineBackboneAndAddon(optUser.BotL0, optUser.BotAddons, 2, isReversed);
+
+                                resData.BotRebarString = new string[] { botTotal, botMid, botRight };
+                                resData.BotAreaProv = new double[] {
+                                    RebarStringParser.Parse(botTotal),
+                                    RebarStringParser.Parse(botMid),
+                                    RebarStringParser.Parse(botRight)
+                                };
+
+                                // Sync Stirrup & Web
+                                string sL = optUser.GetStirrupAt(0);
+                                string sM = optUser.GetStirrupAt(1);
+                                string sR = optUser.GetStirrupAt(2);
+
+                                resData.StirrupString = new string[] { sL, sM, sR };
+                                resData.StirrupAreaProv = new double[] {
+                                    StirrupStringParser.ParseAsProv(sL),
+                                    StirrupStringParser.ParseAsProv(sM),
+                                    StirrupStringParser.ParseAsProv(sR)
+                                };
+
+                                resData.WebBarString = new string[] {
+                                    optUser.GetWebAt(0),
+                                    optUser.GetWebAt(1),
+                                    optUser.GetWebAt(2)
+                                };
+
+                                XDataUtils.WriteElementData(obj, resData, tr);
+                            }
+
                             // V6.0: Manual modification flag (sycned with IsLocked)
                             if (span.IsManualModified)
                             {
@@ -1164,6 +1216,32 @@ namespace DTS_Engine.Commands
                     tr.Abort();
                 }
             }
+        }
+
+
+
+        private static string CombineBackboneAndAddon(string backbone, List<string[]> addons, int zone, bool isReversed)
+        {
+            int idx = zone;
+            if (isReversed)
+            {
+                if (zone == 0) idx = 2;
+                else if (zone == 2) idx = 0;
+            }
+
+            string result = backbone ?? "";
+            if (addons != null)
+            {
+                foreach (var addonArr in addons)
+                {
+                    if (addonArr != null && idx < addonArr.Length && !string.IsNullOrEmpty(addonArr[idx]))
+                    {
+                        if (string.IsNullOrEmpty(result)) result = addonArr[idx];
+                        else result += "+" + addonArr[idx];
+                    }
+                }
+            }
+            return result;
         }
 
         private static string Get3ZoneDelimited(string[] arr, bool isReversed)
@@ -1261,6 +1339,70 @@ namespace DTS_Engine.Commands
             catch (System.Exception ex)
             {
                 WriteError($"Lỗi mở Beam Viewer: {ex.Message}");
+            }
+        }
+
+        [CommandMethod("DTS_REBAR_REPORT")]
+        public void ShowCalculationReport()
+        {
+            try
+            {
+                var selectedIds = AcadUtils.SelectObjectsOnScreen("LINE,LWPOLYLINE,POLYLINE", true);
+
+                var topologyBuilder = new TopologyBuilder();
+                var resultGroups = new List<BeamGroup>();
+                var dtsSettings = DtsSettings.Instance;
+
+                UsingTransaction(tr =>
+                {
+                    List<BeamTopology> allTopologies;
+
+                    if (selectedIds.Count == 0)
+                    {
+                        WriteMessage("Đang quét tất cả dầm có liên kết...");
+                        allTopologies = ScanAllLinkedBeams(tr, topologyBuilder);
+                    }
+                    else
+                    {
+                        allTopologies = topologyBuilder.BuildGraph(selectedIds, tr, autoEstablishLinks: false);
+                    }
+
+                    if (allTopologies.Count == 0)
+                    {
+                        WriteMessage("Không tìm thấy dầm hợp lệ.");
+                        return;
+                    }
+
+                    var topologyGroups = topologyBuilder.SplitIntoGroups(allTopologies);
+                    foreach (var topoGroup in topologyGroups)
+                    {
+                        var group = topologyBuilder.BuildBeamGroup(topoGroup, dtsSettings);
+                        if (group != null)
+                        {
+                            RefreshGroupFromXDataV5(group, topoGroup, tr, dtsSettings);
+                            HealGroupFromNOD(group, topoGroup, tr);
+                            LoadExistingSolutionFromXData(group, topoGroup, tr);
+                            resultGroups.Add(group);
+                        }
+                    }
+                });
+
+                if (resultGroups.Count == 0)
+                {
+                    WriteMessage("Không có dữ liệu để lập thuyết minh.");
+                    return;
+                }
+
+                // Chuyển đổi dữ liệu sang JSON
+                string json = DTS_Engine.Core.Utils.ReportDataManager.BuildReportJson(resultGroups);
+
+                // Hiện dialog
+                var dialog = new DTS_Engine.UI.Forms.CalculationReportDialog(json);
+                Autodesk.AutoCAD.ApplicationServices.Application.ShowModelessDialog(dialog);
+            }
+            catch (System.Exception ex)
+            {
+                WriteError($"Lỗi mở Thuyết minh: {ex.Message}");
             }
         }
 
@@ -2028,7 +2170,7 @@ namespace DTS_Engine.Commands
 
                             // Lấy signature từ beam đầu tiên
                             var firstBeam = beamsInGroup.First();
-                            string signature = firstBeam.OptUser ?? "N/A";
+                            string signature = firstBeam.OptUser ?? "";
                             if (firstBeam.Width.HasValue && firstBeam.Depth.HasValue)
                             {
                                 signature = $"{(int)firstBeam.Width.Value}x{(int)firstBeam.Depth.Value}|{signature}";

@@ -41,6 +41,7 @@ namespace DTS_Engine.Core.Data
             clone.BotRebarString = (string[])BotRebarString?.Clone();
             clone.TopAreaProv = (double[])TopAreaProv?.Clone();
             clone.BotAreaProv = (double[])BotAreaProv?.Clone();
+            clone.StirrupAreaProv = (double[])StirrupAreaProv?.Clone();
             clone.StirrupString = (string[])StirrupString?.Clone();
             clone.WebBarString = (string[])WebBarString?.Clone();
             clone.BeamName = BeamName;
@@ -49,6 +50,21 @@ namespace DTS_Engine.Core.Data
             // NOTE: MappingSource đã deprecated - không clone
             clone.BeamType = BeamType;
             clone.BelongToGroup = BelongToGroup;
+
+            // Metadata
+            clone.TopMoment = (double[])TopMoment?.Clone();
+            clone.BotMoment = (double[])BotMoment?.Clone();
+            clone.ShearForce = (double[])ShearForce?.Clone();
+            clone.TorsionMoment = (double[])TorsionMoment?.Clone();
+            clone.TopCombo = (string[])TopCombo?.Clone();
+            clone.BotCombo = (string[])BotCombo?.Clone();
+            clone.ShearCombo = (string[])ShearCombo?.Clone();
+            clone.TorsionCombo = (string[])TorsionCombo?.Clone();
+            clone.SapElementNos = (string[])SapElementNos?.Clone();
+            clone.LocationMm = (double[])LocationMm?.Clone();
+            clone.ConcreteGrade = ConcreteGrade;
+            clone.SteelGrade = SteelGrade;
+
             return clone;
         }
 
@@ -78,6 +94,23 @@ namespace DTS_Engine.Core.Data
 
         public string DesignCombo { get; set; }
 
+        // ===== Metadata cho thuyết minh (3 vị trí) =====
+        public double[] TopMoment { get; set; } = new double[3];
+        public double[] BotMoment { get; set; } = new double[3];
+        public double[] ShearForce { get; set; } = new double[3];
+        public double[] TorsionMoment { get; set; } = new double[3];
+
+        public string[] TopCombo { get; set; } = new string[3];
+        public string[] BotCombo { get; set; } = new string[3];
+        public string[] ShearCombo { get; set; } = new string[3];
+        public string[] TorsionCombo { get; set; } = new string[3];
+
+        public string[] SapElementNos { get; set; } = new string[3]; // Traceability: "9", "580", ...
+        public double[] LocationMm { get; set; } = new double[3];   // Traceability: 5417, 2167, ...
+
+        public string ConcreteGrade { get; set; } = "";
+        public string SteelGrade { get; set; } = "";
+
         // ===== SAP Mapping =====
         /// <summary>
         /// Tên phần tử SAP đã mapping (VD: "580", "B12")
@@ -92,7 +125,7 @@ namespace DTS_Engine.Core.Data
         /// Loại dầm: "Girder" (Chính) hoặc "Beam" (Phụ).
         /// Determines Curtailment Rules.
         /// </summary>
-        public string BeamType { get; set; } = "Beam";
+        public string BeamType { get; set; } = "";
 
         /// <summary>
         /// Support tại đầu I (Start): 1=cột/tường, 0=dầm khác/tự do
@@ -130,6 +163,7 @@ namespace DTS_Engine.Core.Data
         public string[] BotRebarString { get; set; } = new string[3];
         public double[] TopAreaProv { get; set; } = new double[3];
         public double[] BotAreaProv { get; set; } = new double[3];
+        public double[] StirrupAreaProv { get; set; } = new double[3];
 
         // ===== Phương án thép đai & thép sườn =====
         public string[] StirrupString { get; set; } = new string[3]; // VD: "d8a150"
@@ -149,7 +183,16 @@ namespace DTS_Engine.Core.Data
             dict["TorsionArea"] = RoundArray(TorsionArea);
             dict["ShearArea"] = RoundArray(ShearArea);
             dict["TTArea"] = RoundArray(TTArea);
-            // NOTE: DesignCombo và TorsionFactorUsed không còn được ghi vào XData
+
+            // Metadata for report
+            dict["TopM"] = RoundArray(TopMoment);
+            dict["BotM"] = RoundArray(BotMoment);
+            dict["ShearV"] = RoundArray(ShearForce);
+            dict["TorM"] = RoundArray(TorsionMoment);
+            dict["TopC"] = TopCombo;
+            dict["BotC"] = BotCombo;
+            dict["ShearC"] = ShearCombo;
+            dict["TorC"] = TorsionCombo;
 
             // Section - ISO/IEC 25010: Single Source of Truth (xKeys only)
             dict["xSectionName"] = SectionName;
@@ -171,6 +214,23 @@ namespace DTS_Engine.Core.Data
             dict["xSupport_I"] = SupportI;
             dict["xSupport_J"] = SupportJ;
             if (!string.IsNullOrEmpty(AxisName)) dict["xOnAxis"] = AxisName;
+
+            // Report Strings
+            dict["TopRS"] = TopRebarString;
+            dict["BotRS"] = BotRebarString;
+            dict["StirRS"] = StirrupString;
+            dict["WebRS"] = WebBarString;
+
+            // Provided Areas
+            dict["TopP"] = RoundArray(TopAreaProv);
+            dict["BotP"] = RoundArray(BotAreaProv);
+            dict["StirP"] = RoundArray(StirrupAreaProv);
+
+            dict["xConcreteGrade"] = ConcreteGrade;
+            dict["xSteelGrade"] = SteelGrade;
+
+            dict["xSapNos"] = SapElementNos;
+            dict["xLocMm"] = RoundArray(LocationMm);
 
             return dict;
         }
@@ -199,7 +259,26 @@ namespace DTS_Engine.Core.Data
             if (dict.TryGetValue("TorsionArea", out var tor)) TorsionArea = ConvertToDoubleArray(tor);
             if (dict.TryGetValue("ShearArea", out var shear)) ShearArea = ConvertToDoubleArray(shear);
             if (dict.TryGetValue("TTArea", out var tt)) TTArea = ConvertToDoubleArray(tt);
-            // NOTE: DesignCombo và TorsionFactorUsed không còn được đọc từ XData
+
+            if (dict.TryGetValue("TopM", out var tm)) TopMoment = ConvertToDoubleArray(tm);
+            if (dict.TryGetValue("BotM", out var bm)) BotMoment = ConvertToDoubleArray(bm);
+            if (dict.TryGetValue("ShearV", out var sv)) ShearForce = ConvertToDoubleArray(sv);
+            if (dict.TryGetValue("TorM", out var trm)) TorsionMoment = ConvertToDoubleArray(trm);
+            if (dict.TryGetValue("TopC", out var tc)) TopCombo = ConvertToStringArray(tc);
+            if (dict.TryGetValue("BotC", out var bc)) BotCombo = ConvertToStringArray(bc);
+            if (dict.TryGetValue("ShearC", out var sc)) ShearCombo = ConvertToStringArray(sc);
+            if (dict.TryGetValue("TorC", out var trc)) TorsionCombo = ConvertToStringArray(trc);
+
+            // Report Strings
+            if (dict.TryGetValue("TopRS", out var trs)) TopRebarString = ConvertToStringArray(trs);
+            if (dict.TryGetValue("BotRS", out var brs)) BotRebarString = ConvertToStringArray(brs);
+            if (dict.TryGetValue("StirRS", out var srs)) StirrupString = ConvertToStringArray(srs);
+            if (dict.TryGetValue("WebRS", out var wrs)) WebBarString = ConvertToStringArray(wrs);
+
+            // Provided Areas
+            if (dict.TryGetValue("TopP", out var tp)) TopAreaProv = ConvertToDoubleArray(tp);
+            if (dict.TryGetValue("BotP", out var bp)) BotAreaProv = ConvertToDoubleArray(bp);
+            if (dict.TryGetValue("StirP", out var stp)) StirrupAreaProv = ConvertToDoubleArray(stp);
 
             // Section - ISO/IEC 25010: Single Source of Truth (xKeys only, mm)
             if (dict.TryGetValue("xSectionName", out var xsn)) SectionName = xsn?.ToString();
@@ -222,6 +301,12 @@ namespace DTS_Engine.Core.Data
             if (dict.TryGetValue("xSupport_I", out var xsi)) SupportI = Convert.ToInt32(xsi);
             if (dict.TryGetValue("xSupport_J", out var xsj)) SupportJ = Convert.ToInt32(xsj);
             if (dict.TryGetValue("xOnAxis", out var xoa)) AxisName = xoa?.ToString();
+
+            if (dict.TryGetValue("xConcreteGrade", out var cg)) ConcreteGrade = cg?.ToString() ?? "B25";
+            if (dict.TryGetValue("xSteelGrade", out var sg)) SteelGrade = sg?.ToString() ?? "CB400";
+
+            if (dict.TryGetValue("xSapNos", out var xsnos)) SapElementNos = ConvertToStringArray(xsnos);
+            if (dict.TryGetValue("xLocMm", out var xloc)) LocationMm = ConvertToDoubleArray(xloc);
         }
 
         private double[] ConvertToDoubleArray(object obj)

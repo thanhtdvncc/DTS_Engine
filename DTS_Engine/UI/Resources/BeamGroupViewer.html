@@ -224,6 +224,12 @@
                     class="w-8 h-8 bg-blue-600/80 hover:bg-blue-500 text-white text-sm rounded flex items-center justify-center">
                     <i class="fa-solid fa-layer-group"></i>
                 </button>
+                <div class="w-px h-8 bg-slate-400 mx-1"></div>
+                <!-- Report -->
+                <button onclick="showCalculationReport()" title="Xem thuyết minh (Report)"
+                    class="w-8 h-8 bg-emerald-600/80 hover:bg-emerald-500 text-white text-sm rounded flex items-center justify-center">
+                    <i class="fa-solid fa-file-invoice"></i>
+                </button>
             </div>
         </div>
 
@@ -1149,6 +1155,10 @@
             detailPanY = 0;
 
             renderDetailCanvas();
+        }
+
+        function showCalculationReport() {
+            window.Beam?.Actions?.showCalculationReport(-1);
         }
 
         function resizeDetailCanvas() {

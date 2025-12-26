@@ -42,7 +42,8 @@
             return `
                 <tr class="${rowClass} ${manualClass} hover:bg-blue-100 cursor-pointer" 
                     data-span-index="${index}"
-                    onclick="Beam.Table.onRowClick(${index})">
+                    onclick="Beam.Table.onRowClick(${index})"
+                    ondblclick="Beam.Table.showReport(${index})">
                     <td class="px-2 py-1 text-center font-bold">${span.SpanId || `S${index + 1}`}</td>
                     <td class="px-2 py-1 text-center">${(span.Length || 0).toFixed(2)}m</td>
                     <td class="px-2 py-1 text-center">${span.Width || 0}×${span.Height || 0}</td>
@@ -163,6 +164,10 @@
             global.Beam?.State?.highlightSpan(index);
             global.Beam?.Renderer?.render();
             this.render();
+        },
+
+        showReport(index) {
+            global.Beam?.Actions?.showCalculationReport(index);
         },
 
         /**

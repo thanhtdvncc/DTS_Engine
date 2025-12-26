@@ -387,6 +387,21 @@ namespace DTS_Engine.Core.Data
         public List<int> StirrupSpacings { get; set; } = new List<int> { 100, 150, 200, 250 };
 
         /// <summary>
+        /// Bước đai vùng gối (L1, L2)
+        /// </summary>
+        public List<int> StirrupSpacings_Support { get; set; } = new List<int> { 100, 150 };
+
+        /// <summary>
+        /// Bước đai vùng bụng (Mid)
+        /// </summary>
+        public List<int> StirrupSpacings_Span { get; set; } = new List<int> { 150, 200 };
+
+        /// <summary>
+        /// Bước đai dầm hẫng (Console)
+        /// </summary>
+        public List<int> StirrupSpacings_Cantilever { get; set; } = new List<int> { 100, 150 };
+
+        /// <summary>
         /// Phạm vi thép hông/sườn
         /// </summary>
         public string SideBarRange { get; set; } = "12-14";

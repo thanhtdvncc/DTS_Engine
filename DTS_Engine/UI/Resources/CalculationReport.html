@@ -1,0 +1,687 @@
+<!DOCTYPE html>
+<html lang="vi">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Thuyết minh tính toán cốt thép</title>
+    <style>
+        :root {
+            --primary-color: #0078d4;
+            --bg-sidebar: #f8f9fa;
+            --bg-header: #ffffff;
+            --border-color: #dee2e6;
+            --text-color: #212529;
+            --table-header-bg: #e9ecef;
+            --hover-color: #e8f0fe;
+            --success-color: #198754;
+            --warning-color: #fd7e14;
+            --danger-color: #dc3545;
+        }
+
+        * {
+            box-sizing: border-box;
+        }
+
+        body {
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+            margin: 0;
+            padding: 0;
+            display: flex;
+            height: 100vh;
+            overflow: hidden;
+            color: var(--text-color);
+            background-color: white;
+            font-size: 13px;
+        }
+
+        /* --- SIDEBAR --- */
+        .sidebar {
+            width: 250px;
+            background-color: var(--bg-sidebar);
+            border-right: 1px solid var(--border-color);
+            display: flex;
+            flex-direction: column;
+        }
+
+        .sidebar-header {
+            padding: 15px;
+            font-weight: 700;
+            background-color: #f1f3f5;
+            border-bottom: 1px solid var(--border-color);
+            font-size: 14px;
+            color: #495057;
+        }
+
+        .group-list {
+            flex: 1;
+            overflow-y: auto;
+            list-style: none;
+            padding: 0;
+            margin: 0;
+        }
+
+        .group-item {
+            padding: 12px 15px;
+            cursor: pointer;
+            border-bottom: 1px solid #e9ecef;
+            transition: all 0.2s;
+        }
+
+        .group-item:hover {
+            background-color: #e2e6ea;
+        }
+
+        .group-item.active {
+            background-color: var(--primary-color);
+            color: white;
+            border-left: 4px solid #005a9e;
+            padding-left: 11px;
+            /* Adjust for border */
+        }
+
+        .section-name {
+            font-weight: 600;
+            font-size: 14px;
+            margin-bottom: 4px;
+        }
+
+        .section-count {
+            font-size: 12px;
+            color: #6c757d;
+        }
+
+        .group-item.active .section-count {
+            color: #e9ecef;
+        }
+
+        /* --- MAIN CONTENT --- */
+        .main-content {
+            flex: 1;
+            display: flex;
+            flex-direction: column;
+            overflow: hidden;
+        }
+
+        /* --- TOP BAR --- */
+        .top-bar {
+            padding: 8px 20px;
+            border-bottom: 1px solid var(--border-color);
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            background: var(--bg-header);
+            box-shadow: 0 1px 3px rgba(0, 0, 0, 0.05);
+            height: 50px;
+        }
+
+        .report-title h2 {
+            margin: 0;
+            font-size: 16px;
+            font-weight: 600;
+        }
+
+        .report-title span {
+            color: var(--primary-color);
+        }
+
+        /* --- VIEW CONTROLS --- */
+        .view-controls {
+            display: flex;
+            align-items: center;
+            gap: 12px;
+        }
+
+        .switch-wrapper {
+            display: flex;
+            align-items: center;
+            gap: 8px;
+            font-size: 13px;
+            background: #f8f9fa;
+            padding: 4px 10px;
+            border-radius: 20px;
+            border: 1px solid #dee2e6;
+        }
+
+        .switch {
+            position: relative;
+            display: inline-block;
+            width: 36px;
+            height: 18px;
+        }
+
+        .switch input {
+            opacity: 0;
+            width: 0;
+            height: 0;
+        }
+
+        .slider {
+            position: absolute;
+            cursor: pointer;
+            top: 0;
+            left: 0;
+            right: 0;
+            bottom: 0;
+            background-color: #adb5bd;
+            transition: .4s;
+            border-radius: 34px;
+        }
+
+        .slider:before {
+            position: absolute;
+            content: "";
+            height: 14px;
+            width: 14px;
+            left: 2px;
+            bottom: 2px;
+            background-color: white;
+            transition: .4s;
+            border-radius: 50%;
+        }
+
+        input:checked+.slider {
+            background-color: var(--primary-color);
+        }
+
+        input:checked+.slider:before {
+            transform: translateX(18px);
+        }
+
+        /* --- SPAN TABS --- */
+        .span-tabs {
+            display: flex;
+            background-color: #f8f9fa;
+            border-bottom: 1px solid var(--border-color);
+            padding: 0 10px;
+            overflow-x: auto;
+            min-height: 40px;
+            align-items: flex-end;
+        }
+
+        .tab-btn {
+            padding: 8px 25px;
+            border: 1px solid transparent;
+            border-bottom: none;
+            background: none;
+            cursor: pointer;
+            font-weight: 500;
+            color: #666;
+            margin-right: 2px;
+            border-radius: 4px 4px 0 0;
+            transition: all 0.2s;
+        }
+
+        .tab-btn:hover {
+            background-color: #e9ecef;
+            color: #333;
+        }
+
+        .tab-btn.active {
+            background-color: white;
+            color: var(--primary-color);
+            font-weight: 700;
+            border-color: var(--border-color);
+            border-bottom: 2px solid white;
+            margin-bottom: -1px;
+            box-shadow: 0 -2px 5px rgba(0, 0, 0, 0.02);
+        }
+
+        /* --- DATA AREA --- */
+        .data-container {
+            flex: 1;
+            padding: 20px;
+            overflow-y: auto;
+            background: #fff;
+        }
+
+        .span-info-panel {
+            margin-bottom: 20px;
+            padding: 15px;
+            background-color: #f8f9fa;
+            border: 1px solid #dee2e6;
+            border-radius: 6px;
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
+            gap: 15px;
+        }
+
+        .info-box label {
+            font-size: 11px;
+            text-transform: uppercase;
+            color: #868e96;
+            display: block;
+            margin-bottom: 4px;
+            font-weight: 600;
+        }
+
+        .info-box span {
+            font-size: 15px;
+            font-weight: 600;
+            color: #343a40;
+        }
+
+        /* --- TABLE STYLES --- */
+        table.calc-table {
+            width: 100%;
+            border-collapse: collapse;
+            font-size: 13px;
+            border: 2px solid #333;
+            /* Thick outer border */
+            box-shadow: 0 4px 10px rgba(0, 0, 0, 0.1);
+            margin-bottom: 30px;
+        }
+
+        .calc-table th,
+        .calc-table td {
+            border: 1px solid #ced4da;
+            padding: 8px 10px;
+            text-align: center;
+            vertical-align: middle;
+        }
+
+        .calc-table thead th {
+            background-color: var(--table-header-bg);
+            font-weight: 700;
+            color: #333;
+            border: 1px solid #333;
+            border-bottom: 2px solid #333;
+        }
+
+        .calc-table tbody tr {
+            transition: background 0.1s;
+        }
+
+        .calc-table tbody tr:hover {
+            background-color: var(--hover-color);
+        }
+
+        /* Section Separators */
+        .row-separator td {
+            background-color: #e9ecef;
+            height: 8px;
+            padding: 0;
+            border-top: 2px solid #dee2e6;
+            border-bottom: 1px solid #dee2e6;
+        }
+
+        /* Value Colors */
+        .val-safe {
+            color: var(--success-color);
+            font-weight: bold;
+        }
+
+        .val-unsafe {
+            color: var(--danger-color);
+            font-weight: bold;
+        }
+
+        .val-warning {
+            color: var(--warning-color);
+            font-weight: bold;
+        }
+
+        .val-rebar {
+            background-color: #fff9db !important;
+            font-weight: bold;
+            color: #a67c00;
+        }
+
+        .font-bold {
+            font-weight: bold;
+        }
+
+        .txt-rebar {
+            font-family: 'Consolas', monospace;
+            color: #0078d4;
+            font-weight: bold;
+        }
+
+        .txt-combo {
+            font-style: italic;
+            color: #555;
+            font-size: 12px;
+        }
+
+        .txt-location {
+            font-family: 'Consolas', monospace;
+            color: #666;
+            font-size: 12px;
+        }
+
+        /* Mode Visibility */
+        .mode-simple .col-detailed {
+            display: none !important;
+        }
+
+        .mode-detailed .col-simple {
+            display: none !important;
+        }
+
+        .mode-simple .col-simple {
+            display: table-cell !important;
+        }
+
+        .mode-detailed .col-detailed {
+            display: table-cell !important;
+        }
+
+        body.mode-simple .col-simple {
+            display: table-cell;
+        }
+
+        .btn-export {
+            background-color: #217346;
+            color: white;
+            border: none;
+            padding: 6px 15px;
+            border-radius: 4px;
+            cursor: pointer;
+            font-size: 13px;
+            display: flex;
+            align-items: center;
+            gap: 6px;
+            transition: background 0.2s;
+        }
+
+        .btn-export:hover {
+            background-color: #1e6b41;
+        }
+
+        .btn-export svg {
+            width: 14px;
+            height: 14px;
+            fill: currentColor;
+        }
+    </style>
+</head>
+
+<body class="mode-detailed">
+    <div class="sidebar">
+        <div class="sidebar-header">Danh sách Tiết diện</div>
+        <ul class="group-list" id="groupList">
+            <!-- Items generated by JS -->
+        </ul>
+    </div>
+
+    <div class="main-content">
+        <div class="top-bar">
+            <div class="report-title">
+                <h2>Thuyết minh: <span id="lblGroupName">---</span> <small id="lblProjectName"
+                        style="font-weight: normal; color: #888; margin-left:10px"></small></h2>
+            </div>
+
+            <div class="view-controls">
+                <div class="switch-wrapper">
+                    <span>Chi tiết</span>
+                    <label class="switch">
+                        <input type="checkbox" id="modeSwitch" onchange="toggleMode()">
+                        <span class="slider"></span>
+                    </label>
+                    <span>Rút gọn</span>
+                </div>
+
+                <button class="btn-export" onclick="exportExcel()">
+                    <svg viewBox="0 0 24 24">
+                        <path
+                            d="M14 2H6c-1.1 0-1.99.9-1.99 2L4 20c0 1.1.89 2 1.99 2H18c1.1 0 2-.9 2-2V8l-6-6zm2 16H8v-2h8v2zm0-4H8v-2h8v2zm-3-5V3.5L18.5 9H13z" />
+                    </svg>
+                    Xuất Excel
+                </button>
+            </div>
+        </div>
+
+        <div class="span-tabs" id="spanTabs">
+            <!-- Tabs generated by JS -->
+        </div>
+
+        <div class="data-container">
+            <div class="span-info-panel" id="spanInfoPanel">
+                <!-- Will be updated by selectSpan -->
+            </div>
+
+            <table class="calc-table" id="reportTable">
+                <thead>
+                    <tr>
+                        <th style="width: 100px;">Group</th>
+                        <th style="width: 180px;">Design Items</th>
+                        <th style="width: 140px;">Sub-item</th>
+                        <th class="col-detailed" style="width: 18%;">L1 (Left)</th>
+                        <th class="col-detailed" style="width: 18%;">Center</th>
+                        <th class="col-detailed" style="width: 18%;">L2 (Right)</th>
+                        <th class="col-simple" style="width: 27%;">End (Envelope)</th>
+                        <th class="col-simple" style="width: 27%;">Center</th>
+                        <th style="width: 10%;">Result</th>
+                    </tr>
+                </thead>
+                <tbody id="tableBody">
+                    <!-- Data generated by JS -->
+                </tbody>
+            </table>
+        </div>
+    </div>
+
+    <script>
+        // --- DATA STORE ---
+        let reportData = [];
+        let currentGroupIndex = 0;
+        let currentSpanIndex = 0;
+
+        function initReport(data) {
+            if (typeof data === 'string') reportData = JSON.parse(data);
+            else reportData = data;
+
+            if (reportData && reportData.length > 0) {
+                renderGroupList();
+                selectGroup(0);
+            }
+        }
+
+        function renderGroupList() {
+            const list = document.getElementById('groupList');
+            list.innerHTML = '';
+            reportData.forEach((group, index) => {
+                const li = document.createElement('li');
+                li.className = 'group-item';
+                li.innerHTML = `
+                    <div class="section-name">${group.GroupName}</div>
+                    <div class="section-count">Gồm ${group.Spans.length} nhịp tính toán</div>
+                `;
+                li.onclick = () => selectGroup(index);
+                if (index === currentGroupIndex) li.classList.add('active');
+                list.appendChild(li);
+            });
+        }
+
+        function selectGroup(index) {
+            currentGroupIndex = index;
+            document.getElementById('lblGroupName').textContent = reportData[index].GroupName;
+            document.getElementById('lblProjectName').textContent = reportData[index].ProjectName || "";
+
+            const items = document.querySelectorAll('.group-item');
+            items.forEach((item, i) => {
+                if (i === index) item.classList.add('active');
+                else item.classList.remove('active');
+            });
+
+            renderSpanTabs();
+            selectSpan(0);
+        }
+
+        function renderSpanTabs() {
+            const group = reportData[currentGroupIndex];
+            const tabsContainer = document.getElementById('spanTabs');
+            tabsContainer.innerHTML = '';
+
+            group.Spans.forEach((span, index) => {
+                const btn = document.createElement('button');
+                btn.className = 'tab-btn';
+                btn.textContent = span.SpanId;
+                btn.onclick = () => selectSpan(index);
+                tabsContainer.appendChild(btn);
+            });
+        }
+
+        function selectSpan(index) {
+            currentSpanIndex = index;
+            const group = reportData[currentGroupIndex];
+            if (!group.Spans || group.Spans.length === 0) return;
+
+            const span = group.Spans[index];
+
+            const tabs = document.querySelectorAll('.tab-btn');
+            tabs.forEach((tab, i) => {
+                if (i === index) tab.classList.add('active');
+                else tab.classList.remove('active');
+            });
+
+            // Update Header for Span
+            const infoPanel = document.getElementById('spanInfoPanel');
+            infoPanel.innerHTML = `
+                <div style="font-size:18px; font-weight:700; color:#333; margin-bottom:5px">
+                    ${span.SpanId} (RC${span.Section})
+                </div>
+                <div style="display:flex; gap:20px; color:#666; font-size:13px">
+                    <span><b>L:</b> ${span.Length} mm</span>
+                    <span><b>Mat:</b> ${span.Material}</span>
+                </div>
+            `;
+
+            renderTable();
+        }
+
+        function renderTable() {
+            const group = reportData[currentGroupIndex];
+            if (!group.Spans || group.Spans.length === 0) return;
+
+            const span = group.Spans[currentSpanIndex];
+            const tbody = document.getElementById('tableBody');
+            tbody.innerHTML = '';
+
+            const l = span.Left;
+            const m = span.Mid;
+            const r = span.Right;
+
+            // --- RENDER HELPERS ---
+            const rRow = (cat, item, sub, vL, vM, vR, res = '', opts = {}) => {
+                const style = (val, isRebar) => {
+                    if (isRebar) return 'val-rebar';
+                    if (opts.type === 'combo') return 'txt-combo';
+                    if (opts.type === 'loc') return 'txt-location';
+                    if (opts.type === 'res') return val === 'OK' ? 'val-safe' : (val === 'NG' ? 'val-unsafe' : '');
+                    return '';
+                };
+
+                const formatVal = (v) => {
+                    if (v === undefined || v === null) return "-";
+                    if (opts.type === 'rebar' || opts.type === 'combo' || opts.type === 'loc') return v;
+                    if (typeof v === 'number') return v.toFixed(opts.precision || 2);
+                    return v;
+                }
+
+                // Envelope logic for Simple Mode (End = Max(L, R))
+                let vE = "-";
+                if (typeof vL === 'number' && typeof vR === 'number') {
+                    vE = Math.max(vL, vR);
+                } else if (opts.type === 'rebar' || opts.type === 'combo') {
+                    // Logic for text: pick the one with higher area/ratio might be complex, 
+                    // for now just concat or pick L if present (common practice in simplified reports)
+                    vE = vL;
+                }
+
+                return `
+                    <tr>
+                        ${cat ? `<td rowspan="${cat.rowspan}" style="font-weight:bold; background:#f1f3f5">${cat.text}</td>` : ''}
+                        ${item ? `<td rowspan="${item.rowspan}" style="font-weight:bold; text-align:left">${item.text}</td>` : ''}
+                        <td style="text-align:left; color:#666">${sub}</td>
+                        <td class="col-detailed ${style(vL, opts.type === 'rebar')}">${formatVal(vL)}</td>
+                        <td class="col-detailed ${style(vM, opts.type === 'rebar')}">${formatVal(vM)}</td>
+                        <td class="col-detailed ${style(vR, opts.type === 'rebar')}">${formatVal(vR)}</td>
+                        <td class="col-simple ${style(vE, opts.type === 'rebar')}">${formatVal(vE)}</td>
+                        <td class="col-simple ${style(vM, opts.type === 'rebar')}">${formatVal(vM)}</td>
+                        <td class="${style(res, false)} font-bold">${res}</td>
+                    </tr>
+                `;
+            };
+
+            // --- BLOCK: BY SAP2000 ---
+            // 1. As, top
+            tbody.innerHTML += rRow({ text: 'By SAP2000', rowspan: 12 }, { text: 'As, top (mm²)', rowspan: 3 }, 'Demand req.', l.TopResult.AsCalc, m.TopResult.AsCalc, r.TopResult.AsCalc);
+            tbody.innerHTML += rRow(null, null, 'Element No. (LC)', l.TopResult.ElementId, m.TopResult.ElementId, r.TopResult.ElementId, '', { type: 'combo' });
+            tbody.innerHTML += rRow(null, null, 'Location (mm)', l.TopResult.LocationMm, m.TopResult.LocationMm, r.TopResult.LocationMm, '', { type: 'loc' });
+
+            // 2. As, bot
+            tbody.innerHTML += rRow(null, { text: 'As, bot (mm²)', rowspan: 3 }, 'Demand req.', l.BotResult.AsCalc, m.BotResult.AsCalc, r.BotResult.AsCalc);
+            tbody.innerHTML += rRow(null, null, 'Element No. (LC)', l.BotResult.ElementId, m.BotResult.ElementId, r.BotResult.ElementId, '', { type: 'combo' });
+            tbody.innerHTML += rRow(null, null, 'Location (mm)', l.BotResult.LocationMm, m.BotResult.LocationMm, r.BotResult.LocationMm, '', { type: 'loc' });
+
+            // 3. Shear
+            tbody.innerHTML += rRow(null, { text: '2At/st + Av/sv', rowspan: 2 }, 'mm²/mm (Total)', l.StirrupResult.AsCalc, m.StirrupResult.AsCalc, r.StirrupResult.AsCalc);
+            tbody.innerHTML += rRow(null, null, 'Element (LC)', l.StirrupResult.LoadCase, m.StirrupResult.LoadCase, r.StirrupResult.LoadCase, '', { type: 'combo' });
+
+            tbody.innerHTML += rRow(null, { text: '2At/sv', rowspan: 2 }, 'mm²/mm (Stirrup)', l.StirrupOnlyResult.AsCalc, m.StirrupOnlyResult.AsCalc, r.StirrupOnlyResult.AsCalc);
+            tbody.innerHTML += rRow(null, null, 'Element (LC)', l.StirrupOnlyResult.LoadCase, m.StirrupOnlyResult.LoadCase, r.StirrupOnlyResult.LoadCase, '', { type: 'combo' });
+
+            // 4. Al
+            tbody.innerHTML += rRow(null, { text: 'Al (mm²)', rowspan: 2 }, 'Torsion Long.', l.AlResult.AsCalc, m.AlResult.AsCalc, r.AlResult.AsCalc);
+            tbody.innerHTML += rRow(null, null, 'Load Case', l.AlResult.LoadCase, m.AlResult.LoadCase, r.AlResult.LoadCase, '', { type: 'combo' });
+
+            tbody.innerHTML += `<tr class="row-separator"><td colspan="7"></td></tr>`;
+
+            // --- BLOCK: FINAL USE ---
+            // 5. Top bar
+            tbody.innerHTML += rRow({ text: 'Final Use', rowspan: 15 }, { text: 'Top bar', rowspan: 3 }, 'Rebar config', l.TopResult.RebarStr, m.TopResult.RebarStr, r.TopResult.RebarStr, '', { type: 'rebar' });
+            tbody.innerHTML += rRow(null, null, 'Provide (mm²)', l.TopResult.AsProv, m.TopResult.AsProv, r.TopResult.AsProv);
+            tbody.innerHTML += rRow(null, null, 'Ratio / Check', l.TopResult.Ratio, m.TopResult.Ratio, r.TopResult.Ratio, l.TopResult.Conclusion, { type: 'res' });
+
+            // 6. Bottom bar
+            tbody.innerHTML += rRow(null, { text: 'Bottom bar', rowspan: 3 }, 'Rebar config', l.BotResult.RebarStr, m.BotResult.RebarStr, r.BotResult.RebarStr, '', { type: 'rebar' });
+            tbody.innerHTML += rRow(null, null, 'Provide (mm²)', l.BotResult.AsProv, m.BotResult.AsProv, r.BotResult.AsProv);
+            tbody.innerHTML += rRow(null, null, 'Ratio / Check', l.BotResult.Ratio, m.BotResult.Ratio, r.BotResult.Ratio, l.BotResult.Conclusion, { type: 'res' });
+
+            // 7. Stirrup
+            tbody.innerHTML += rRow(null, { text: 'Stirrup', rowspan: 6 }, 'No. Leg', span.Left.Legs, span.Mid.Legs, span.Right.Legs, 'Don', { type: 'rebar' });
+            tbody.innerHTML += rRow(null, null, 'Rebar', l.StirrupResult.RebarStr, m.StirrupResult.RebarStr, r.StirrupResult.RebarStr, '', { type: 'rebar' });
+            tbody.innerHTML += rRow(null, null, '2At/st+Av/sv (Prv)', l.StirrupResult.AsProv, m.StirrupResult.AsProv, r.StirrupResult.AsProv, l.StirrupResult.Conclusion, { type: 'res' });
+            tbody.innerHTML += rRow(null, null, 'Ref SAP demand', l.StirrupResult.AsCalc, m.StirrupResult.AsCalc, r.StirrupResult.AsCalc, '', { precision: 3, type: 'loc' });
+            tbody.innerHTML += rRow(null, null, '2At/sv (Prv)', l.StirrupOnlyResult.AsProv, m.StirrupOnlyResult.AsProv, r.StirrupOnlyResult.AsProv, l.StirrupOnlyResult.Conclusion, { type: 'res' });
+            tbody.innerHTML += rRow(null, null, 'Ref SAP demand', l.StirrupOnlyResult.AsCalc, m.StirrupOnlyResult.AsCalc, r.StirrupOnlyResult.AsCalc, '', { precision: 3, type: 'loc' });
+
+            // 8. Web bar
+            tbody.innerHTML += rRow(null, { text: 'Web bar', rowspan: 3 }, 'Rebar config', l.WebResult.RebarStr, m.WebResult.RebarStr, r.WebResult.RebarStr, '', { type: 'rebar' });
+            tbody.innerHTML += rRow(null, null, 'Provide (mm²)', l.WebResult.AsProv, m.WebResult.AsProv, r.WebResult.AsProv);
+            tbody.innerHTML += rRow(null, null, 'Check Torsion', '', '', '', l.AlResult.Conclusion, { type: 'res' });
+
+            tbody.innerHTML += `<tr class="row-separator"><td colspan="7"></td></tr>`;
+
+            // Result Check Line
+            const finalOk = (l.TopResult.Conclusion === 'OK' && l.BotResult.Conclusion === 'OK' && l.StirrupResult.Conclusion === 'OK' && l.AlResult.Conclusion === 'OK') ? 'OK' : 'NG';
+            tbody.innerHTML += `
+                <tr style="background:#f8f9fa; font-size:15px">
+                    <td colspan="3" style="font-weight:bold; text-align:right; padding-right:20px">RESULT CHECK</td>
+                    <td colspan="3" class="col-detailed" style="text-align:center; font-weight:bold; color:#666">ALL REQUIREMENTS SATISFIED</td>
+                    <td colspan="2" class="col-simple" style="text-align:center; font-weight:bold; color:#666">ALL REQUIREMENTS SATISFIED</td>
+                    <td class="${finalOk === 'OK' ? 'val-safe' : 'val-unsafe'} font-bold">${finalOk}</td>
+                </tr>
+            `;
+        }
+
+        // --- UTILS ---
+        function toggleMode() {
+            const isSimple = document.getElementById('modeSwitch').checked;
+            document.body.className = isSimple ? 'mode-simple' : 'mode-detailed';
+            renderTable(); // Re-render to update envelope values if needed
+        }
+
+        function exportExcel() {
+            const isSimple = document.body.classList.contains('mode-simple');
+            window.chrome.webview.postMessage({
+                command: 'export_excel',
+                data: reportData[currentGroupIndex],
+                isSimple: isSimple
+            });
+        }
+    </script>
+</body>
+
+</html>

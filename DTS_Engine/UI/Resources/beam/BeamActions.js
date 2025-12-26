@@ -269,6 +269,18 @@
             }
         },
 
+        showCalculationReport(spanIndex = -1) {
+            const beamState = global.Beam?.State;
+            if (beamState) {
+                const payload = {
+                    GroupIndex: beamState.currentGroupIndex,
+                    SpanIndex: spanIndex,
+                    Groups: beamState.groups // Pass latest memory state
+                };
+                this.sendToHost('SHOW_REPORT', payload);
+            }
+        },
+
         save() {
             const beamState = global.Beam?.State;
             const data = {

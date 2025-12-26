@@ -97,12 +97,12 @@ namespace DTS_Engine.Core.Engines
                             {
                                 data.SectionHeight = t3;
                                 data.Width = t2;
+                                data.ConcreteGrade = matProp;
+                                data.SteelGrade = dtsSettings.General?.SteelGradeName ?? ""; // No fallback
                             }
                             else
                             {
-                                // Fallback an toàn nếu không phải chữ nhật
-                                data.SectionHeight = 30;
-                                data.Width = 20;
+                                // No fallback, keep as 0 if not rectangle
                             }
                         }
                         // ----------------------------------------------------
@@ -115,31 +115,55 @@ namespace DTS_Engine.Core.Engines
                         double limitStart = L * zoneStartRatio;
                         double limitEnd = L * (1.0 - zoneEndRatio);
 
-                        double GetMaxInZone(double[] values, double fromLoc, double toLoc)
-                        {
-                            double maxVal = 0;
-                            for (int i = 0; i < numberItems; i++)
-                            {
-                                double loc = location[i];
-                                if (loc >= fromLoc - 0.001 && loc <= toLoc + 0.001)
-                                    if (values[i] > maxVal) maxVal = values[i];
-                            }
-                            return maxVal;
-                        }
-
                         // Gán dữ liệu vào 3 vùng
                         for (int z = 0; z < 3; z++)
                         {
                             double start = z == 0 ? 0 : (z == 1 ? limitStart : limitEnd);
                             double end = z == 0 ? limitStart : (z == 1 ? limitEnd : L);
 
-                            data.TopArea[z] = GetMaxInZone(topArea, start, end);
-                            data.BotArea[z] = GetMaxInZone(botArea, start, end);
+                            // Helpers to find max and recording index/combo
+                            int idxTop = -1; double maxTop = -1;
+                            int idxBot = -1; double maxBot = -1;
+                            int idxShear = -1; double maxShear = -1;
+                            int idxTor = -1; double maxTor = -1;
 
-                            // Mapping chuẩn theo tài liệu:
-                            data.ShearArea[z] = GetMaxInZone(vMajorArea, start, end); // Av/s (Shear Only)
-                            data.TorsionArea[z] = GetMaxInZone(tlArea, start, end);   // Al (Total Long Torsion)
-                            data.TTArea[z] = GetMaxInZone(ttArea, start, end);        // At/s (Transverse Torsion)
+                            for (int i = 0; i < numberItems; i++)
+                            {
+                                double loc = location[i];
+                                if (loc >= start - 0.001 && loc <= end + 0.001)
+                                {
+                                    if (topArea[i] > maxTop) { maxTop = topArea[i]; idxTop = i; }
+                                    if (botArea[i] > maxBot) { maxBot = botArea[i]; idxBot = i; }
+                                    if (vMajorArea[i] > maxShear) { maxShear = vMajorArea[i]; idxShear = i; }
+                                    if (tlArea[i] > maxTor) { maxTor = tlArea[i]; idxTor = i; }
+                                }
+                            }
+
+                            data.TopArea[z] = maxTop;
+                            data.BotArea[z] = maxBot;
+                            data.ShearArea[z] = maxShear;
+                            data.TorsionArea[z] = maxTor;
+                            data.TTArea[z] = idxTor >= 0 ? ttArea[idxTor] : 0;
+
+                            if (idxTop >= 0) data.TopCombo[z] = topCombo[idxTop];
+                            if (idxBot >= 0) data.BotCombo[z] = botCombo[idxBot];
+                            if (idxShear >= 0) data.ShearCombo[z] = vMajorCombo[idxShear];
+                            if (idxTor >= 0) data.TorsionCombo[z] = tlCombo[idxTor];
+
+                            // Traceability: Element No and Location (mm)
+                            // We use idxTop as primary reference for zone location metadata
+                            int refIdx = idxTop >= 0 ? idxTop : (idxShear >= 0 ? idxShear : (idxBot >= 0 ? idxBot : -1));
+                            if (refIdx >= 0)
+                            {
+                                data.SapElementNos[z] = frames[refIdx];
+                                data.LocationMm[z] = Math.Round(location[refIdx] * 1000.0); // Assume location is in Meters (Standard SAP API)
+                            }
+
+                            // Fetch Forces for each critical point in this zone
+                            data.TopMoment[z] = idxTop >= 0 ? GetForceValue(name, data.TopCombo[z], location[idxTop], "M3") : 0;
+                            data.BotMoment[z] = idxBot >= 0 ? GetForceValue(name, data.BotCombo[z], location[idxBot], "M3") : 0;
+                            data.ShearForce[z] = idxShear >= 0 ? GetForceValue(name, data.ShearCombo[z], location[idxShear], "V2") : 0;
+                            data.TorsionMoment[z] = idxTor >= 0 ? GetForceValue(name, data.TorsionCombo[z], location[idxTor], "T") : 0;
                         }
 
                         data.DesignCombo = topCombo[0];
@@ -476,6 +500,55 @@ namespace DTS_Engine.Core.Engines
                     successCount++;
             }
             return successCount;
+        }
+
+        private double GetForceValue(string frameName, string comboName, double targetLoc, string forceType)
+        {
+            if (string.IsNullOrEmpty(comboName) || _model == null) return 0;
+
+            int numberItems = 0;
+            string[] obj = null;
+            double[] objSta = null;
+            string[] elm = null;
+            double[] elmSta = null;
+            string[] loadCase = null;
+            string[] stepType = null;
+            double[] stepNum = null;
+            double[] p = null, v2 = null, v3 = null, t = null, m2 = null, m3 = null;
+
+            // Lấy nội lực cho combo cụ thể
+            _model.Results.Setup.DeselectAllCasesAndCombosForOutput();
+            _model.Results.Setup.SetComboSelectedForOutput(comboName, true);
+
+            int ret = _model.Results.FrameForce(frameName, (eItemTypeElm)eItemType.Objects, ref numberItems,
+                ref obj, ref objSta, ref elm, ref elmSta, ref loadCase, ref stepType, ref stepNum,
+                ref p, ref v2, ref v3, ref t, ref m2, ref m3);
+
+            if (ret != 0 || numberItems == 0) return 0;
+
+            // Tìm vị trí khớp hoặc gần nhất với targetLoc
+            double minDiff = double.MaxValue;
+            double foundVal = 0;
+
+            for (int i = 0; i < numberItems; i++)
+            {
+                double diff = Math.Abs(objSta[i] - targetLoc);
+                if (diff < minDiff)
+                {
+                    minDiff = diff;
+                    switch (forceType)
+                    {
+                        case "M3": foundVal = m3[i]; break;
+                        case "V2": foundVal = v2[i]; break;
+                        case "T": foundVal = t[i]; break;
+                        case "P": foundVal = p[i]; break;
+                        default: foundVal = 0; break;
+                    }
+                }
+                if (diff < 0.001) break; // Khớp hoàn hảo
+            }
+
+            return foundVal;
         }
 
         #endregion

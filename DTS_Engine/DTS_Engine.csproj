@@ -144,6 +144,7 @@
     <Compile Include="Core\Algorithms\Rebar\V4\GlobalOptimizer.cs" />
     <Compile Include="Core\Algorithms\Rebar\V4\SectionSolver.cs" />
     <Compile Include="Core\Algorithms\Rebar\V4\TopologyMerger.cs" />
+    <Compile Include="Core\Data\CalculationReportModels.cs" />
     <Compile Include="Core\Algorithms\Rebar\V4\V4RebarCalculator.cs" />
     <Compile Include="Core\Algorithms\TopologyBuilder.cs" />
     <Compile Include="DtsInitializer.cs" />
@@ -245,9 +246,15 @@
     <Compile Include="Core\Utils\ElementClassifier.cs" />
     <Compile Include="Core\Utils\RebarStringParser.cs" />
     <Compile Include="Core\Utils\SapDatabaseReader.cs" />
+    <Compile Include="Core\Utils\CalculationReportExcelGenerator.cs" />
+    <Compile Include="Core\Utils\ReportDataManager.cs" />
+    <Compile Include="Core\Utils\StirrupStringParser.cs" />
     <Compile Include="Core\Utils\SapUtils.cs" />
     <Compile Include="Core\Utils\UnitManager.cs" />
     <Compile Include="Core\Utils\VisualUtils.cs" />
+    <Compile Include="UI\Forms\CalculationReportDialog.cs">
+      <SubType>Form</SubType>
+    </Compile>
     <Compile Include="Core\Utils\XDataUtils.cs" />
     <Compile Include="Core\Utils\GridUtils.cs" />
     <!-- NOTE: RebarXDataBridge.cs đã xóa - dead code không được sử dụng -->
@@ -277,6 +284,7 @@
   </ItemGroup>
   <ItemGroup>
     <EmbeddedResource Include="UI\Resources\RebarConfig.html" />
+    <EmbeddedResource Include="UI\Resources\CalculationReport.html" />
     <EmbeddedResource Include="UI\Resources\BeamGroupViewer.html" />
     <EmbeddedResource Include="UI\Resources\Dashboard.html" />
   </ItemGroup>

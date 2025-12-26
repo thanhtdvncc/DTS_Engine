@@ -443,11 +443,28 @@
                             <div class="col"><label>Thép hông (Side)</label><input type="text" id="SideBarRange"
                                     placeholder="12-14"></div>
                         </div>
-                        <div class="row">
-                            <div style="flex:4;"><label>Bước đai (Spacings)</label><input type="text"
-                                    id="StirrupSpacings" placeholder="100,150,200,250" style="width:100%;"></div>
+                        <div class="row" style="margin-top:10px;">
+                            <div class="col" style="flex:1;">
+                                <label style="color:#1a73e8;font-weight:600;">Bước đai L1, L2 (Support)</label>
+                                <input type="text" id="StirrupSpacings_Support" placeholder="100, 150">
+                            </div>
+                            <div class="col" style="flex:1;">
+                                <label style="color:#1a73e8;font-weight:600;">Bước đai Mid (Span)</label>
+                                <input type="text" id="StirrupSpacings_Span" placeholder="150, 200">
+                            </div>
+                        </div>
+                        <div class="row" style="margin-top:10px;">
+                            <div class="col" style="flex:1;">
+                                <label style="color:#e91e63;font-weight:600;">Bước đai Chung (Common)</label>
+                                <input type="text" id="StirrupSpacings" placeholder="100, 150, 200">
+                            </div>
+                            <div class="col" style="flex:1;">
+                                <label style="color:#ff9800;font-weight:600;">Dầm hẫng (Cantilever)</label>
+                                <input type="text" id="StirrupSpacings_Cantilever" placeholder="100, 150">
+                            </div>
                         </div>
                         <div class="hint">Nhập khoảng: "16-25" hoặc liệt kê: "18, 20, 22". Bước đai cách nhau dấu phẩy.
+                            Nếu bỏ trống các ô chuyên biệt, hệ thống sẽ dùng giá trị "Chung".
                         </div>
                     </div>
                 </div>
@@ -517,6 +534,15 @@
                                     min="2" max="10"></div>
                             <div class="col"><label>H min thép sườn (mm)</label><input type="number"
                                     id="WebBarMinHeight">
+                            </div>
+                        </div>
+                        <div class="row">
+                            <div class="col"><label>Ø Ưu tiên (mm)</label><input type="number" id="PreferredDiameter"
+                                    value="20" min="10" max="32" placeholder="20"></div>
+                            <div class="col"><label>Trọng số hiệu quả (0-1)</label><input type="number"
+                                    id="EfficiencyScoreWeight" value="0.6" step="0.1" min="0" max="1"></div>
+                            <div class="col"><label>Max Steel (kg/m)</label><input type="number"
+                                    id="MaxSteelWeightPerMeter" value="0" min="0" placeholder="0 = không giới hạn">
                             </div>
                         </div>
                         <div class="row">
@@ -960,6 +986,25 @@
                         <div class="col"><label>Nối mặc định (×d)</label><input type="number" id="DefaultSpliceFactor"
                                 value="52"></div>
                     </div>
+                </div>
+            </div>
+
+            <!-- TOP BAR FACTOR (NEW) -->
+            <div class="section">
+                <div class="section-header">6. Hệ số thép lớp trên (Top Bar Settings)</div>
+                <div class="section-body">
+                    <div class="check-row" style="margin-bottom:8px;">
+                        <input type="checkbox" id="ApplyTopBarFactor" checked>
+                        <label for="ApplyTopBarFactor">Áp dụng hệ số cho thép lớp trên (Top Bars)</label>
+                    </div>
+                    <div class="row">
+                        <div class="col"><label>Hệ số nhân (×Ld)</label><input type="number" id="TopBarFactor"
+                                value="1.3" step="0.1" min="1.0"></div>
+                        <div class="col"></div>
+                        <div class="col"></div>
+                    </div>
+                    <div class="hint">Thường = 1.3 theo TCVN/ACI cho thép lớp trên nằm trên lớp bê tông dày > 300mm. Hệ
+                        số này nhân trực tiếp vào chiều dài neo/nối trong bảng tra.</div>
                 </div>
             </div>
         </div>
@@ -1982,6 +2027,9 @@
                 setId('StirrupBarRange', data.Beam?.StirrupBarRange);
                 setId('SideBarRange', data.Beam?.SideBarRange);
                 setId('StirrupSpacings', data.Beam?.StirrupSpacings?.join(',') ?? '100,150,200,250');
+                setId('StirrupSpacings_Support', data.Beam?.StirrupSpacings_Support?.join(',') ?? '100,150');
+                setId('StirrupSpacings_Span', data.Beam?.StirrupSpacings_Span?.join(',') ?? '150,200');
+                setId('StirrupSpacings_Cantilever', data.Beam?.StirrupSpacings_Cantilever?.join(',') ?? '100,150');
                 setId('CoverTop', data.Beam?.CoverTop);
                 setId('CoverBot', data.Beam?.CoverBot);
                 setId('CoverSide', data.Beam?.CoverSide);
@@ -2000,7 +2048,10 @@
                 setId('MaxLayers', data.Beam?.MaxLayers ?? 2);
                 setId('MinBarsPerLayer', data.Beam?.MinBarsPerLayer ?? 2);
                 setId('WebBarMinHeight', data.Beam?.WebBarMinHeight);
-                setId('DensityHeuristic', data.Beam?.DensityHeuristic ?? 180); // NEW
+                setId('DensityHeuristic', data.Beam?.DensityHeuristic ?? 180);
+                setId('PreferredDiameter', data.Beam?.PreferredDiameter ?? 20); // NEW
+                setId('EfficiencyScoreWeight', data.Beam?.EfficiencyScoreWeight ?? 0.6); // NEW
+                setId('MaxSteelWeightPerMeter', data.Beam?.MaxSteelWeightPerMeter ?? 0); // NEW
                 setChk('PreferSingleDiameter', data.Beam?.PreferSingleDiameter ?? true);
                 setChk('PreferSymmetric', data.Beam?.PreferSymmetric);
                 setChk('PreferFewerBars', data.Beam?.PreferFewerBars ?? true);
@@ -2017,6 +2068,8 @@
                 setId('StandardBarLength', data.Beam?.StandardBarLength ?? 11700);
                 setId('BeamLapSpliceMultiplier', data.Beam?.LapSpliceMultiplier ?? 40);
                 setChk('MatchTopLayerBars', data.Beam?.MatchTopLayerBars ?? true);
+                setId('TopBarFactor', data.Beam?.TopBarFactor ?? 1.3); // NEW
+                setChk('ApplyTopBarFactor', data.Beam?.ApplyTopBarFactor ?? true); // NEW
 
                 // Tab 2: Column
                 setId('ColMainBarRange', data.Column?.MainBarRange);
@@ -2351,7 +2404,10 @@
                         MainBarRange: getVal('MainBarRange') || '16-25',
                         StirrupBarRange: getVal('StirrupBarRange') || '8-10',
                         SideBarRange: getVal('SideBarRange') || '12-14',
-                        StirrupSpacings: (getVal('StirrupSpacings') || '100,150,200,250').toString().split(',').map(x => parseInt(x.trim())).filter(x => !isNaN(x) && x > 0),
+                        StirrupSpacings: (getVal('StirrupSpacings') || '').toString().split(',').map(x => parseInt(x.trim())).filter(x => !isNaN(x) && x > 0),
+                        StirrupSpacings_Support: (getVal('StirrupSpacings_Support') || '').toString().split(',').map(x => parseInt(x.trim())).filter(x => !isNaN(x) && x > 0),
+                        StirrupSpacings_Span: (getVal('StirrupSpacings_Span') || '').toString().split(',').map(x => parseInt(x.trim())).filter(x => !isNaN(x) && x > 0),
+                        StirrupSpacings_Cantilever: (getVal('StirrupSpacings_Cantilever') || '').toString().split(',').map(x => parseInt(x.trim())).filter(x => !isNaN(x) && x > 0),
                         CoverTop: getVal('CoverTop'),
                         CoverBot: getVal('CoverBot'),
                         CoverSide: getVal('CoverSide'),
@@ -2370,7 +2426,10 @@
                         MaxLayers: getVal('MaxLayers') || 2,
                         MinBarsPerLayer: getVal('MinBarsPerLayer') || 2,
                         WebBarMinHeight: getVal('WebBarMinHeight'),
-                        DensityHeuristic: getVal('DensityHeuristic') || 180, // NEW
+                        DensityHeuristic: getVal('DensityHeuristic') || 180,
+                        PreferredDiameter: getVal('PreferredDiameter') || 20, // NEW
+                        EfficiencyScoreWeight: getVal('EfficiencyScoreWeight') || 0.6, // NEW
+                        MaxSteelWeightPerMeter: getVal('MaxSteelWeightPerMeter') || 0, // NEW
                         PreferSingleDiameter: getChk('PreferSingleDiameter'),
                         PreferSymmetric: getChk('PreferSymmetric'),
                         PreferFewerBars: getChk('PreferFewerBars'),
@@ -2386,7 +2445,9 @@
                         MaxDiameterDiff: getVal('MaxDiameterDiff') || 1,
                         StandardBarLength: getVal('StandardBarLength') || 11700,
                         LapSpliceMultiplier: getVal('BeamLapSpliceMultiplier') || 40,
-                        MatchTopLayerBars: getChk('MatchTopLayerBars')
+                        MatchTopLayerBars: getChk('MatchTopLayerBars'),
+                        TopBarFactor: getVal('TopBarFactor') || 1.3, // NEW
+                        ApplyTopBarFactor: getChk('ApplyTopBarFactor') // NEW
                     },
                     Column: {
                         MainBarRange: getVal('ColMainBarRange') || '16-28',

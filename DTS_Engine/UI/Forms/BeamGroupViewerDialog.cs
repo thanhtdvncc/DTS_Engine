@@ -114,6 +114,26 @@ namespace DTS_Engine.UI.Forms
             }
         }
 
+        private void ShowReport(BeamGroup group, int spanIndex)
+        {
+            try
+            {
+                var reportJson = ReportDataManager.BuildReportJson(new List<BeamGroup> { group });
+                var dialog = new CalculationReportDialog(reportJson);
+                dialog.Show();
+
+                if (spanIndex >= 0)
+                {
+                    // Optionally notify report dialog to auto-select this span
+                    // Not strictly required but would be nice
+                }
+            }
+            catch (Exception ex)
+            {
+                MessageBox.Show("Lỗi mở thuyết minh: " + ex.Message);
+            }
+        }
+
         private string LoadHtmlFromResource()
         {
             // Load BeamGroupViewer.html directly (contains Beam namespace)
@@ -215,9 +235,9 @@ namespace DTS_Engine.UI.Forms
                             allColumns = allColumns, // Columns from dts_point layer
                             settings = new
                             {
-                                ConcreteGradeName = settings.General?.ConcreteGradeName ?? "B25",
-                                SteelGradeName = settings.General?.SteelGradeName ?? "CB400-V",
-                                SteelGradeMain = settings.General?.SteelGradeMain ?? 400,
+                                ConcreteGradeName = settings.General?.ConcreteGradeName ?? "",
+                                SteelGradeName = settings.General?.SteelGradeName ?? "",
+                                SteelGradeMain = settings.General?.SteelGradeMain ?? 0,
                                 MaxLayers = settings.Beam?.MaxLayers ?? 2,
                                 MainBarRange = settings.Beam?.MainBarRange ?? "16-25",
                                 StirrupBarRange = settings.Beam?.StirrupBarRange ?? "8-10"
@@ -284,6 +304,43 @@ namespace DTS_Engine.UI.Forms
             if (message == "IMPORT")
             {
                 this.BeginInvoke(new Action(HandleImport));
+                return;
+            }
+
+            if (message.StartsWith("SHOW_REPORT|"))
+            {
+                try
+                {
+                    string json = message.Substring(12);
+                    // Payload contains { GroupIndex, SpanIndex, Groups }
+                    var payload = JsonConvert.DeserializeObject<dynamic>(json);
+
+                    if (payload != null)
+                    {
+                        // SYNC: Update local C# memory state from JS before opening report
+                        if (payload.Groups != null)
+                        {
+                            string groupsJson = JsonConvert.SerializeObject(payload.Groups);
+                            _groups = JsonConvert.DeserializeObject<List<BeamGroup>>(groupsJson);
+                        }
+
+                        int groupIdx = (int)payload.GroupIndex;
+                        int spanIdx = (int)payload.SpanIndex;
+
+                        if (groupIdx >= 0 && groupIdx < _groups.Count)
+                        {
+                            var group = _groups[groupIdx];
+                            this.BeginInvoke(new Action(() =>
+                            {
+                                ShowReport(group, spanIdx);
+                            }));
+                        }
+                    }
+                }
+                catch (Exception ex)
+                {
+                    System.Diagnostics.Debug.WriteLine($"[SHOW_REPORT] Error: {ex.Message}");
+                }
                 return;
             }
 

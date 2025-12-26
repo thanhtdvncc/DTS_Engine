@@ -1,0 +1,146 @@
+using System;
+using System.Collections.Generic;
+using System.IO;
+using System.Windows.Forms;
+using Microsoft.Web.WebView2.Core;
+using Microsoft.Web.WebView2.WinForms;
+using DTS_Engine.Core.Data;
+using DTS_Engine.Core.Utils;
+using Newtonsoft.Json;
+
+namespace DTS_Engine.UI.Forms
+{
+    public partial class CalculationReportDialog : Form
+    {
+        private WebView2 webView;
+        private string _jsonReportData;
+
+        public CalculationReportDialog(string jsonReportData)
+        {
+            InitializeComponent();
+            _jsonReportData = jsonReportData;
+            this.Load += CalculationReportDialog_Load;
+        }
+
+        private void InitializeComponent()
+        {
+            this.webView = new Microsoft.Web.WebView2.WinForms.WebView2();
+            ((System.ComponentModel.ISupportInitialize)(this.webView)).BeginInit();
+            this.SuspendLayout();
+            // 
+            // webView
+            // 
+            this.webView.AllowExternalDrop = true;
+            this.webView.CreationProperties = null;
+            this.webView.DefaultBackgroundColor = System.Drawing.Color.White;
+            this.webView.Dock = System.Windows.Forms.DockStyle.Fill;
+            this.webView.Location = new System.Drawing.Point(0, 0);
+            this.webView.Name = "webView";
+            this.webView.Size = new System.Drawing.Size(1200, 800);
+            this.webView.TabIndex = 0;
+            this.webView.ZoomFactor = 1D;
+            // 
+            // CalculationReportDialog
+            // 
+            this.AutoScaleDimensions = new System.Drawing.SizeF(6F, 13F);
+            this.AutoScaleMode = System.Windows.Forms.AutoScaleMode.Font;
+            this.ClientSize = new System.Drawing.Size(1200, 800);
+            this.Controls.Add(this.webView);
+            this.Name = "CalculationReportDialog";
+            this.StartPosition = System.Windows.Forms.FormStartPosition.CenterScreen;
+            this.Text = "Thuyết Minh Tính Toán Chi Tiết Thép Dầm - DTS Engine";
+            ((System.ComponentModel.ISupportInitialize)(this.webView)).EndInit();
+            this.ResumeLayout(false);
+        }
+
+        private async void CalculationReportDialog_Load(object sender, EventArgs e)
+        {
+            await InitializeWebView();
+        }
+
+        private async System.Threading.Tasks.Task InitializeWebView()
+        {
+            try
+            {
+                var env = await CoreWebView2Environment.CreateAsync(null, Path.Combine(Path.GetTempPath(), "DTS_Engine_Report"));
+                await webView.EnsureCoreWebView2Async(env);
+
+                webView.CoreWebView2.WebMessageReceived += CoreWebView2_WebMessageReceived;
+                webView.CoreWebView2.DOMContentLoaded += CoreWebView2_DOMContentLoaded;
+
+                // Load HTML from resources
+                string assemblyPath = Path.GetDirectoryName(System.Reflection.Assembly.GetExecutingAssembly().Location);
+                string htmlPath = Path.Combine(assemblyPath, "UI", "Resources", "CalculationReport.html");
+
+                if (!File.Exists(htmlPath))
+                {
+                    // Fallback to local source if dev mode
+                    htmlPath = Path.Combine(assemblyPath, "..", "..", "UI", "Resources", "CalculationReport.html");
+                }
+
+                if (File.Exists(htmlPath))
+                {
+                    webView.CoreWebView2.Navigate("file:///" + htmlPath.Replace("\\", "/"));
+                }
+                else
+                {
+                    MessageBox.Show("Không tìm thấy file CalculationReport.html tại: " + htmlPath);
+                }
+            }
+            catch (Exception ex)
+            {
+                MessageBox.Show("Lỗi khởi tạo WebView2: " + ex.Message);
+            }
+        }
+
+        private void CoreWebView2_DOMContentLoaded(object sender, CoreWebView2DOMContentLoadedEventArgs e)
+        {
+            // Inject dữ liệu ngay khi DOM sẵn sàng
+            InjectData();
+        }
+
+        private void InjectData()
+        {
+            if (string.IsNullOrEmpty(_jsonReportData)) return;
+
+            // Thoát chuỗi JSON để truyền vào JS
+            string script = $"initReport({JsonConvert.ToString(_jsonReportData)})";
+            webView.CoreWebView2.ExecuteScriptAsync(script);
+        }
+
+        private void CoreWebView2_WebMessageReceived(object sender, CoreWebView2WebMessageReceivedEventArgs e)
+        {
+            string message = e.TryGetWebMessageAsString();
+            if (string.IsNullOrEmpty(message)) return;
+
+            var obj = JsonConvert.DeserializeObject<dynamic>(message);
+            string command = obj.command;
+
+            if (command == "export_excel")
+            {
+                bool isSimple = obj.isSimple ?? false;
+                HandleExcelExport(obj.data, isSimple);
+            }
+        }
+
+        private void HandleExcelExport(dynamic data, bool isSimple)
+        {
+            try
+            {
+                // Deserialize data from JS to ReportGroupData
+                string json = JsonConvert.SerializeObject(data);
+                var reportData = JsonConvert.DeserializeObject<ReportGroupData>(json);
+
+                string filePath = CalculationReportExcelGenerator.Generate(reportData, isSimple: isSimple);
+                if (!string.IsNullOrEmpty(filePath))
+                {
+                    System.Diagnostics.Process.Start(new System.Diagnostics.ProcessStartInfo(filePath) { UseShellExecute = true });
+                }
+            }
+            catch (Exception ex)
+            {
+                MessageBox.Show("Lỗi xuất Excel: " + ex.Message);
+            }
+        }
+    }
+}
