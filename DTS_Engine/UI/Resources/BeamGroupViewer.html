@@ -2924,24 +2924,25 @@
                 const opt = span.Options?.[optionIndex];
                 if (!opt) return;
 
-                // Initialize arrays
+                // Initialize arrays - MUST be 6 elements to match C# [3,6] structure
                 if (!span.TopRebar) span.TopRebar = [[], []];
                 if (!span.BotRebar) span.BotRebar = [[], []];
 
-                // Layer 0: Backbone (L0 positions)
-                span.TopRebar[0] = [opt.TopL0 || '', '', opt.TopL0 || '', '', opt.TopL0 || ''];
-                span.BotRebar[0] = [opt.BotL0 || '', '', opt.BotL0 || '', '', opt.BotL0 || ''];
+                // Layer 0: Backbone (positions 0,2,4 = Left,Mid,Right)
+                // Array MUST be 6 elements: [0,1,2,3,4,5] for C# compatibility
+                span.TopRebar[0] = [opt.TopL0 || '', '', opt.TopL0 || '', '', opt.TopL0 || '', ''];
+                span.BotRebar[0] = [opt.BotL0 || '', '', opt.BotL0 || '', '', opt.BotL0 || '', ''];
 
                 // Layer 1: Addon (L1 positions) - nếu có
                 if (opt.TopL1) {
-                    span.TopRebar[1] = [opt.TopL1, '', opt.TopL1, '', opt.TopL1];
+                    span.TopRebar[1] = [opt.TopL1, '', opt.TopL1, '', opt.TopL1, ''];
                 } else {
-                    span.TopRebar[1] = ['', '', '', '', ''];
+                    span.TopRebar[1] = ['', '', '', '', '', ''];
                 }
                 if (opt.BotL1) {
-                    span.BotRebar[1] = [opt.BotL1, '', opt.BotL1, '', opt.BotL1];
+                    span.BotRebar[1] = [opt.BotL1, '', opt.BotL1, '', opt.BotL1, ''];
                 } else {
-                    span.BotRebar[1] = ['', '', '', '', ''];
+                    span.BotRebar[1] = ['', '', '', '', '', ''];
                 }
             });
         }
