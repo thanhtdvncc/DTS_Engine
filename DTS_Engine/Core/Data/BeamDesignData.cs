@@ -75,6 +75,9 @@ namespace DTS_Engine.Core.Data
             clone.ConcreteGrade = ConcreteGrade;
             clone.SteelGrade = SteelGrade;
 
+            clone.SectionLabel = SectionLabel;
+            clone.SectionLabelLocked = SectionLabelLocked;
+
             return clone;
         }
 
@@ -194,6 +197,9 @@ namespace DTS_Engine.Core.Data
         // ===== Beam Name (from Naming command) =====
         public string BeamName { get; set; }
 
+        public string SectionLabel { get; set; }
+        public bool SectionLabelLocked { get; set; }
+
         public override Dictionary<string, object> ToDictionary()
         {
             var dict = new Dictionary<string, object>();
@@ -220,6 +226,9 @@ namespace DTS_Engine.Core.Data
             dict["xSectionName"] = SectionName;
             dict["xWidth"] = Math.Round(Width * 10.0, 2);          // cm -> mm
             dict["xDepth"] = Math.Round(SectionHeight * 10.0, 2);  // cm -> mm
+
+            if (!string.IsNullOrEmpty(SectionLabel)) dict["xSectionLabel"] = SectionLabel;
+            if (SectionLabelLocked) dict["xSectionLabelLocked"] = "1";
 
             // V6.0: TopRebarString/BotRebarString/StirrupString/WebBarString không còn ghi vào XData
             // Dùng OptUser là Single Source of Truth
@@ -315,6 +324,9 @@ namespace DTS_Engine.Core.Data
             if (dict.TryGetValue("xSectionName", out var xsn)) SectionName = xsn?.ToString();
             if (dict.TryGetValue("xWidth", out var xw)) Width = Convert.ToDouble(xw) / 10.0;  // mm → cm
             if (dict.TryGetValue("xDepth", out var xd)) SectionHeight = Convert.ToDouble(xd) / 10.0;  // mm → cm
+
+            if (dict.TryGetValue("xSectionLabel", out var sl)) SectionLabel = sl?.ToString();
+            if (dict.TryGetValue("xSectionLabelLocked", out var sll)) SectionLabelLocked = sll?.ToString() == "1";
 
             // V6.0: TopRebarString/BotRebarString/StirrupString/WebBarString không còn đọc từ XData
             // Dùng OptUser là Single Source of Truth

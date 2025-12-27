@@ -195,7 +195,27 @@
             <!-- Help overlay -->
             <div id="helpOverlay"
                 class="absolute bottom-2 left-2 text-[9px] text-slate-400 bg-white/70 px-1 rounded z-20">
-                Click: Select | Box: Zoom | Alt+Drag: Pan | Wheel: Zoom | Tab: Next beam</div>
+                Box: Select | Alt+Drag: Pan | Wheel: Zoom | Tab: Next beam | ESC: Clear Selection</div>
+
+            <!-- ELEMENTS PANEL (Top-Left) - Like index.html -->
+            <div id="elements-panel"
+                class="absolute left-2 top-12 w-44 bg-white/95 rounded border border-slate-200 shadow-sm z-20 max-h-[60vh] overflow-hidden flex flex-col transition-all duration-300">
+                <div
+                    class="bg-amber-100 px-2 py-1 text-[10px] font-bold text-amber-700 border-b flex justify-between items-center">
+                    <span><i class="fa-solid fa-tag mr-1"></i>Sections</span>
+                    <span id="elements-count" class="text-amber-500">0</span>
+                </div>
+                <div class="overflow-y-auto max-h-[400px] text-[10px]" id="elements-list-content">
+                    <!-- Dynamic content -->
+                </div>
+                <!-- Selected count -->
+                <div id="elements-selected-bar"
+                    class="hidden bg-orange-50 px-2 py-1 text-[10px] text-orange-600 border-t">
+                    <i class="fa-solid fa-check-square mr-1"></i>Selected: <span id="elements-selected-count">0</span>
+                    <button onclick="Beam.State.clearHandleSelection();render();updateElementsPanel();"
+                        class="ml-2 hover:text-red-500" title="Clear (ESC)"><i class="fa-solid fa-times"></i></button>
+                </div>
+            </div>
 
             <!-- Plan View Floating Toolbar (Group operations) -->
             <div id="planToolbar" class="absolute top-2 left-40 z-20 flex gap-1">
@@ -2058,14 +2078,6 @@
                     ctx.restore();
                 });
                 ctx.restore();
-
-                // Hiện Modal nếu có dầm thiếu label (chỉ 1 lần)
-                if (missingLabelCount > 0 && !window._labelPromptShown) {
-                    window._labelPromptShown = true;
-                    setTimeout(() => {
-                        showAutoNameConfirm();
-                    }, 100);
-                }
             }
             // labelMode === 0: Không vẽ label
         }
@@ -2076,6 +2088,9 @@
             // ALWAYS render plan view for main canvas - no mode check needed
             renderPlanView();
             updateOverlayPositions();
+
+            // Update Elements panel to reflect selection changes
+            if (typeof updateElementsPanel === 'function') updateElementsPanel();
 
             // Draw box selection rectangle AFTER content
             if (Beam.State.boxSelectActive) {
@@ -2462,14 +2477,13 @@
                                         }
                                     }
                                 } else {
-                                    // Click thường: Chọn duy nhất
+                                    // Click thường vào dầm: Chọn duy nhất dầm đó
                                     Beam.State.clearHandleSelection();
                                     Beam.State.selectedHandles.add(beam.Handle);
                                 }
-                            } else if (!e.ctrlKey && !e.shiftKey) {
-                                // Click vào vùng trống: Clear selection
-                                Beam.State.clearHandleSelection();
                             }
+                            // Click vào vùng trống: BẢO LƯU vùng chọn (không clear)
+                            // Sử dụng ESC để xóa selection
                         }
                         render();
                         return;
@@ -2516,6 +2530,15 @@
                 });
 
                 console.log('Canvas interaction system initialized');
+
+                // === ESC KEY TO CLEAR SELECTION ===
+                document.addEventListener('keydown', (e) => {
+                    if (e.key === 'Escape') {
+                        Beam.State.clearHandleSelection();
+                        render();
+                        updateElementsPanel();
+                    }
+                });
             }
 
             // ====== DETAIL CANVAS ZOOM/PAN EVENTS ======
@@ -2746,7 +2769,8 @@
                     if (msg.startsWith('NAMING_DONE|')) {
                         const count = parseInt(msg.split('|')[1]) || 0;
                         showToast(`✅ Đã đặt tên ${count} dầm`);
-                        pullDataFromCad(); // Refresh data
+                        // Refresh ALL plan data to update sections panel and plan labels
+                        sendRefreshPlanData();
                     }
 
                     if (msg.startsWith('NAMING_ERROR|')) {
@@ -2756,6 +2780,19 @@
                 });
             }
         }
+
+        function sendRefreshPlanData() {
+            if (window.chrome?.webview) {
+                window.chrome.webview.postMessage('REFRESH_PLAN_DATA|');
+            }
+        }
+
+        window.onUpdateAllBeams = function (allBeams) {
+            if (!allBeams) return;
+            data.allBeams = allBeams;
+            updateElementsPanel(); // Refresh Sections Panel
+            render(); // Refresh Canvas
+        };
 
         function populateGroupSelect() {
             const sel = document.getElementById('groupSelect');
@@ -4160,18 +4197,12 @@
             panel.classList.remove('hidden');
         }
 
-        // Modal functions for auto-naming confirmation
+        // Auto-naming functions
         function showAutoNameConfirm() {
-            document.getElementById('confirmModal').classList.remove('hidden');
-        }
-
-        function closeConfirmModal() {
-            document.getElementById('confirmModal').classList.add('hidden');
+            runAutoName();
         }
 
         function runAutoName() {
-            closeConfirmModal();
-
             const handles = Array.from(Beam.State.selectedHandles);
 
             if (handles.length === 0) {
@@ -4193,6 +4224,105 @@
             } else {
                 console.warn('WebView2 not found');
             }
+        }
+
+        // === ELEMENTS PANEL - Hiển thị SECTION LABELS duy nhất ===
+        function updateElementsPanel() {
+            const content = document.getElementById('elements-list-content');
+            const countEl = document.getElementById('elements-count');
+            const selectedBar = document.getElementById('elements-selected-bar');
+            const selectedCountEl = document.getElementById('elements-selected-count');
+
+            if (!content) return;
+
+            const z = Beam.State.currentStoryZ;
+            const Z_TOL = 500;
+
+            // Lọc dầm trên tầng hiện tại
+            const beamsOnStory = (data.allBeams || []).filter(b =>
+                Math.abs((b.LevelZ || 0) - z) < Z_TOL);
+
+            // Tạo map: sectionLabel -> [handles]
+            const sectionMap = new Map();
+            beamsOnStory.forEach(b => {
+                const label = b.xSectionLabel || b.SectionLabel || '-';
+                if (!sectionMap.has(label)) {
+                    sectionMap.set(label, []);
+                }
+                if (b.Handle) {
+                    sectionMap.get(label).push(b.Handle);
+                }
+            });
+
+            // Sắp xếp theo tên
+            const sortedSections = Array.from(sectionMap.entries()).sort((a, b) =>
+                a[0].localeCompare(b[0], undefined, { numeric: true }));
+
+            countEl.textContent = sortedSections.length;
+
+            let html = '';
+            sortedSections.forEach(([label, handles]) => {
+                const allSelected = handles.length > 0 && handles.every(h => Beam.State.isHandleSelected(h));
+                const someSelected = handles.some(h => Beam.State.isHandleSelected(h));
+
+                const bgClass = allSelected ? 'bg-orange-100' : someSelected ? 'bg-orange-50' : 'hover:bg-slate-50';
+                const textClass = allSelected ? 'text-orange-700 font-bold' : 'text-slate-700';
+                const escapedLabel = label.replace(/'/g, "\\'");
+
+                html += `
+                    <div class="px-2 py-1.5 border-b border-slate-100 cursor-pointer ${bgClass} ${textClass} flex items-center justify-between"
+                         onclick="onSectionClick(event, '${escapedLabel}')"
+                         title="${label} (${handles.length} dầm)">
+                        <span class="truncate flex-1"><i class="fa-solid fa-tag mr-1 text-slate-400"></i>${label}</span>
+                        <span class="text-[9px] text-slate-400">${handles.length}</span>
+                    </div>
+                `;
+            });
+
+            content.innerHTML = html || '<div class="px-2 py-2 text-slate-400 text-center">Không có sections</div>';
+
+            // Update selected count
+            const selectedCount = Beam.State.selectedHandles.size;
+            if (selectedCount > 0) {
+                selectedBar.classList.remove('hidden');
+                selectedCountEl.textContent = selectedCount;
+            } else {
+                selectedBar.classList.add('hidden');
+            }
+        }
+
+        // Click handler for Section items (chọn theo section label)
+        function onSectionClick(event, sectionLabel) {
+            const z = Beam.State.currentStoryZ;
+            const Z_TOL = 500;
+
+            // Tìm tất cả dầm có cùng section label trên tầng hiện tại
+            const beamsOnStory = (data.allBeams || []).filter(b =>
+                Math.abs((b.LevelZ || 0) - z) < Z_TOL);
+
+            const handles = beamsOnStory
+                .filter(b => (b.xSectionLabel || b.SectionLabel || '-') === sectionLabel)
+                .map(b => b.Handle)
+                .filter(h => h);
+
+            if (event.ctrlKey) {
+                // Ctrl+Click: Toggle section
+                const allSelected = handles.every(h => Beam.State.isHandleSelected(h));
+                if (allSelected) {
+                    Beam.State.removeHandlesFromSelection(handles);
+                } else {
+                    Beam.State.addHandlesToSelection(handles);
+                }
+            } else if (event.shiftKey) {
+                // Shift+Click: Add to selection
+                Beam.State.addHandlesToSelection(handles);
+            } else {
+                // Normal click: Select only this section
+                Beam.State.clearHandleSelection();
+                Beam.State.addHandlesToSelection(handles);
+            }
+
+            render();
         }
 
         // FIX 5: Toggle group name labels on plan view (3 chế độ: OFF -> GROUP -> SECTION)
@@ -4461,7 +4591,7 @@
             if (!overlay) {
                 overlay = document.createElement('div');
                 overlay.id = 'canvas-toast';
-                overlay.className = 'fixed top-4 right-4 bg-slate-800 text-white px-4 py-2 rounded-lg text-sm font-medium z-50 shadow-lg';
+                overlay.className = 'fixed top-4 left-1/2 -translate-x-1/2 bg-slate-800 text-white px-4 py-2 rounded-lg text-sm font-medium z-50 shadow-lg';
                 overlay.style.transition = 'opacity 0.3s ease';
                 document.body.appendChild(overlay);
             }
@@ -4582,23 +4712,6 @@
         console.log('Beam Viewer initialized with namespace:', Object.keys(Beam));
     </script>
 
-    <!-- Custom Confirm Modal (replaces ugly system confirm()) -->
-    <div id="confirmModal"
-        class="hidden fixed inset-0 bg-slate-900/50 z-[100] flex items-center justify-center backdrop-blur-sm">
-        <div class="bg-white rounded-lg shadow-2xl p-4 w-80 border border-slate-200">
-            <h3 class="font-bold text-slate-700 text-sm mb-2"><i class="fa-solid fa-circle-question text-blue-600"></i>
-                Xác nhận</h3>
-            <p class="text-xs text-slate-600 mb-4">Một số dầm chưa có tên (SectionLabel).<br>Bạn có muốn chạy lệnh đặt
-                tên tự động không?</p>
-            <div class="flex justify-end gap-2">
-                <button onclick="closeConfirmModal()"
-                    class="px-3 py-1.5 rounded text-xs font-medium bg-slate-200 hover:bg-slate-300 text-slate-700">Không</button>
-                <button onclick="runAutoName()"
-                    class="px-3 py-1.5 rounded text-xs font-bold bg-blue-600 hover:bg-blue-500 text-white">Chạy
-                    ngay</button>
-            </div>
-        </div>
-    </div>
 </body>
 
 </html>

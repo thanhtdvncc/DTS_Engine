@@ -118,7 +118,8 @@ namespace DTS_Engine.UI.Forms
         {
             try
             {
-                var dialog = new CalculationReportDialog(new List<BeamGroup> { group });
+                var jsonData = Core.Utils.ReportDataManager.BuildReportJson(new List<BeamGroup> { group });
+                var dialog = new CalculationReportDialog(jsonData);
                 dialog.Show();
 
                 if (spanIndex >= 0)
@@ -201,10 +202,9 @@ namespace DTS_Engine.UI.Forms
                                             LevelZ = group.LevelZ,
                                             GroupName = displayName,  // For dropdown display
                                             GroupId = groupId,        // For unique matching
-                                            // FIX: Use segment's xSectionLabel from XData (per-beam label)
-                                            // NOT group.Name which is shared for all beams in group
-                                            SectionLabel = seg.xSectionLabel ?? group.Name ?? "",
-                                            xSectionLabel = seg.xSectionLabel ?? group.Name ?? ""
+                                            // FIX: Ưu tiên span.xSectionLabel (đã được nạp từ XData)
+                                            SectionLabel = span.xSectionLabel ?? seg.xSectionLabel ?? group.Name ?? "",
+                                            xSectionLabel = span.xSectionLabel ?? seg.xSectionLabel ?? group.Name ?? ""
                                         });
                                     }
                                 }
@@ -608,6 +608,13 @@ namespace DTS_Engine.UI.Forms
                 {
                     _webView.CoreWebView2.PostWebMessageAsString($"NAMING_ERROR|{ex.Message}");
                 }
+                return;
+            }
+
+            // === REFRESH_PLAN_DATA: Cập nhật nhãn dầm cho mặt bằng ===
+            if (message.StartsWith("REFRESH_PLAN_DATA|"))
+            {
+                _ = HandleRefreshPlanDataAsync();
                 return;
             }
 
@@ -2409,6 +2416,73 @@ namespace DTS_Engine.UI.Forms
         private class DataWrapper
         {
             public List<BeamGroup> groups { get; set; }
+        }
+        private async System.Threading.Tasks.Task HandleRefreshPlanDataAsync()
+        {
+            try
+            {
+                // 1. Reload rebar data from XData (ensures xSectionLabel is fresh)
+                LoadRebarDataFromXDataForGroups(_groups);
+
+                // 2. Extract ALL individual beam segments again
+                var allBeams = new List<object>();
+                var capturedHandles = new HashSet<string>();
+
+                if (_groups != null)
+                {
+                    foreach (var group in _groups)
+                    {
+                        if (group.Spans == null) continue;
+                        foreach (var span in group.Spans)
+                        {
+                            if (span.Segments == null) continue;
+                            foreach (var seg in span.Segments)
+                            {
+                                if (!capturedHandles.Contains(seg.EntityHandle))
+                                    capturedHandles.Add(seg.EntityHandle);
+
+                                string displayName = !string.IsNullOrEmpty(group.GroupName) ? group.GroupName : group.Name;
+                                string groupId = group.EntityHandles?.FirstOrDefault() ?? "";
+
+                                allBeams.Add(new
+                                {
+                                    Handle = seg.EntityHandle,
+                                    StartX = seg.StartPoint?[0] ?? 0,
+                                    StartY = seg.StartPoint?[1] ?? 0,
+                                    EndX = seg.EndPoint?[0] ?? 0,
+                                    EndY = seg.EndPoint?[1] ?? 0,
+                                    AxisName = group.AxisName ?? "",
+                                    Width = group.Width,
+                                    Height = group.Height,
+                                    LevelZ = group.LevelZ,
+                                    GroupName = displayName,
+                                    GroupId = groupId,
+                                    // CRITICAL FIX: Ưu tiên span.xSectionLabel (được cập nhật bởi LoadRebarDataFromXDataForGroups)
+                                    SectionLabel = span.xSectionLabel ?? seg.xSectionLabel ?? group.Name ?? "",
+                                    xSectionLabel = span.xSectionLabel ?? seg.xSectionLabel ?? group.Name ?? ""
+                                });
+                            }
+                        }
+                    }
+                }
+
+                // 3. Extract neighbors again
+                var neighbors = ExtractNeighborBeams(capturedHandles, _groups);
+                allBeams.AddRange(neighbors);
+
+                // 4. Send updated allBeams back to WebView
+                var jsonSettings = new JsonSerializerSettings
+                {
+                    ReferenceLoopHandling = ReferenceLoopHandling.Ignore,
+                    NullValueHandling = NullValueHandling.Ignore
+                };
+                string allBeamsJson = JsonConvert.SerializeObject(allBeams, jsonSettings);
+                await _webView.CoreWebView2.ExecuteScriptAsync($"window.onUpdateAllBeams({allBeamsJson});");
+            }
+            catch (Exception ex)
+            {
+                System.Diagnostics.Debug.WriteLine($"[REFRESH_PLAN_DATA] Error: {ex.Message}");
+            }
         }
     }
 }
