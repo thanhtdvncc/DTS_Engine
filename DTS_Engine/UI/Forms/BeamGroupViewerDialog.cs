@@ -159,6 +159,10 @@ namespace DTS_Engine.UI.Forms
 
                     try
                     {
+                        // FIX: Pre-load rebar data from XData for selected groups BEFORE building allBeams
+                        // This ensures SectionLabel and xSectionLabelLocked are populated for selected beams
+                        LoadRebarDataFromXDataForGroups(_groups);
+
                         // Extract ALL individual beam segments for Plan View independence
                         // Plan View must NOT depend on grouping - it reads raw beam data
                         var allBeams = new List<object>();
@@ -204,7 +208,8 @@ namespace DTS_Engine.UI.Forms
                                             GroupId = groupId,        // For unique matching
                                             // FIX: Ưu tiên span.xSectionLabel (đã được nạp từ XData)
                                             SectionLabel = span.xSectionLabel ?? seg.xSectionLabel ?? group.Name ?? "",
-                                            xSectionLabel = span.xSectionLabel ?? seg.xSectionLabel ?? group.Name ?? ""
+                                            xSectionLabel = span.xSectionLabel ?? seg.xSectionLabel ?? group.Name ?? "",
+                                            xSectionLabelLocked = span.xSectionLabelLocked
                                         });
                                     }
                                 }
@@ -221,9 +226,6 @@ namespace DTS_Engine.UI.Forms
                         // Extract columns from dts_point layer 
                         var allColumns = ExtractColumnsFromLayer("dts_point");
 
-                        // FIX: Pre-load rebar data from XData so viewer shows calculated data immediately
-                        // This is crucial to display rebar that was calculated previously (stored in XData)
-                        LoadRebarDataFromXDataForGroups(_groups);
 
                         var data = new
                         {
@@ -594,7 +596,19 @@ namespace DTS_Engine.UI.Forms
                     {
                         try
                         {
-                            int count = PerformAutoNaming(handles);
+                            var doc = Autodesk.AutoCAD.ApplicationServices.Application.DocumentManager.MdiActiveDocument;
+                            if (doc == null) return;
+
+                            int count = 0;
+                            using (var docLock = doc.LockDocument())
+                            using (var tr = doc.Database.TransactionManager.StartTransaction())
+                            {
+                                // Gọi logic chuẩn từ RebarCommands (thống nhất với lệnh CAD)
+                                var resultBeams = Commands.RebarCommands.PerformAutoNamingCore(handles, tr);
+                                count = resultBeams?.Count ?? 0;
+                                tr.Commit();
+                            }
+
                             _webView.CoreWebView2.PostWebMessageAsString($"NAMING_DONE|{count}");
                         }
                         catch (Exception ex)
@@ -1755,80 +1769,6 @@ namespace DTS_Engine.UI.Forms
             catch { }
         }
 
-        /// <summary>
-        /// Đặt tên tiết diện dầm tự động và ghi vào XData
-        /// </summary>
-        private int PerformAutoNaming(List<string> handles)
-        {
-            if (_groups == null || _groups.Count == 0) return 0;
-
-            var doc = Autodesk.AutoCAD.ApplicationServices.Application.DocumentManager.MdiActiveDocument;
-            if (doc == null) return 0;
-
-            int count = 0;
-
-            using (var docLock = doc.LockDocument())
-            using (var tr = doc.TransactionManager.StartTransaction())
-            {
-                try
-                {
-                    // Nếu handles rỗng, đặt tên cho tất cả dầm trong _groups
-                    HashSet<string> handleSet = null;
-                    if (handles != null && handles.Count > 0)
-                    {
-                        handleSet = new HashSet<string>(handles, StringComparer.OrdinalIgnoreCase);
-                    }
-
-                    // Gọi NamingEngine để đặt tên cho groups
-                    Core.Algorithms.NamingEngine.AutoLabeling(_groups, Core.Data.DtsSettings.Instance);
-
-                    // Ghi xSectionLabel vào XData cho từng dầm
-                    foreach (var group in _groups)
-                    {
-                        if (group.EntityHandles == null) continue;
-
-                        foreach (var entityHandle in group.EntityHandles)
-                        {
-                            // Nếu có filter handles, chỉ xử lý các dầm được chọn
-                            if (handleSet != null && !handleSet.Contains(entityHandle))
-                                continue;
-
-                            try
-                            {
-                                var objId = Core.Utils.AcadUtils.GetObjectIdFromHandle(entityHandle);
-                                if (objId.IsValid && !objId.IsNull)
-                                {
-                                    var obj = tr.GetObject(objId, Autodesk.AutoCAD.DatabaseServices.OpenMode.ForWrite);
-                                    if (obj != null)
-                                    {
-                                        // Ghi tên group vào xSectionLabel
-                                        string sectionLabel = group.Name ?? "-";
-                                        Core.Utils.XDataUtils.MergeRawData(obj, tr, new Dictionary<string, object>
-                                        {
-                                            { "xSectionLabel", sectionLabel }
-                                        });
-                                        count++;
-                                    }
-                                }
-                            }
-                            catch (Exception ex)
-                            {
-                                System.Diagnostics.Debug.WriteLine($"[PerformAutoNaming] Error for {entityHandle}: {ex.Message}");
-                            }
-                        }
-                    }
-
-                    tr.Commit();
-                }
-                catch
-                {
-                    tr.Abort();
-                    throw;
-                }
-            }
-
-            return count;
-        }
 
         private void HandleExport()
         {
@@ -2397,7 +2337,8 @@ namespace DTS_Engine.UI.Forms
                             GroupId = "", // Not in selected group
                                           // FIX: Add SectionLabel for neighbor beams too
                             SectionLabel = beamData?.SectionLabel ?? "",
-                            xSectionLabel = beamData?.SectionLabel ?? ""
+                            xSectionLabel = beamData?.SectionLabel ?? "",
+                            xSectionLabelLocked = beamData != null && beamData.SectionLabelLocked
                         });
                     }
                     tr.Commit();
@@ -2459,7 +2400,8 @@ namespace DTS_Engine.UI.Forms
                                     GroupId = groupId,
                                     // CRITICAL FIX: Ưu tiên span.xSectionLabel (được cập nhật bởi LoadRebarDataFromXDataForGroups)
                                     SectionLabel = span.xSectionLabel ?? seg.xSectionLabel ?? group.Name ?? "",
-                                    xSectionLabel = span.xSectionLabel ?? seg.xSectionLabel ?? group.Name ?? ""
+                                    xSectionLabel = span.xSectionLabel ?? seg.xSectionLabel ?? group.Name ?? "",
+                                    xSectionLabelLocked = span.xSectionLabelLocked
                                 });
                             }
                         }

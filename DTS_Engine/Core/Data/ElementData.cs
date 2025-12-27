@@ -20,6 +20,12 @@ namespace DTS_Engine.Core.Data
         public abstract ElementType ElementType { get; }
 
         /// <summary>
+        /// Handle của đối tượng AutoCAD (string).
+        /// Dùng để định danh duy nhất và truy xuất thực thể từ Database.
+        /// </summary>
+        public string Handle { get; set; }
+
+        /// <summary>
         /// Mã định danh xType trong XData (dùng cho serialization)
         /// </summary>
         public virtual string XType => ElementType.ToString().ToUpperInvariant();

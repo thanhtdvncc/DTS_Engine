@@ -187,9 +187,18 @@
             <div id="zoomIndicator"
                 class="absolute bottom-2 right-2 bg-slate-800/70 text-white text-[10px] px-2 py-0.5 rounded z-20">100%
             </div>
+            <!-- Real-time Label Scale Slider (next to Zoom Fit) -->
+            <div
+                class="absolute top-2 right-12 z-20 flex items-center px-2 py-1 gap-2 group transition-all opacity-40 hover:opacity-100">
+                <span class="text-[10px] text-slate-600 font-bold select-none">Aa</span>
+                <input type="range" min="0.5" max="3" step="0.1" value="1"
+                    oninput="planLabelScale = parseFloat(this.value); render();"
+                    class="w-20 h-1 bg-slate-200 rounded-lg appearance-none cursor-pointer accent-slate-400 hover:accent-blue-500 transition-colors">
+                <span class="text-xs text-slate-600 font-bold select-none">Aa</span>
+            </div>
             <!-- Zoom Fit button (top right corner) -->
             <button onclick="resetPlanCanvasView()" title="Zoom to fit"
-                class="absolute top-2 right-2 w-8 h-8 bg-slate-600/80 hover:bg-slate-500 text-white text-sm rounded flex items-center justify-center z-20">
+                class="absolute top-2 right-2 w-8 h-8 bg-slate-100/10 hover:bg-slate-200 text-slate-500 hover:text-blue-600 text-sm rounded flex items-center justify-center z-20 transition-colors border border-transparent hover:border-slate-300">
                 <i class="fa-solid fa-arrows-to-dot"></i>
             </button>
             <!-- Help overlay -->
@@ -244,7 +253,17 @@
                     class="w-8 h-8 bg-blue-600/80 hover:bg-blue-500 text-white text-sm rounded flex items-center justify-center">
                     <i class="fa-solid fa-layer-group"></i>
                 </button>
-                <div class="w-px h-8 bg-slate-400 mx-1"></div>
+                <div class="w-px h-8 bg-slate-300 mx-1"></div>
+                <!-- Batch Operations -->
+                <button onclick="batchSetSectionLabel()" title="Gán tên hàng loạt cho dầm đang chọn (Set Name)"
+                    class="w-8 h-8 bg-indigo-600/80 hover:bg-indigo-500 text-white text-sm rounded flex items-center justify-center">
+                    <i class="fa-solid fa-tag"></i>
+                </button>
+                <button onclick="batchUnlockSection()" title="Mở khóa hàng loạt dầm đang chọn (Unlock)"
+                    class="w-8 h-8 bg-orange-500/80 hover:bg-orange-400 text-white text-sm rounded flex items-center justify-center">
+                    <i class="fa-solid fa-lock-open"></i>
+                </button>
+                <div class="w-px h-8 bg-slate-300 mx-1"></div>
                 <!-- Report -->
                 <button onclick="showCalculationReport()" title="Xem thuyết minh (Report)"
                     class="w-8 h-8 bg-emerald-600/80 hover:bg-emerald-500 text-white text-sm rounded flex items-center justify-center">
@@ -786,6 +805,8 @@
         let detailSpanBounds = [];
         let detailRebarLabelBounds = [];
         let sectionLabelBounds = [];
+        let planSectionLabelBounds = []; // Vùng bao nhãn trên mặt bằng
+        let planLockBounds = []; // Vùng bao biểu tượng khóa trên mặt bằng
         let labelHits = []; // For detailed label hit testing
         let isPanDragging = false; // Track if we actually dragged during a click
         let mouseDownButton = -1; // Specific button that started the click
@@ -836,6 +857,7 @@
             lw: 800,
             lh: 600
         };
+        let planLabelScale = 1.0; // Tỷ lệ kích thước nhãn mặt bằng
 
         // ============ INLINE LABEL EDIT FUNCTIONS (Restored from u7.7) ============
 
@@ -922,76 +944,214 @@
         }
 
         function startInlineLabelEdit(label) {
-            if (!label || !currentGroup?.Spans?.[label.spanIndex]) return;
+            if (!label) return;
 
-            // Get detailCanvas container for overlay positioning
-            const canvas = document.getElementById('detailCanvas');
+            // Determine source canvas and container
+            const isPlan = label.source === 'plan';
+            const canvas = document.getElementById(isPlan ? 'beamCanvas' : 'detailCanvas');
             const container = canvas?.parentElement;
 
             if (!labelEditorEl || !container) {
-                // Fallback to prompt-based edit
+                // Fallback to prompt-based edit (original logic)
+                if (isPlan) {
+                    const handle = label.handle;
+                    const beam = data.allBeams.find(b => b.Handle === handle);
+                    if (!beam) return;
+                    const oldLabel = beam.xSectionLabel || beam.SectionLabel || '';
+                    const nextVal = prompt(`NHÃN DẦM - ${handle}`, oldLabel);
+                    if (nextVal !== null && nextVal !== oldLabel) {
+                        beam.xSectionLabel = nextVal;
+                        beam.xSectionLabelLocked = true;
+                        if (window.chrome?.webview) {
+                            window.chrome.webview.postMessage(`UPDATE_SECTION_LABEL|${handle}|${nextVal}|1`);
+                        }
+                        setTimeout(() => sendRefreshAllData(), 200);
+                        showToast(`✅ Cập nhật nhãn ${handle}`);
+                        render();
+                    }
+                    return;
+                }
+
+                // Existing logic for detail canvas rebar labels
+                if (label.spanIndex === undefined || !currentGroup?.Spans?.[label.spanIndex]) return;
                 const span = currentGroup.Spans[label.spanIndex];
                 if (label.type === 'Stirrup' || label.type === 'WebBar') {
                     const idx = Number.isFinite(label.pos) ? label.pos : 0;
                     const isStirrup = label.type === 'Stirrup';
                     const currentVal = (isStirrup ? (span?.Stirrup?.[idx] || '') : (span?.WebBar?.[idx] || '')).toString();
-                    const title = `${isStirrup ? 'ĐAI' : 'SƯỜN'} - Nhịp ${span.SpanId || (label.spanIndex + 1)} (${idx === 0 ? 'L1' : (idx === 1 ? 'Giữa' : 'L2')})`;
+                    const title = `${isStirrup ? 'ĐAI' : 'SƯỜN'} - Nhịp ${span.SpanId || (label.spanIndex + 1)}`;
                     const nextVal = prompt(title, currentVal);
                     if (nextVal === null) return;
                     if (isStirrup) updateStirrup(label.spanIndex, idx, nextVal);
                     else updateWebBar(label.spanIndex, idx, nextVal);
-                    maybeRenderTable();
                     return;
                 }
                 const layer = Number.isFinite(label.layer) ? label.layer : 0;
                 const pos = Number.isFinite(label.pos) ? label.pos : 2;
                 const currentVal = getLayerRebarText(span, label.type, layer, pos);
-                const posName = (pos === 0 ? 'Trái' : (pos === 4 ? 'Phải' : 'Giữa'));
-                const title = `${label.type === 'Top' ? 'THÉP TRÊN' : 'THÉP DƯỚI'} - Nhịp ${span.SpanId || (label.spanIndex + 1)} (Layer ${layer + 1}, ${posName})`;
-                const nextVal = prompt(title, currentVal);
+                const nextVal = prompt(`${label.type === 'Top' ? 'TRÊN' : 'DƯỚI'} (L${layer + 1})`, currentVal);
                 if (nextVal === null) return;
                 updateLayerRebar(label.spanIndex, label.type, layer, pos, nextVal);
-                maybeRenderTable();
                 return;
             }
 
             activeLabelEdit = label;
 
+            // Moves editor to correct container if needed
+            if (labelEditorEl.parentElement !== container) {
+                container.appendChild(labelEditorEl);
+                if (!container.style.position) container.style.position = 'relative';
+            }
+
             const rect = canvas.getBoundingClientRect();
             const containerRect = container.getBoundingClientRect();
 
-            // Convert label world coords to canvas screen coords using detailZoom/Pan
-            const sx = label.x * detailZoom + detailPanX;
-            const sy = label.y * detailZoom + detailPanY;
-            const sw = label.width * detailZoom;
-            const sh = label.height * detailZoom;
+            // Screen coords calculation
+            let left, top, sw, sh;
+            if (isPlan) {
+                // Plan view coords are already screen-relative after transform
+                left = (rect.left - containerRect.left) + label.x;
+                top = (rect.top - containerRect.top) + label.y;
+                sw = label.width;
+                sh = label.height;
+            } else {
+                // Detail view world coords need zoom/pan
+                const sx = label.x * detailZoom + detailPanX;
+                const sy = label.y * detailZoom + detailPanY;
+                sw = label.width * detailZoom;
+                sh = label.height * detailZoom;
+                left = (rect.left - containerRect.left) + sx;
+                top = (rect.top - containerRect.top) + sy;
+            }
 
-            // Position relative to container
-            const left = (rect.left - containerRect.left) + sx;
-            const top = (rect.top - containerRect.top) + sy;
+            // Correction for alignment: Editor is TOP-LEFT, while text is often CENTER
+            // We adjust 'left' because text source might be centered
+            if (label.source !== 'plan' || true) { // Detail uses center. Plan also uses rotated center, but we pass TOP-LEFT in dblclick logic below
+                // Keep as is for now
+            }
 
             labelEditorEl.style.left = Math.max(0, left) + 'px';
             labelEditorEl.style.top = Math.max(0, top) + 'px';
             labelEditorEl.style.width = Math.max(60, sw) + 'px';
             labelEditorEl.style.height = Math.max(18, sh) + 'px';
 
-            const span = currentGroup.Spans[label.spanIndex];
-            if (label.type === 'Stirrup') {
-                const idx = Number.isFinite(label.pos) ? label.pos : 0;
-                labelEditorEl.value = (span?.Stirrup?.[idx] || '').toString();
-            } else if (label.type === 'WebBar') {
-                const idx = Number.isFinite(label.pos) ? label.pos : 0;
-                labelEditorEl.value = (span?.WebBar?.[idx] || '').toString();
-            } else if (label.type === 'SectionLabel') {
-                labelEditorEl.value = (span?.xSectionLabel || '').toString();
+            // Set initial value
+            if (isPlan) {
+                labelEditorEl.value = label.label || '';
             } else {
-                const layer = Number.isFinite(label.layer) ? label.layer : 0;
-                const pos = Number.isFinite(label.pos) ? label.pos : 2;
-                labelEditorEl.value = getLayerRebarText(span, label.type, layer, pos);
+                const span = currentGroup.Spans[label.spanIndex];
+                if (label.type === 'Stirrup') {
+                    labelEditorEl.value = (span?.Stirrup?.[label.pos || 0] || '').toString();
+                } else if (label.type === 'WebBar') {
+                    labelEditorEl.value = (span?.WebBar?.[label.pos || 0] || '').toString();
+                } else if (label.type === 'SectionLabel') {
+                    labelEditorEl.value = (span?.xSectionLabel || '').toString();
+                } else {
+                    labelEditorEl.value = getLayerRebarText(span, label.type, label.layer || 0, label.pos || 2);
+                }
             }
+
             labelEditorEl.classList.remove('hidden');
             labelEditorEl.focus();
             labelEditorEl.select();
+        }
+
+        // Batch Operation: Set Name for multiple beams
+        window.batchSetSectionLabel = function () {
+            if (Beam.State.selectedHandles.size === 0) {
+                showToast('Vui lòng chọn dầm trên canvas trước!');
+                return;
+            }
+            const newName = prompt(`Nhập tên mới cho ${Beam.State.selectedHandles.size} dầm được chọn:`);
+            if (newName === null) return; // Cancelled
+
+            const handles = Array.from(Beam.State.selectedHandles);
+            let count = 0;
+
+            handles.forEach(h => {
+                const beam = data.allBeams.find(b => b.Handle === h);
+                if (beam) {
+                    beam.xSectionLabel = newName;
+                    beam.xSectionLabelLocked = true; // Auto-lock requested
+                    count++;
+                }
+            });
+
+            if (count > 0) {
+                // Batch update sync message
+                const msg = `UPDATE_SECTION_LABEL_BATCH|${newName}|1|${handles.join(',')}`;
+                window.chrome.webview.postMessage(msg);
+
+                showToast(`✓ Đã cập nhật ${count} dầm thành "${newName}" và khóa nhãn.`);
+
+                // Kích hoạt nạp lại dữ liệu để đồng bộ toàn hệ thống
+                setTimeout(() => {
+                    sendRefreshAllData();
+                }, 200);
+            }
+        };
+
+        // Batch Operation: Unlock multiple beams
+        window.batchUnlockSection = function () {
+            if (Beam.State.selectedHandles.size === 0) {
+                showToast('Vui lòng chọn dầm để mở khóa!');
+                return;
+            }
+            if (!confirm(`Mở khóa nhãn cho ${Beam.State.selectedHandles.size} dầm đang chọn?`)) return;
+
+            const handles = Array.from(Beam.State.selectedHandles);
+            let count = 0;
+
+            handles.forEach(h => {
+                const beam = data.allBeams.find(b => b.Handle === h);
+                if (beam) {
+                    beam.xSectionLabelLocked = false;
+                    count++;
+                }
+            });
+
+            if (count > 0) {
+                const msg = `UPDATE_SECTION_LABEL_BATCH||0|${handles.join(',')}`;
+                window.chrome.webview.postMessage(msg);
+
+                showToast(`✓ Đã mở khóa nhãn cho ${count} dầm.`);
+
+                setTimeout(() => {
+                    sendRefreshAllData();
+                }, 200);
+            }
+        };
+
+        function toggleSectionLockByHandle(handle, e) {
+            // Find beam in allBeams
+            const beam = data.allBeams.find(b => b.Handle === handle);
+            if (!beam) return;
+
+            // Toggle locked state
+            const currentState = !!beam.xSectionLabelLocked;
+            const newState = !currentState;
+            beam.xSectionLabelLocked = newState;
+
+            // Optional: Sync to current group span if it's the same handle
+            if (activeGroup && activeGroup.Spans) {
+                const spanIndex = activeGroup.Spans.findIndex(s => s.Segments && s.Segments[0].EntityHandle === handle);
+                if (spanIndex >= 0) {
+                    activeGroup.Spans[spanIndex].xSectionLabelLocked = newState;
+                }
+            }
+
+            // Send to C# to update AutoCAD XData
+            if (window.chrome?.webview) {
+                const label = beam.xSectionLabel || beam.SectionLabel || '';
+                window.chrome.webview.postMessage(`UPDATE_SECTION_LABEL|${handle}|${label}|${newState ? 1 : 0}`);
+            }
+
+            render();
+            showToast(newState ? `🔒 Đã khóa ${handle}` : `🔓 Đã mở khóa ${handle}`);
+
+            // Re-sync groups to be sure
+            syncAllGroupsFromPlanData();
+            updateElementsPanel(); // Update padlock in sidebar if visible
         }
 
         function commitInlineLabelEdit() {
@@ -1000,6 +1160,36 @@
                 return;
             }
             const nextVal = labelEditorEl.value;
+
+            // 1. Xử lý nhãn từ mặt bằng (Plan View)
+            if (activeLabelEdit.source === 'plan') {
+                const handle = activeLabelEdit.handle;
+                const beam = data.allBeams.find(b => b.Handle === handle);
+                if (beam) {
+                    const oldLabel = beam.xSectionLabel || beam.SectionLabel || '';
+                    if (nextVal !== oldLabel) {
+                        // Cập nhật dữ liệu tại chỗ (optimistic UI)
+                        beam.xSectionLabel = nextVal;
+                        beam.xSectionLabelLocked = true; // Luôn khóa khi sửa thủ công
+
+                        // Gửi xuống AutoCAD
+                        if (window.chrome?.webview) {
+                            window.chrome.webview.postMessage(`UPDATE_SECTION_LABEL|${handle}|${nextVal}|1`);
+                        }
+
+                        // Kích hoạt nạp lại dữ liệu để đồng bộ toàn hệ thống
+                        setTimeout(() => {
+                            sendRefreshAllData();
+                        }, 200);
+
+                        showToast(`✅ Đã cập nhật nhãn dầm ${handle} (Auto-locked)`);
+                    }
+                }
+                hideInlineLabelEditor();
+                return;
+            }
+
+            // 2. Xử lý nhãn từ Detail View (nguyên bản)
             if (activeLabelEdit.type === 'Stirrup') {
                 const idx = Number.isFinite(activeLabelEdit.pos) ? activeLabelEdit.pos : 0;
                 updateStirrup(activeLabelEdit.spanIndex, idx, nextVal);
@@ -2091,14 +2281,9 @@
 
 
             } else if (labelMode === 2) {
-                // === MODE 2: SECTION LABEL ===
-                ctx.save();
-                ctx.textAlign = 'center';
-                ctx.textBaseline = 'middle';
-                ctx.font = '10px sans-serif';
-
-                // Đếm số dầm thiếu label
-                let missingLabelCount = 0;
+                // Clean old bounds
+                planSectionLabelBounds = [];
+                planLockBounds = [];
 
                 beamsOnStory.forEach(b => {
                     const midX = (b.StartX + b.EndX) / 2;
@@ -2111,28 +2296,72 @@
                     const dy = b.EndY - b.StartY;
                     let angle = Math.atan2(dy, dx);
 
-                    // Chuẩn hóa góc để text không bị ngược (luôn đọc từ trái qua phải, dưới lên trên)
+                    // Chuẩn hóa góc để text không bị ngược
                     if (angle > Math.PI / 2) angle -= Math.PI;
                     else if (angle < -Math.PI / 2) angle += Math.PI;
 
                     ctx.save();
                     ctx.translate(screenX, screenY);
-                    ctx.rotate(-angle); // Canvas y-axis ngược, cẩn thận dấu
+                    ctx.rotate(-angle);
 
                     // FIX DỮ LIỆU: Ưu tiên xSectionLabel -> SectionLabel -> "-"
                     let label = b.xSectionLabel || b.SectionLabel;
                     if (!label || label.trim() === '') {
                         label = '-';
-                        missingLabelCount++;
                     }
 
-                    // Draw Text (Simple, clean, no box for sections to avoid clutter)
-                    // Stroke viền trắng cho dễ đọc trên nền grid
+                    // 1. Vẽ Nhãn (Text)
+                    const scaledFontSize = 10 * planLabelScale;
+                    ctx.font = `bold ${scaledFontSize}px sans-serif`;
+                    ctx.textAlign = 'center'; // FIX Alignment
+                    const textWidth = ctx.measureText(label).width;
+                    const labelW = Math.max(textWidth + 8, 24 * planLabelScale);
+                    const labelH = 14 * planLabelScale;
+                    const lx = -labelW / 2;
+                    const ly = -12 * planLabelScale; // Offset lên trên trục dầm
+
+                    // Lưu bounds (Screen-relative coordinates for hit testing)
+                    planSectionLabelBounds.push({
+                        handle: b.Handle,
+                        label: label,
+                        cx: screenX,
+                        cy: screenY,
+                        angle: angle,
+                        width: labelW,
+                        height: labelH,
+                        offsetX: 0,
+                        offsetY: -6 * planLabelScale
+                    });
+
+                    // Stroke viền trắng cho dễ đọc
                     ctx.strokeStyle = 'rgba(255,255,255,0.8)';
                     ctx.lineWidth = 3;
-                    ctx.strokeText(label, 0, -6); // Offset lên chút để nằm trên trục
+                    ctx.strokeText(label, 0, -6 * planLabelScale);
                     ctx.fillStyle = '#0f172a';
-                    ctx.fillText(label, 0, -6);
+                    ctx.fillText(label, 0, -6 * planLabelScale);
+
+                    // 2. Vẽ biểu tượng khóa (🔒/🔓)
+                    const isLocked = !!b.xSectionLabelLocked;
+                    const lockIcon = isLocked ? '🔒' : '🔓';
+                    const lockX = labelW / 2 + 8 * planLabelScale;
+                    const lockY = -6 * planLabelScale;
+
+                    ctx.font = `${10 * planLabelScale}px sans-serif`;
+                    ctx.fillText(lockIcon, lockX, lockY);
+
+                    planLockBounds.push({
+                        handle: b.Handle,
+                        isLocked: isLocked,
+                        cx: screenX,
+                        cy: screenY,
+                        angle: angle,
+                        width: 18 * planLabelScale, // Tăng diện tích bấm
+                        height: 18 * planLabelScale,
+                        offsetX: lockX,
+                        offsetY: lockY
+                    });
+
+                    ctx.restore();
 
                     ctx.restore();
                 });
@@ -2257,6 +2486,31 @@
             }
         }
 
+        // Helper to check if screen point is within a rotated rect
+        function isPointInRotatedRect(px, py, rect) {
+            // 1. Translate point relative to center
+            const dx = px - rect.cx;
+            const dy = py - rect.cy;
+
+            // 2. Rotate point by inverse angle
+            // render uses ctx.rotate(-angle), so to get back to local we rotate by angle
+            // But we need to be careful with the coordinate system (Y down)
+            const cos = Math.cos(rect.angle);
+            const sin = Math.sin(rect.angle);
+
+            // Point rotation formula for local space (inverse of -angle rotation):
+            const rx = dx * cos - dy * sin;
+            const ry = dx * sin + dy * cos;
+
+            // 3. Check bounds in local coordinate space
+            const left = rect.offsetX - rect.width / 2;
+            const right = rect.offsetX + rect.width / 2;
+            const top = rect.offsetY - rect.height / 2;
+            const bottom = rect.offsetY + rect.height / 2;
+
+            return rx >= left && rx <= right && ry >= top && ry <= bottom;
+        }
+
         function init() {
             // FIX: Gọi hàm khởi tạo resize ngay đầu tiên, bất chấp data có lỗi hay không
             // Vì Panel UI luôn tồn tại trong DOM
@@ -2312,20 +2566,36 @@
                     if (e.button !== 0 || mouseDownButton !== 0) return;
 
                     const rect = canvas.getBoundingClientRect();
+                    const mx = e.clientX - rect.left;
+                    const my = e.clientY - rect.top;
+
+                    // PRIORITY 1: Check Lock Icon hit (Toggle Lock) - MOVE TO FRONT
+                    if (canvasMode === 'plan' && labelMode === 2) {
+                        for (const lb of planLockBounds) {
+                            if (isPointInRotatedRect(mx, my, lb)) {
+                                toggleSectionLockByHandle(lb.handle, e);
+                                return; // Stop here!
+                            }
+                        }
+                    }
+
                     const x = (e.clientX - rect.left - canvasPanX) / canvasZoom;
                     const y = (e.clientY - rect.top - canvasPanY) / canvasZoom;
 
-                    // Label hit => edit
-                    for (let i = 0; i < rebarLabelBounds.length; i++) {
-                        const lb = rebarLabelBounds[i];
-                        if (x >= lb.x && x <= lb.x + lb.width && y >= lb.y && y <= lb.y + lb.height) {
-                            startInlineLabelEdit(lb);
-                            return;
+                    // Label hit => edit (Detail mode rebar labels)
+                    if (canvasMode !== 'plan') {
+                        for (let i = 0; i < rebarLabelBounds.length; i++) {
+                            const lb = rebarLabelBounds[i];
+                            if (x >= lb.x && x <= lb.x + lb.width && y >= lb.y && y <= lb.y + lb.height) {
+                                startInlineLabelEdit(lb);
+                                return;
+                            }
                         }
                     }
 
                     // Skip spanBounds click in Plan mode - Plan mode uses beam-level selection
                     if (canvasMode !== 'plan') {
+                        // ... existing spanBounds logic ...
                         for (let i = 0; i < spanBounds.length; i++) {
                             const b = spanBounds[i];
                             if (x >= b.x && x <= b.x + b.width && y >= b.y && y <= b.y + b.height) {
@@ -2377,26 +2647,22 @@
                         }
                     } // End of: if (canvasMode !== 'plan')
 
-                    // PLAN VIEW ONLY: Select beam on click  
-                    if (canvasMode === 'plan') {
-                        const clickedBeam = findBeamAtPoint(e.clientX - rect.left, e.clientY - rect.top);
-                        if (clickedBeam) {
-                            const groupIdx = findGroupByBeamHandle(clickedBeam.Handle);
-                            if (groupIdx >= 0) {
-                                if (groupIdx !== currentGroupIndex) {
-                                    // First click on DIFFERENT beam group → select group, highlight full beam
-                                    loadGroup(groupIdx); // loadGroup resets highlightedSpanIndex = -1
-                                    showToast(`Đã chọn: ${data.groups[groupIdx].GroupName || 'Group ' + (groupIdx + 1)}`);
-                                    // loadGroup already calls render functions
-                                } else {
-                                    // Second click on SAME group → find span at click position
-                                    const spanIdx = findSpanAtClickPosition(clickedBeam, e.clientX - rect.left, e.clientY - rect.top);
-                                    if (spanIdx >= 0 && spanIdx !== highlightedSpanIndex) {
-                                        highlightSpan(spanIdx); // This will sync sidebar
-                                    }
+                    const clickedBeam = findBeamAtPoint(mx, my);
+                    if (clickedBeam) {
+                        const groupIdx = findGroupByBeamHandle(clickedBeam.Handle);
+                        if (groupIdx >= 0) {
+                            if (groupIdx !== currentGroupIndex) {
+                                // First click on DIFFERENT beam group → select group, highlight full beam
+                                loadGroup(groupIdx); // loadGroup resets highlightedSpanIndex = -1
+                                showToast(`Đã chọn: ${data.groups[groupIdx].GroupName || 'Group ' + (groupIdx + 1)}`);
+                                // loadGroup already calls render functions
+                            } else {
+                                // Second click on SAME group → find span at click position
+                                const spanIdx = findSpanAtClickPosition(clickedBeam, mx, my);
+                                if (spanIdx >= 0 && spanIdx !== highlightedSpanIndex) {
+                                    highlightSpan(spanIdx); // This will sync sidebar
                                 }
                             }
-                            // DISABLED: showBeamProperties(clickedBeam) - per user request
                         }
                     }
                 });
@@ -2573,19 +2839,39 @@
                     render();
                 }, { passive: false });
 
-                // Double click: label edit ONLY (removed reset view - use button instead)
                 canvas.addEventListener('dblclick', (e) => {
+                    mouseDownButton = -1; // Reset to avoid interference
                     const rect = canvas.getBoundingClientRect();
-                    const x = (e.clientX - rect.left - canvasPanX) / canvasZoom;
-                    const y = (e.clientY - rect.top - canvasPanY) / canvasZoom;
-                    for (let i = 0; i < rebarLabelBounds.length; i++) {
-                        const lb = rebarLabelBounds[i];
-                        if (x >= lb.x && x <= lb.x + lb.width && y >= lb.y && y <= lb.y + lb.height) {
-                            startInlineLabelEdit(lb);
-                            return;
+                    const mx = e.clientX - rect.left;
+                    const my = e.clientY - rect.top;
+
+                    if (canvasMode === 'plan') {
+                        // PRIORITY 1: Edit Section Label (Plan View)
+                        if (labelMode === 2) {
+                            for (const lb of planSectionLabelBounds) {
+                                if (isPointInRotatedRect(mx, my, lb)) {
+                                    startInlineLabelEdit({
+                                        ...lb,
+                                        type: 'SectionLabel',
+                                        source: 'plan',
+                                        x: mx - lb.width / 2, // Center editor on click
+                                        y: my - lb.height / 2
+                                    });
+                                    return;
+                                }
+                            }
+                        }
+                    } else {
+                        const x = (e.clientX - rect.left - canvasPanX) / canvasZoom;
+                        const y = (e.clientY - rect.top - canvasPanY) / canvasZoom;
+                        for (let i = 0; i < rebarLabelBounds.length; i++) {
+                            const lb = rebarLabelBounds[i];
+                            if (x >= lb.x && x <= lb.x + lb.width && y >= lb.y && y <= lb.y + lb.height) {
+                                startInlineLabelEdit(lb);
+                                return;
+                            }
                         }
                     }
-                    // NO automatic reset - user must click Reset View button
                 });
 
                 console.log('Canvas interaction system initialized');
@@ -3947,12 +4233,20 @@
             const span = currentGroup?.Spans?.[spanIndex];
             if (!span) return;
 
+            // [FIX LOCK] Chặn chỉnh sửa nếu dầm đã chốt thiết kế
+            if (currentGroup.IsLocked) {
+                showToast('❌ Dầm đã chốt thiết kế, không thể sửa tên!', 'error');
+                return;
+            }
+
             const trimmed = newLabel.trim();
 
             // 1. Update Data Model (Detail View Source)
             span.xSectionLabel = trimmed || '';
-            // Logic: If user types something, auto-lock. If empty, unlock
-            span.xSectionLabelLocked = trimmed.length > 0;
+            // Logic: Tối ưu: Nếu có sửa nội dung thì auto-lock nhãn đó
+            if (trimmed.length > 0) {
+                span.xSectionLabelLocked = true;
+            }
 
             // 2. [CRITICAL] Sync to Plan View Data Source
             syncSpanToPlanData(span);
@@ -3960,8 +4254,9 @@
             // 3. Send to C# to write XData immediately
             const handle = span.Segments?.[0]?.EntityHandle;
             if (handle) {
+                const label = span.xSectionLabel || '';
                 const locked = span.xSectionLabelLocked ? '1' : '0';
-                window.chrome.webview?.postMessage(`UPDATE_SECTION_LABEL|${handle}|${trimmed}|${locked}`);
+                window.chrome.webview?.postMessage(`UPDATE_SECTION_LABEL|${handle}|${label}|${locked}`);
             }
 
             // 4. Force Re-render ALL Views to reflect changes
@@ -3994,6 +4289,12 @@
 
             const span = currentGroup?.Spans?.[spanIndex];
             if (!span) return;
+
+            // [FIX LOCK] Chặn toggle chốt nhãn nếu dầm đã chốt thiết kế chung
+            if (currentGroup.IsLocked) {
+                showToast('❌ Dầm đã chốt thiết kế!', 'error');
+                return;
+            }
 
             // 1. Update Data Model
             const wasLocked = span.xSectionLabelLocked === true;
@@ -4277,17 +4578,46 @@
         }
 
         function runAutoName() {
-            const handles = Array.from(Beam.State.selectedHandles);
+            const selectedHandles = Array.from(Beam.State.selectedHandles);
+            const z = Beam.State.currentStoryZ;
+            const Z_TOL = 500;
 
-            if (handles.length === 0) {
-                // Không có dầm được chọn -> Hỏi xác nhận
-                showCanvasConfirm('Đặt tên toàn bộ dầm trên mặt bằng hiện tại?',
-                    () => sendAutoNameCommand([]),
+            // Lấy danh sách dầm trên tầng hiện tại (All Beams source)
+            const allBeamsOnStory = (data.allBeams || []).filter(b =>
+                Math.abs((b.LevelZ || 0) - z) < Z_TOL);
+
+            if (selectedHandles.length === 0) {
+                // TRƯỜNG HỢP 1: Không có dầm được chọn -> Hỏi đặt tên toàn bộ (chỉ những dầm CHƯA KHÓA)
+                const unlockableHandles = allBeamsOnStory
+                    .filter(b => !b.xSectionLabelLocked)
+                    .map(b => b.Handle);
+
+                if (unlockableHandles.length === 0) {
+                    showToast('ℹ️ Toàn bộ dầm trên tầng này đã được chốt tên.');
+                    return;
+                }
+
+                showCanvasConfirm(`Đặt tên cho ${unlockableHandles.length} dầm chưa chốt trên tầng này?`,
+                    () => sendAutoNameCommand(unlockableHandles),
                     () => { }
                 );
             } else {
-                // Có dầm được chọn -> Thực hiện ngay
-                sendAutoNameCommand(handles);
+                // TRƯỜNG HỢP 2: Có dầm được chọn -> Chỉ đặt tên những dầm CHƯA KHÓA trong vùng chọn
+                const validHandles = allBeamsOnStory
+                    .filter(b => selectedHandles.includes(b.Handle) && !b.xSectionLabelLocked)
+                    .map(b => b.Handle);
+
+                if (validHandles.length === 0) {
+                    showToast('⚠️ Các dầm được chọn đều đã chốt tên!', 'warning');
+                    return;
+                }
+
+                if (validHandles.length < selectedHandles.length) {
+                    const lockedCount = selectedHandles.length - validHandles.length;
+                    showToast(`ℹ️ Đã bỏ qua ${lockedCount} dầm đã chốt tên`);
+                }
+
+                sendAutoNameCommand(validHandles);
             }
         }
 

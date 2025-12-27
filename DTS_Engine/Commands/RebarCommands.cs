@@ -1992,7 +1992,6 @@ namespace DTS_Engine.Commands
 
         /// <summary>
         /// [V6.0] Đặt lại tên dầm (xSectionLabel) dựa trên bố trí thép thực tế.
-        /// Gọi NamingEngine.AutoLabeling() để đặt tên theo rules trong DtsSettings.
         /// Workflow: GROUP (tên tạm) → CALCULATE → BEAM_NAME (tên chính thức)
         /// </summary>
         [CommandMethod("DTS_REBAR_BEAM_NAME")]
@@ -2003,210 +2002,165 @@ namespace DTS_Engine.Commands
                 WriteMessage("\n=== ĐẶT TÊN SECTION DẦM ===");
                 WriteMessage("Lệnh này đặt tên cho từng dầm dựa trên tiết diện + thép.");
 
-                var allBeams = new List<BeamData>();
-                var handleToBeam = new Dictionary<string, BeamData>(); // Track handles
-
                 UsingTransaction(tr =>
                 {
-                    var db = Autodesk.AutoCAD.ApplicationServices.Application.DocumentManager.MdiActiveDocument.Database;
                     var ed = Autodesk.AutoCAD.ApplicationServices.Application.DocumentManager.MdiActiveDocument.Editor;
+                    var db = Autodesk.AutoCAD.ApplicationServices.Application.DocumentManager.MdiActiveDocument.Database;
 
-                    // Yêu cầu user chọn entities
+                    // 1. Thu thập handles
                     WriteMessage("Chọn các dầm cần đặt tên (hoặc Enter để chọn tất cả):");
                     var selectionResult = ed.GetSelection();
-
-                    ObjectId[] selectedIds;
+                    var handles = new List<string>();
 
                     if (selectionResult.Status == Autodesk.AutoCAD.EditorInput.PromptStatus.OK)
                     {
-                        // User chọn entities
-                        selectedIds = selectionResult.Value.GetObjectIds();
-                        WriteMessage($"Đã chọn {selectedIds.Length} entities.");
+                        handles = selectionResult.Value.GetObjectIds().Select(id => id.Handle.ToString()).ToList();
                     }
                     else
                     {
-                        // Enter - quét tất cả entities có XData DTS_APP
                         WriteMessage("Quét tất cả entities có DTS_APP XData...");
                         var bt = (BlockTable)tr.GetObject(db.BlockTableId, OpenMode.ForRead);
                         var btr = (BlockTableRecord)tr.GetObject(bt[BlockTableRecord.ModelSpace], OpenMode.ForRead);
-
-                        var tempList = new List<ObjectId>();
                         foreach (ObjectId id in btr)
                         {
                             var ent = tr.GetObject(id, OpenMode.ForRead) as Entity;
-                            if (ent == null) continue;
-
-                            // Kiểm tra XData DTS_APP
-                            var xdata = ent.GetXDataForApplication("DTS_APP");
-                            if (xdata != null)
-                                tempList.Add(id);
+                            if (ent != null && XDataUtils.HasAppXData(ent))
+                                handles.Add(id.Handle.ToString());
                         }
-                        selectedIds = tempList.ToArray();
-                        WriteMessage($"Tìm thấy {selectedIds.Length} entities có DTS_APP.");
                     }
 
-                    if (selectedIds.Length == 0)
+                    if (handles.Count == 0)
                     {
-                        WriteMessage("Không có entities nào để xử lý.");
+                        WriteMessage("Không có dầm nào để xử lý.");
                         return;
                     }
 
-                    // Xử lý từng entity đã chọn
-                    int scannedCount = 0;
-                    foreach (var id in selectedIds)
+                    // 2. Gọi logic lõi
+                    var resultBeams = PerformAutoNamingCore(handles, tr);
+
+                    if (resultBeams != null && resultBeams.Count > 0)
                     {
-                        var ent = tr.GetObject(id, OpenMode.ForRead) as Entity;
-                        if (ent == null) continue;
+                        int lockedCount = resultBeams.Count(b => b.SectionLabelLocked);
+                        WriteSuccess($"✅ Đã đặt tên cho {resultBeams.Count} dầm ({lockedCount} locked).");
 
-                        scannedCount++;
-
-                        // Kiểm tra XData DTS_APP
-                        var xdata = ent.GetXDataForApplication("DTS_APP");
-                        if (xdata == null) continue;
-
-                        // Đọc XData
-                        var beamData = XDataUtils.ReadElementData(ent) as BeamData;
-                        if (beamData == null) continue;
-
-                        // 3. Đọc OptUser từ XData (dùng cho Signature)
-                        var optUserDict = XDataUtils.ReadOptUser(ent);
-                        if (optUserDict != null && optUserDict.TopL0 != null)
+                        // 3. Hiển thị kết quả chi tiết theo tầng (ngắn gọn)
+                        var byStory = resultBeams.GroupBy(b => b.StoryName ?? "Unknown").OrderBy(g => g.Key);
+                        foreach (var storyGroup in byStory)
                         {
-                            // Format OptUser string (Skin không có trong RebarOptionData)
-                            beamData.OptUser = $"T:{optUserDict.TopL0};B:{optUserDict.BotL0};S:{optUserDict.Stirrup};W:";
-                        }
-
-                        // 4. Đọc geometry từ Entity (cho Direction và Sort)
-                        if (ent is Autodesk.AutoCAD.DatabaseServices.Line line)
-                        {
-                            beamData.StartPoint = new[] { line.StartPoint.X, line.StartPoint.Y, line.StartPoint.Z };
-                            beamData.EndPoint = new[] { line.EndPoint.X, line.EndPoint.Y, line.EndPoint.Z };
-                            beamData.CenterX = (line.StartPoint.X + line.EndPoint.X) / 2.0;
-                            beamData.CenterY = (line.StartPoint.Y + line.EndPoint.Y) / 2.0;
-                        }
-                        else if (ent is Autodesk.AutoCAD.DatabaseServices.Polyline pline && pline.NumberOfVertices >= 2)
-                        {
-                            var pt0 = pline.GetPoint3dAt(0);
-                            var pt1 = pline.GetPoint3dAt(pline.NumberOfVertices - 1);
-                            beamData.StartPoint = new[] { pt0.X, pt0.Y, pt0.Z };
-                            beamData.EndPoint = new[] { pt1.X, pt1.Y, pt1.Z };
-                            beamData.CenterX = (pt0.X + pt1.X) / 2.0;
-                            beamData.CenterY = (pt0.Y + pt1.Y) / 2.0;
-                        }
-
-                        // 5. Validation: Phải có Support data
-                        // (Nếu không có, đây là dầm chưa phân tích topology)
-                        if (!beamData.BaseZ.HasValue)
-                        {
-                            WriteMessage($"⚠ Dầm {ent.Handle} thiếu BaseZ - skip.");
-                            continue;
-                        }
-
-                        // Track handle for later update
-                        string handle = ent.Handle.ToString();
-                        handleToBeam[handle] = beamData;
-                        allBeams.Add(beamData);
-                    }
-
-                    WriteMessage($"Đã quét {scannedCount} entities, tìm thấy {allBeams.Count} dầm hợp lệ.");
-
-                    if (allBeams.Count == 0)
-                    {
-                        WriteMessage("Không tìm thấy dầm nào để đặt tên.");
-                        return;
-                    }
-
-                    // 4. Validation: Kiểm tra StoryConfig
-                    var settings = DtsSettings.Instance;
-                    if (settings.StoryConfigs == null || settings.StoryConfigs.Count == 0)
-                    {
-                        WriteMessage("❌ LỖI: Chưa có cấu hình StoryNamingConfig trong DtsSettings.");
-                        WriteMessage("Vui lòng mở Rebar Config để thêm cấu hình tầng.");
-                        return;
-                    }
-
-                    // 5. Gọi NamingEngine.AutoLabelBeams()
-                    WriteMessage("Đang đặt tên cho các dầm...");
-                    Core.Algorithms.NamingEngine.AutoLabelBeams(allBeams, settings);
-
-                    // 6. Cập nhật xSectionLabel vào XData
-                    int updatedCount = 0;
-                    int lockedCount = 0;
-
-                    foreach (var kvp in handleToBeam)
-                    {
-                        var handle = kvp.Key;
-                        var beam = kvp.Value;
-                        if (string.IsNullOrEmpty(beam.SectionLabel)) continue;
-
-                        var objId = AcadUtils.GetObjectIdFromHandle(handle);
-                        if (objId.IsNull) continue;
-
-                        var obj = tr.GetObject(objId, OpenMode.ForWrite);
-                        XDataUtils.UpdateElementData(obj, beam, tr);
-
-                        updatedCount++;
-                        if (beam.SectionLabelLocked) lockedCount++;
-                    }
-
-                    WriteSuccess($"✅ Đã đặt tên cho {updatedCount} dầm ({lockedCount} locked).");
-
-                    // 7. Hiển thị settings trước
-                    WriteMessage("\n=== CẤU HÌNH ĐẶT TÊN ===");
-                    WriteMessage($"Sort Corner: {settings.Naming.SortCorner} (0=TL, 1=TR, 2=BL, 3=BR)");
-                    WriteMessage($"Sort Direction: {settings.Naming.SortDirection} (0=X first, 1=Y first)");
-                    WriteMessage($"Merge Same Section: {settings.Naming.MergeSameSection}");
-
-                    // 8. Hiển thị kết quả chi tiết theo tầng
-                    WriteMessage("\n=== KẾT QUẢ ĐẶT TÊN CHI TIẾT ===");
-                    var byStory = allBeams.GroupBy(b => b.StoryName ?? "Unknown").OrderBy(g => g.Key);
-
-                    foreach (var storyGroup in byStory)
-                    {
-                        WriteMessage($"\n{storyGroup.Key}:");
-
-                        // Group by SectionLabel để hiển thị từng nhóm
-                        var labelGroups = storyGroup.GroupBy(b => b.SectionLabel).OrderBy(g => g.Key);
-
-                        foreach (var labelGroup in labelGroups)
-                        {
-                            var sectionLabel = labelGroup.Key;
-                            var beamsInGroup = labelGroup.ToList();
-                            var count = beamsInGroup.Count;
-
-                            // Lấy signature từ beam đầu tiên
-                            var firstBeam = beamsInGroup.First();
-                            string signature = firstBeam.OptUser ?? "";
-                            if (firstBeam.Width.HasValue && firstBeam.Depth.HasValue)
+                            WriteMessage($"\n{storyGroup.Key}:");
+                            var labelGroups = storyGroup.GroupBy(b => b.SectionLabel).OrderBy(g => g.Key);
+                            foreach (var labelGroup in labelGroups)
                             {
-                                signature = $"{(int)firstBeam.Width.Value}x{(int)firstBeam.Depth.Value}|{signature}";
-                            }
-
-                            // Check lock status
-                            int lockedInGroup = beamsInGroup.Count(b => b.SectionLabelLocked);
-                            int unlockedInGroup = count - lockedInGroup;
-
-                            if (lockedInGroup > 0 && unlockedInGroup > 0)
-                            {
-                                // Mixed locked/unlocked
-                                WriteMessage($"  {sectionLabel}: {lockedInGroup} dầm - {signature} - LOCKED");
-                                WriteMessage($"    => Tìm thấy {unlockedInGroup} dầm cùng thông số, đã gộp với {sectionLabel}");
-                            }
-                            else if (lockedInGroup > 0)
-                            {
-                                // All locked
-                                WriteMessage($"  {sectionLabel}: {count} dầm - {signature} - LOCKED - Skipped");
-                                WriteMessage($"    => Tên đã được khóa, không thay đổi");
-                            }
-                            else
-                            {
-                                // All unlocked
-                                WriteMessage($"  {sectionLabel}: {count} dầm - {signature} - Unlocked");
+                                WriteMessage($"  {labelGroup.Key}: {labelGroup.Count()} dầm");
                             }
                         }
+                    }
+                    else
+                    {
+                        WriteMessage("Không có dầm nào được cập nhật.");
                     }
                 });
             });
+        }
+
+        /// <summary>
+        /// Logic lõi đặt tên dầm (Section Label). 
+        /// Dùng chung cho cả lệnh CAD và Viewer để đảm bảo tính nhất quán.
+        /// </summary>
+        public static List<BeamData> PerformAutoNamingCore(IEnumerable<string> handles, Transaction tr)
+        {
+            if (handles == null) return null;
+
+            var db = Autodesk.AutoCAD.ApplicationServices.Application.DocumentManager.MdiActiveDocument.Database;
+            var targetHandles = new HashSet<string>(handles, StringComparer.OrdinalIgnoreCase);
+            var requestedBeams = new List<BeamData>();
+            var relatedStoriesZ = new HashSet<double>();
+
+            // 1. Phân tích các dầm được yêu cầu để tìm các tầng liên quan
+            foreach (var handle in targetHandles)
+            {
+                try
+                {
+                    var objId = AcadUtils.GetObjectIdFromHandle(handle);
+                    if (objId.IsNull) continue;
+
+                    var ent = tr.GetObject(objId, OpenMode.ForRead) as Entity;
+                    if (ent == null || !XDataUtils.HasAppXData(ent)) continue;
+
+                    var beamData = XDataUtils.ReadElementData(ent) as BeamData;
+                    if (beamData == null) continue;
+
+                    if (beamData.BaseZ.HasValue)
+                    {
+                        relatedStoriesZ.Add(beamData.BaseZ.Value);
+                        requestedBeams.Add(beamData);
+                    }
+                }
+                catch { }
+            }
+
+            if (requestedBeams.Count == 0) return requestedBeams;
+
+            // 2. Quét TOÀN BỘ dầm trên các tầng liên quan để làm Context cho Engine
+            // Điều này cực kỳ quan trọng để Engine thấy các dầm đã khóa (vd: "3333333")
+            var allBeamsInContext = new List<BeamData>();
+            var handleToBeamMap = new Dictionary<string, BeamData>(StringComparer.OrdinalIgnoreCase);
+
+            var bt = (BlockTable)tr.GetObject(db.BlockTableId, OpenMode.ForRead);
+            var btr = (BlockTableRecord)tr.GetObject(bt[BlockTableRecord.ModelSpace], OpenMode.ForRead);
+
+            foreach (ObjectId id in btr)
+            {
+                var ent = tr.GetObject(id, OpenMode.ForRead) as Entity;
+                if (ent == null || !XDataUtils.HasAppXData(ent)) continue;
+
+                var beamData = XDataUtils.ReadElementData(ent) as BeamData;
+                if (beamData == null || !beamData.BaseZ.HasValue) continue;
+
+                // Kiểm tra xem dầm này có thuộc các tầng đang xét không
+                bool IsSameStory = relatedStoriesZ.Any(z => System.Math.Abs(z - beamData.BaseZ.Value) < 500);
+                if (!IsSameStory) continue;
+
+                // Đọc thêm thông tin cần thiết cho Naming Engine (OptUser, Geometry)
+                var optUserDict = XDataUtils.ReadOptUser(ent);
+                if (optUserDict != null && optUserDict.TopL0 != null)
+                {
+                    beamData.OptUser = $"T:{optUserDict.TopL0};B:{optUserDict.BotL0};S:{optUserDict.Stirrup};W:";
+                }
+
+                if (ent is Autodesk.AutoCAD.DatabaseServices.Curve curve)
+                {
+                    beamData.StartPoint = new[] { curve.StartPoint.X, curve.StartPoint.Y, curve.StartPoint.Z };
+                    beamData.EndPoint = new[] { curve.EndPoint.X, curve.EndPoint.Y, curve.EndPoint.Z };
+                    beamData.CenterX = (curve.StartPoint.X + curve.EndPoint.X) / 2.0;
+                    beamData.CenterY = (curve.StartPoint.Y + curve.EndPoint.Y) / 2.0;
+                }
+
+                allBeamsInContext.Add(beamData);
+                handleToBeamMap[ent.Handle.ToString()] = beamData;
+            }
+
+            // 3. Gọi Engine đặt tên với ĐẦY ĐỦ CONTEXT
+            var settings = DtsSettings.Instance;
+            Core.Algorithms.NamingEngine.AutoLabelBeams(allBeamsInContext, settings);
+
+            // 4. Chỉ ghi kết quả XData cho những dầm nằm trong danh sách yêu cầu ban đầu
+            int updateCount = 0;
+            foreach (var targetHandle in targetHandles)
+            {
+                if (handleToBeamMap.TryGetValue(targetHandle, out var beam))
+                {
+                    if (string.IsNullOrEmpty(beam.SectionLabel)) continue;
+
+                    var objId = AcadUtils.GetObjectIdFromHandle(targetHandle);
+                    var obj = tr.GetObject(objId, OpenMode.ForWrite);
+                    XDataUtils.UpdateElementData(obj, beam, tr);
+                    updateCount++;
+                }
+            }
+
+            // Trả về danh sách các dầm ĐÃ ĐƯỢC UPDATE để hiển thị thông báo
+            return allBeamsInContext.Where(b => targetHandles.Contains(b.Handle)).ToList();
         }
 
         #endregion

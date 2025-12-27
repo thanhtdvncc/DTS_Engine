@@ -78,6 +78,7 @@ namespace DTS_Engine.Core.Utils
 
             // Đọc dữ liệu vào instance
             element.FromDictionary(dict);
+            element.Handle = obj.Handle.ToString();
             return element;
         }
 
