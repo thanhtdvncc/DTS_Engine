@@ -14,6 +14,7 @@ namespace DTS_Engine.UI.Forms
     {
         private WebView2 webView;
         private string _jsonReportData;
+        private DTS_Engine.UI.Controls.DrawingSettingsControl _drawingSettingsControl;
 
         public CalculationReportDialog(string jsonReportData)
         {
@@ -25,8 +26,15 @@ namespace DTS_Engine.UI.Forms
         private void InitializeComponent()
         {
             this.webView = new Microsoft.Web.WebView2.WinForms.WebView2();
+            this._drawingSettingsControl = new DTS_Engine.UI.Controls.DrawingSettingsControl();
+
+            var tabControl = new TabControl();
+            var tabReport = new TabPage("Thuyết minh (HTML)");
+            var tabDrawing = new TabPage("Cấu hình Bản vẽ");
+
             ((System.ComponentModel.ISupportInitialize)(this.webView)).BeginInit();
             this.SuspendLayout();
+
             // 
             // webView
             // 
@@ -39,19 +47,39 @@ namespace DTS_Engine.UI.Forms
             this.webView.Size = new System.Drawing.Size(683, 721);
             this.webView.TabIndex = 0;
             this.webView.ZoomFactor = 1D;
+
+            //
+            // drawingSettings
+            //
+            this._drawingSettingsControl.Dock = DockStyle.Fill;
+
+            //
+            // tabs
+            //
+            tabControl.Dock = DockStyle.Fill;
+            tabReport.Controls.Add(this.webView);
+            tabDrawing.Controls.Add(this._drawingSettingsControl);
+            tabControl.TabPages.Add(tabReport);
+            tabControl.TabPages.Add(tabDrawing);
+
             // 
             // CalculationReportDialog
             // 
             this.AutoScaleDimensions = new System.Drawing.SizeF(6F, 13F);
             this.AutoScaleMode = System.Windows.Forms.AutoScaleMode.Font;
-            this.ClientSize = new System.Drawing.Size(683, 721);
-            this.Controls.Add(this.webView);
+            this.ClientSize = new System.Drawing.Size(800, 800); // Tăng kích thước mặc định
+            this.Controls.Add(tabControl);
             this.Name = "CalculationReportDialog";
             this.StartPosition = System.Windows.Forms.FormStartPosition.CenterScreen;
             this.Text = "Thuyết Minh Tính Toán Chi Tiết Thép Dầm - DTS Engine";
             ((System.ComponentModel.ISupportInitialize)(this.webView)).EndInit();
             this.ResumeLayout(false);
 
+            this.FormClosing += (s, e) =>
+            {
+                _drawingSettingsControl.SaveSettings();
+                DtsSettings.Instance.Save(); // Đảm bảo lưu xuống file JSON
+            };
         }
 
         private async void CalculationReportDialog_Load(object sender, EventArgs e)

@@ -22,40 +22,35 @@ namespace DTS_Engine.Core.Utils
             {
                 foreach (var span in group.Spans)
                 {
-                    string secName = span.xSectionLabel;
-                    if (string.IsNullOrEmpty(secName))
-                    {
-                        secName = $"{span.Width}x{span.Height}";
-                    }
-
-                    // GROUP BY SECTION: Gom tất cả các nhịp cùng tiết diện vào một nhóm để hiện Span Tabs
-                    string key = secName;
+                    // [FIX] Gom toàn bộ dầm vào một nhóm duy nhất để hiện danh sách tab tập trung
+                    string key = "ALL_SECTIONS";
 
                     if (!sectionMap.ContainsKey(key))
                     {
                         sectionMap[key] = new ReportGroupData
                         {
-                            GroupName = secName, // Tên tiết diện làm Header nhóm
-                            SectionName = secName,
+                            GroupName = "Thuyết minh tính toán",
+                            SectionName = "Toàn bộ dầm",
                             ProjectName = projectName,
                             Spans = new List<ReportSpanData>()
                         };
                     }
 
-                    var reportSpan = ConvertSpanToReportData(span);
+                    var reportSpan = ConvertSpanToReportData(span, group.GroupName);
                     sectionMap[key].Spans.Add(reportSpan);
                 }
             }
 
-            var sortedGroups = sectionMap.Values.OrderBy(g => g.GroupName).ToList();
+            var sortedGroups = sectionMap.Values.ToList();
             return JsonConvert.SerializeObject(sortedGroups, Formatting.Indented);
         }
 
-        private static ReportSpanData ConvertSpanToReportData(SpanData span)
+        private static ReportSpanData ConvertSpanToReportData(SpanData span, string beamName)
         {
             var reportSpan = new ReportSpanData
             {
-                SpanId = span.SpanId,
+                // [FIX] Hiển thị tên dầm kèm số hiệu nhịp trong Tab
+                SpanId = string.IsNullOrEmpty(beamName) ? span.SpanId : $"{beamName} - {span.SpanId}",
                 Section = $"{span.Width}x{span.Height}",
                 Length = Math.Round(span.Length * 1000).ToString(), // mm
                 Material = "B25 / CB400"

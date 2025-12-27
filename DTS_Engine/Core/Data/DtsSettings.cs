@@ -59,6 +59,7 @@ namespace DTS_Engine.Core.Data
         /// Dựa trên bảng tra tiêu chuẩn theo số thanh thép thực tế
         /// </summary>
         public StirrupConfig Stirrup { get; set; } = new StirrupConfig();
+        public DrawingSettings Drawing { get; set; } = new DrawingSettings();
 
 
         // ===== MULTI-STORY NAMING SYSTEM =====

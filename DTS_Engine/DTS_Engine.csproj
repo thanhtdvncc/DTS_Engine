@@ -276,6 +276,17 @@
       <SubType>UserControl</SubType>
     </Compile>
     <Compile Include="UI\SettingsManager.cs" />
+    <Compile Include="Core\Data\DrawingSettings.cs" />
+    <Compile Include="Drawing\Models\SectionDrawingModels.cs" />
+    <Compile Include="Drawing\Models\TableLayoutConfig.cs" />
+    <Compile Include="Drawing\Utils\RebarPrimitiveUtils.cs" />
+    <Compile Include="Drawing\Renderers\RebarLayoutSolver.cs" />
+    <Compile Include="Drawing\Renderers\SectionGeometryRenderer.cs" />
+    <Compile Include="Drawing\Renderers\BeamBlockRenderer.cs" />
+    <Compile Include="Drawing\SectionDataExtractor.cs" />
+    <Compile Include="Drawing\BeamScheduleOrchestrator.cs" />
+    <Compile Include="Commands\SectionDrawingCommands.cs" />
+    <Compile Include="UI\Controls\DrawingSettingsControl.cs" />
   </ItemGroup>
   <ItemGroup>
     <None Include="app.config" />
