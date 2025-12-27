@@ -435,6 +435,9 @@ namespace DTS_Engine.Core.Algorithms.Rebar.V4
                 int addonInLayer = layerBars - backboneInLayer;
                 if (addonInLayer > 0)
                 {
+                    // RULE: Min 2 bars per addon layer
+                    if (addonInLayer == 1) addonInLayer = 2;
+
                     result.Add(addonInLayer);
                     remaining -= addonInLayer;
                 }

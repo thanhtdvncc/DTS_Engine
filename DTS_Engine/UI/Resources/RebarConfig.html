@@ -2590,7 +2590,7 @@
                 const tbodyAddon = document.getElementById('tbodyStirrupAddon');
                 if (tbodyAddon) {
                     tbodyAddon.innerHTML = '';
-                    const rules = stirrup.RulesWithAddon || [];
+                    const rules = (stirrup.RulesWithAddon && stirrup.RulesWithAddon.length > 0) ? stirrup.RulesWithAddon : generateDefaultAddonRules();
                     rules.forEach(r => {
                         const tr = document.createElement('tr');
                         tr.innerHTML = `
@@ -2608,7 +2608,7 @@
                 const tbodyBackbone = document.getElementById('tbodyStirrupBackbone');
                 if (tbodyBackbone) {
                     tbodyBackbone.innerHTML = '';
-                    const rules = stirrup.RulesBackboneOnly || [];
+                    const rules = (stirrup.RulesBackboneOnly && stirrup.RulesBackboneOnly.length > 0) ? stirrup.RulesBackboneOnly : generateDefaultBackboneRules();
                     rules.forEach(r => {
                         const tr = document.createElement('tr');
                         tr.innerHTML = `
@@ -2698,7 +2698,7 @@
                 const tbodyRect = document.getElementById('tbodyColStirrupRect');
                 if (tbodyRect) {
                     tbodyRect.innerHTML = '';
-                    const rules = colStirrup.RectangularRules || generateDefaultColRectRules();
+                    const rules = (colStirrup.RectangularRules && colStirrup.RectangularRules.length > 0) ? colStirrup.RectangularRules : generateDefaultColRectRules();
                     rules.forEach(r => {
                         const tr = document.createElement('tr');
                         tr.innerHTML = `
@@ -2716,7 +2716,7 @@
                 const tbodyCirc = document.getElementById('tbodyColStirrupCirc');
                 if (tbodyCirc) {
                     tbodyCirc.innerHTML = '';
-                    const rules = colStirrup.CircularRules || generateDefaultColCircRules();
+                    const rules = (colStirrup.CircularRules && colStirrup.CircularRules.length > 0) ? colStirrup.CircularRules : generateDefaultColCircRules();
                     rules.forEach(r => {
                         const tr = document.createElement('tr');
                         tr.innerHTML = `

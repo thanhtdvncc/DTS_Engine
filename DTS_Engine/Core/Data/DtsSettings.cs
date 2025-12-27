@@ -384,21 +384,25 @@ namespace DTS_Engine.Core.Data
         /// <summary>
         /// Danh sách bước đai khả dụng (VD: 100, 150, 200)
         /// </summary>
+        [JsonProperty(ObjectCreationHandling = ObjectCreationHandling.Replace)]
         public List<int> StirrupSpacings { get; set; } = new List<int> { 100, 150, 200, 250 };
 
         /// <summary>
         /// Bước đai vùng gối (L1, L2)
         /// </summary>
+        [JsonProperty(ObjectCreationHandling = ObjectCreationHandling.Replace)]
         public List<int> StirrupSpacings_Support { get; set; } = new List<int> { 100, 150 };
 
         /// <summary>
         /// Bước đai vùng bụng (Mid)
         /// </summary>
+        [JsonProperty(ObjectCreationHandling = ObjectCreationHandling.Replace)]
         public List<int> StirrupSpacings_Span { get; set; } = new List<int> { 150, 200 };
 
         /// <summary>
         /// Bước đai dầm hẫng (Console)
         /// </summary>
+        [JsonProperty(ObjectCreationHandling = ObjectCreationHandling.Replace)]
         public List<int> StirrupSpacings_Cantilever { get; set; } = new List<int> { 100, 150 };
 
         /// <summary>
@@ -831,14 +835,12 @@ namespace DTS_Engine.Core.Data
         [JsonProperty(ObjectCreationHandling = ObjectCreationHandling.Replace)]
         public List<string> SteelGrades { get; set; } = new List<string> { "CB300", "CB400" };
 
-        // ===== BẢNG TRA CHIỀU DÀI NEO (Development Length) =====
-        /// <summary>
-        /// Key: "ConcreteGrade_SteelGrade", SubKey: Diameter, Value: Factor or Length
-        /// </summary>
+        [JsonProperty(ObjectCreationHandling = ObjectCreationHandling.Replace)]
         public Dictionary<string, Dictionary<int, double>> AnchorageValues { get; set; }
             = new Dictionary<string, Dictionary<int, double>>();
 
         // ===== BẢNG TRA CHIỀU DÀI NỐI (Lap Splice Length) =====
+        [JsonProperty(ObjectCreationHandling = ObjectCreationHandling.Replace)]
         public Dictionary<string, Dictionary<int, double>> SpliceValues { get; set; }
             = new Dictionary<string, Dictionary<int, double>>();
 
@@ -846,6 +848,7 @@ namespace DTS_Engine.Core.Data
         /// <summary>
         /// Key: "ConcreteGrade_HookAngle", SubKey: Diameter, Value: Length (mm)
         /// </summary>
+        [JsonProperty(ObjectCreationHandling = ObjectCreationHandling.Replace)]
         public Dictionary<string, Dictionary<int, double>> HookValues { get; set; }
             = new Dictionary<string, Dictionary<int, double>>();
 

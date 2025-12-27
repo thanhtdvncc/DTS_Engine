@@ -491,6 +491,14 @@ namespace DTS_Engine.Core.Algorithms.Rebar.V4
 
                         // Use layer breakdown from arrangement
                         var addonDetails = nativeMatch.GetAddon(backboneCount, backboneDiameter);
+                        var layerCounts = addonDetails.layerBreakdown;
+
+                        // CRITICAL SYNC: Ensure layer breakdown sum matches the (possibly bumped) addonCount
+                        if (layerCounts != null && layerCounts.Count > 0 && layerCounts.Sum() < addonCount)
+                        {
+                            int diff = addonCount - layerCounts.Sum();
+                            layerCounts[0] += diff; // Add difference to the first addon layer (usually Layer 1)
+                        }
 
                         return new SectionResolution
                         {
@@ -501,7 +509,7 @@ namespace DTS_Engine.Core.Algorithms.Rebar.V4
                             {
                                 Count = addonCount,
                                 Diameter = backboneDiameter,
-                                LayerCounts = addonDetails.layerBreakdown
+                                LayerCounts = layerCounts
                             }
                         };
                     }
