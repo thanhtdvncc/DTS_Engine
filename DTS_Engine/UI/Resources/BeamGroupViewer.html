@@ -519,6 +519,79 @@
         // ============ BEAM NAMESPACE ============
         window.Beam = window.Beam || {};
 
+        // Single Source of Truth and Observation
+        Beam.Data = {
+            _groups: [],
+            _allBeams: [],
+            _settings: {},
+            _observers: [],
+
+            loadFromBackend(raw) {
+                this._groups = raw.groups || [];
+                this._allBeams = raw.allBeams || [];
+                this._allGrids = raw.allGrids || [];
+                this._allColumns = raw.allColumns || [];
+                this._settings = raw.settings || {};
+                this.notify({ type: 'INIT' });
+            },
+
+            getGroups() { return this._groups; },
+            getGroup(index) { return this._groups[index]; },
+            getAllBeams() { return this._allBeams; },
+            getAllGrids() { return this._allGrids; },
+            getAllColumns() { return this._allColumns; },
+            getSettings() { return this._settings; },
+
+            updateGroup(index, props) {
+                if (index >= 0 && index < this._groups.length) {
+                    Object.assign(this._groups[index], props);
+                    this.notify({ type: 'GROUP_UPDATED', index });
+                }
+            },
+
+            refreshBeams(newAllBeams) {
+                this._allBeams = newAllBeams;
+
+                // Sync labels back to groups to ensure Detail Canvas/Sidebar stay updated
+                this._groups.forEach((group, gIdx) => {
+                    let groupChanged = false;
+                    if (group.Spans) {
+                        group.Spans.forEach(span => {
+                            const handle = span.Segments?.[0]?.EntityHandle;
+                            if (handle) {
+                                const beam = this._allBeams.find(b => b.Handle === handle);
+                                if (beam) {
+                                    if (span.xSectionLabel !== beam.xSectionLabel || span.xSectionLabelLocked !== beam.xSectionLabelLocked) {
+                                        span.xSectionLabel = beam.xSectionLabel;
+                                        span.xSectionLabelLocked = beam.xSectionLabelLocked;
+                                        groupChanged = true;
+                                    }
+                                }
+                            }
+                        });
+                    }
+                    if (groupChanged) {
+                        this.notify({ type: 'GROUP_UPDATED', index: gIdx });
+                    }
+                });
+
+                this.notify({ type: 'BULK_REFRESH' });
+            },
+
+            subscribe(callback) {
+                this._observers.push(callback);
+            },
+
+            notify(event) {
+                this._observers.forEach(cb => {
+                    try { cb(event); } catch (e) { console.error('Observer error:', e); }
+                });
+            }
+        };
+
+        // Initialize Beam.Data
+        Beam.Data.loadFromBackend(data);
+
         // State management
         Beam.State = {
             currentGroupIndex: 0,
@@ -604,16 +677,17 @@
 
             // Take snapshot of current group rebar state
             snapshot() {
-                if (!currentGroup) return null;
+                const group = Beam.State.currentGroup;
+                if (!group) return null;
                 return JSON.stringify({
-                    spans: currentGroup.Spans?.map(s => ({
+                    spans: group.Spans?.map(s => ({
                         SpanId: s.SpanId,
                         TopRebar: s.TopRebar,
                         BotRebar: s.BotRebar,
                         Stirrup: s.Stirrup,
                         WebBar: s.WebBar
                     })),
-                    selectedBackbone: currentGroup.SelectedBackboneIndex
+                    selectedBackbone: group.SelectedBackboneIndex
                 });
             },
 
@@ -687,16 +761,18 @@
         function toggleLock() {
             if (!currentGroup) return;
 
-            currentGroup.IsLocked = !currentGroup.IsLocked;
+            const newLockState = !currentGroup.IsLocked;
+
+            // Single Source Update
+            Beam.Data.updateGroup(Beam.State.currentGroupIndex, { IsLocked: newLockState });
 
             // Notify C#
-            if (currentGroup.IsLocked) {
-                window.chrome.webview?.postMessage('LOCK_DESIGN|' + currentGroupIndex);
+            if (newLockState) {
+                window.chrome.webview?.postMessage('LOCK_DESIGN|' + Beam.State.currentGroupIndex);
             } else {
-                window.chrome.webview?.postMessage('UNLOCK_DESIGN|' + currentGroupIndex);
+                window.chrome.webview?.postMessage('UNLOCK_DESIGN|' + Beam.State.currentGroupIndex);
             }
-
-            updateLockStatus();
+            // updateLockStatus() will be called by observer
         }
 
         function updateLockStatus() {
@@ -813,8 +889,7 @@
                 });
                 autoLockOnEdit();
                 showToast(`✓ Cốt chủ ${type} đã cập nhật toàn bộ nhịp: ${value}`);
-                maybeRenderTable();
-                renderCanvas();
+                Beam.Data.updateGroup(Beam.State.currentGroupIndex, { Spans: currentGroup.Spans });
                 return;
             }
 
@@ -839,9 +914,10 @@
                         s[arr][layer][pos] = value;
                     }
                 }
-                maybeRenderTable();
             }
-            renderCanvas();
+
+            // Single Source Update
+            Beam.Data.updateGroup(Beam.State.currentGroupIndex, { Spans: currentGroup.Spans });
         }
 
         function updateStirrup(spanIndex, pos, value) {
@@ -849,8 +925,7 @@
             if (!span.Stirrup) span.Stirrup = [];
             span.Stirrup[pos] = value;
             autoLockOnEdit();
-            maybeRenderTable();
-            renderCanvas();
+            Beam.Data.updateGroup(Beam.State.currentGroupIndex, { Spans: currentGroup.Spans });
         }
 
         function updateWebBar(spanIndex, pos, value) {
@@ -858,8 +933,7 @@
             if (!span.WebBar) span.WebBar = [];
             span.WebBar[pos] = value;
             autoLockOnEdit();
-            maybeRenderTable();
-            renderCanvas();
+            Beam.Data.updateGroup(Beam.State.currentGroupIndex, { Spans: currentGroup.Spans });
         }
 
         function startInlineLabelEdit(label) {
@@ -1239,9 +1313,9 @@
         function showCalculationReport(spanIndex = -1) {
             if (window.chrome?.webview) {
                 const payload = {
-                    GroupIndex: currentGroupIndex,
+                    GroupIndex: Beam.State.currentGroupIndex,
                     SpanIndex: spanIndex,
-                    Groups: data.groups
+                    Groups: Beam.Data.getGroups()
                 };
                 window.chrome.webview.postMessage('SHOW_REPORT|' + JSON.stringify(payload));
             } else {
@@ -1427,7 +1501,8 @@
             // Reuse existing long rebar label drawing code
             const labelXs = [x + w * 0.20, x + w * 0.50, x + w * 0.80];
             const labelPos = [0, 2, 4];
-            const maxLayers = data.settings?.MaxLayers || 2;
+            const settings = Beam.Data.getSettings();
+            const maxLayers = settings?.MaxLayers || 2;
 
             const topBaseY = beamY + 12;
             const botBaseY = beamY + BEAM_HEIGHT - 12;
@@ -1567,7 +1642,7 @@
             select.innerHTML = '';
 
             // Extract unique Z levels from allBeams (independent from groups)
-            const allBeams = data.allBeams || [];
+            const allBeams = Beam.Data.getAllBeams() || [];
             const allZLevels = new Set();
 
             // Fix: Round Z to nearest 10mm to avoid float precision issues creating duplicate stories
@@ -1638,8 +1713,9 @@
         function getGroupsOnCurrentStory() {
             const z = Beam.State.currentStoryZ;
             const Z_TOL = 500;
-            if (!data.groups) return [];
-            return data.groups
+            const groups = Beam.Data.getGroups();
+            if (!groups) return [];
+            return groups
                 .map((g, i) => ({ ...g, originalIndex: i }))
                 .filter(g => Math.abs((g.LevelZ || 0) - z) < Z_TOL);
         }
@@ -1648,9 +1724,8 @@
             const canvas = document.getElementById('beamCanvas');
             const ctx = canvas.getContext('2d');
 
-            // CRITICAL: Plan View reads from data.allBeams, NOT data.groups
-            // This ensures independence from grouping logic
-            const allBeams = data.allBeams || [];
+            // CRITICAL: Single Source of Truth from Beam.Data
+            const allBeams = Beam.Data.getAllBeams();
 
             if (allBeams.length === 0) {
                 ctx.fillStyle = '#f8fafc';
@@ -1699,7 +1774,9 @@
             });
 
             // FIX: Move grid filtering up before bounds calculation
-            const gridsOnStory = (data.allGrids || []).filter(grid => {
+            const allGrids = Beam.Data.getAllGrids();
+            const gridsOnStory = (allGrids || []).filter(grid => {
+                const levelZ = grid.LevelZ != null ? grid.LevelZ : 0;
                 const gridLevelZ = grid.LevelZ || grid.Z || 0;
                 return Math.abs(gridLevelZ - z) < Z_TOLERANCE;
             });
@@ -1864,7 +1941,9 @@
 
             // Draw columns from AutoCAD layer (dts_point) 
             // FIX: Use same Z_TOLERANCE (500mm) as beam filtering for consistency
-            const columnsOnStory = (data.allColumns || []).filter(col => {
+            const allColumns = Beam.Data.getAllColumns();
+            const columnsOnStory = (allColumns || []).filter(col => {
+                const levelZ = col.LevelZ != null ? col.LevelZ : 0;
                 const colZ = col.Z || 0;
                 return Math.abs(colZ - z) < Z_TOLERANCE;  // Use same tolerance as beams
             });
@@ -1976,14 +2055,15 @@
 
             // ================== LABEL RENDERING (3 modes) ==================
             // Label Mode 1: GROUP NAME (1 nhãn duy nhất per group, đặt trên dầm giữa)
-            if (labelMode === 1 && data.groups) {
+            const groups = Beam.Data.getGroups();
+            if (labelMode === 1 && groups) {
                 ctx.save();
                 ctx.font = 'bold 10px sans-serif';
                 ctx.textAlign = 'center';
                 ctx.textBaseline = 'middle';
 
                 // Lọc groups trên tầng hiện tại
-                const groupsOnStory = data.groups.filter(g => Math.abs((g.LevelZ || 0) - z) < Z_TOLERANCE);
+                const groupsOnStory = groups.filter(g => Math.abs((g.LevelZ || 0) - z) < Z_TOLERANCE);
 
                 groupsOnStory.forEach(group => {
                     if (!group.EntityHandles || group.EntityHandles.length === 0) return;
@@ -2124,8 +2204,15 @@
         }
 
         function autoLockOnEdit() {
-            // Block edits when locked
+            // Block edits when locked by UI
             if (Beam.History.isLocked) return false;
+
+            // Auto-lock design in Data Store if not already locked
+            if (currentGroup && !currentGroup.IsLocked) {
+                Beam.Data.updateGroup(Beam.State.currentGroupIndex, { IsLocked: true });
+                window.chrome.webview?.postMessage('LOCK_DESIGN|' + Beam.State.currentGroupIndex);
+                showToast('🔒 Đã tự động khóa thiết kế (Manual Edit)');
+            }
 
             // Push to history stack BEFORE change
             Beam.History.push();
@@ -2222,15 +2309,16 @@
             }
 
             // Sync material grades from DtsSettings to read-only display
-            if (data.settings) {
+            const settings = Beam.Data.getSettings();
+            if (settings) {
                 const concreteDisp = document.getElementById('concreteDisplay');
                 const steelDisp = document.getElementById('steelDisplay');
-                if (concreteDisp && data.settings.ConcreteGradeName) {
-                    concreteDisp.textContent = data.settings.ConcreteGradeName;
+                if (concreteDisp && settings.ConcreteGradeName) {
+                    concreteDisp.textContent = settings.ConcreteGradeName;
                 }
-                if (steelDisp && data.settings.SteelGradeName) {
+                if (steelDisp && settings.SteelGradeName) {
                     // Map CB400-V to CB400, etc.
-                    const grade = data.settings.SteelGradeName.replace('-V', '');
+                    const grade = settings.SteelGradeName.replace('-V', '');
                     steelDisp.textContent = grade;
                 }
             }
@@ -2324,10 +2412,10 @@
                         if (clickedBeam) {
                             const groupIdx = findGroupByBeamHandle(clickedBeam.Handle);
                             if (groupIdx >= 0) {
-                                if (groupIdx !== currentGroupIndex) {
+                                if (groupIdx !== Beam.State.currentGroupIndex) {
                                     // First click on DIFFERENT beam group → select group, highlight full beam
                                     loadGroup(groupIdx); // loadGroup resets highlightedSpanIndex = -1
-                                    showToast(`Đã chọn: ${data.groups[groupIdx].GroupName || 'Group ' + (groupIdx + 1)}`);
+                                    showToast(`Đã chọn: ${Beam.Data.getGroup(groupIdx).GroupName || 'Group ' + (groupIdx + 1)}`);
                                     // loadGroup already calls render functions
                                 } else {
                                     // Second click on SAME group → find span at click position
@@ -2468,7 +2556,8 @@
                                     // Shift+Click: Toggle cả group
                                     const groupIdx = findGroupByBeamHandle(beam.Handle);
                                     if (groupIdx >= 0) {
-                                        const handles = data.groups[groupIdx].EntityHandles || [];
+                                        const group = Beam.Data.getGroup(groupIdx);
+                                        const handles = group.EntityHandles || [];
                                         const allSelected = handles.every(h => Beam.State.isHandleSelected(h));
                                         if (allSelected) {
                                             Beam.State.removeHandlesFromSelection(handles);
@@ -2718,7 +2807,8 @@
             }
 
             // Handle view mode: 'groups' vs 'single'
-            if (data.mode === 'single' || !data.groups || data.groups.length === 0) {
+            const groups = Beam.Data.getGroups();
+            if (data.mode === 'single' || !groups || groups.length === 0) {
                 // Single beam mode - show message in canvas
                 const canvas = document.getElementById('beamCanvas');
                 const ctx = canvas.getContext('2d');
@@ -2740,8 +2830,8 @@
                 return;
             }
             // FIX: Auto-set story from first group's LevelZ (elements selected from AutoCAD)
-            if (data.groups && data.groups.length > 0) {
-                const firstGroupZ = data.groups[0].LevelZ || 0;
+            if (groups && groups.length > 0) {
+                const firstGroupZ = groups[0].LevelZ || 0;
                 // Round to match story grouping tolerance
                 const roundedZ = Math.round(firstGroupZ / 500) * 500;
                 Beam.State.currentStoryZ = roundedZ;
@@ -2755,7 +2845,7 @@
             populateStoryDropdown();
 
             populateGroupSelect();
-            if (data.groups && data.groups.length > 0) {
+            if (groups && groups.length > 0) {
                 loadGroup(0);
             }
             // NOTE: initDetailPanelResize() is now called at the beginning of init()
@@ -2769,7 +2859,6 @@
                     if (msg.startsWith('NAMING_DONE|')) {
                         const count = parseInt(msg.split('|')[1]) || 0;
                         showToast(`✅ Đã đặt tên ${count} dầm`);
-                        // Refresh ALL plan data to update sections panel and plan labels
                         sendRefreshPlanData();
                     }
 
@@ -2779,6 +2868,34 @@
                     }
                 });
             }
+
+            // Subscribe to data changes
+            Beam.Data.subscribe(event => {
+                // Sync State reference if the current group was updated
+                const isCurrent = (event.index === Beam.State.currentGroupIndex || event.index === undefined);
+                if (event.type === 'BULK_REFRESH' || (event.type === 'GROUP_UPDATED' && isCurrent)) {
+                    Beam.State.currentGroup = Beam.Data.getGroup(Beam.State.currentGroupIndex);
+                    currentGroup = Beam.State.currentGroup; // Alias
+                }
+
+                if (event.type === 'BULK_REFRESH' || event.type === 'GROUP_UPDATED') {
+                    updateElementsPanel(); // Sidebar
+                    render();              // Main Canvas (Plan View)
+                }
+
+                if ((event.type === 'BULK_REFRESH' || event.type === 'GROUP_UPDATED') && isCurrent) {
+                    // Update Detail panel for the current group
+                    renderDetailCanvas();
+                    maybeRenderTable();
+                    updateLockStatus();
+                    updateGroupInfo();
+                    updateMetrics();
+                }
+
+                if (event.type === 'BULK_REFRESH') {
+                    showToast('✅ Đã cập nhật dữ liệu', 1000);
+                }
+            });
         }
 
         function sendRefreshPlanData() {
@@ -2789,22 +2906,22 @@
 
         window.onUpdateAllBeams = function (allBeams) {
             if (!allBeams) return;
-            data.allBeams = allBeams;
-            updateElementsPanel(); // Refresh Sections Panel
-            render(); // Refresh Canvas
+            console.log('🔄 All beams data updated from backend');
+            Beam.Data.refreshBeams(allBeams);
         };
 
         function populateGroupSelect() {
             const sel = document.getElementById('groupSelect');
             sel.innerHTML = '';
-            if (!data.groups) return;
+            const groups = Beam.Data.getGroups();
+            if (!groups) return;
 
             // FIX: Filter groups by current story Z (Plan View mode)
             const z = Beam.State.currentStoryZ;
             const Z_TOL = 500;
 
             // FIX 1: Sort groups - Girder first, then Beam, alphabetically within each type
-            const groupsWithIndex = data.groups.map((g, i) => ({ ...g, originalIndex: i }));
+            const groupsWithIndex = groups.map((g, i) => ({ ...g, originalIndex: i }));
             const filteredGroups = groupsWithIndex.filter(g => {
                 const groupZ = g.LevelZ || 0;
                 return z == null || Math.abs(groupZ - z) < Z_TOL;
@@ -2825,7 +2942,7 @@
 
             filteredGroups.forEach((g) => {
                 const opt = document.createElement('option');
-                opt.value = g.originalIndex;  // Original index in data.groups
+                opt.value = g.originalIndex;  // Original index in Beam.Data.getGroups()
                 opt.textContent = `${g.GroupName || 'Group ' + (g.originalIndex + 1)} (${g.Spans?.length || 0} nhịp)`;
                 sel.appendChild(opt);
             });
@@ -2837,9 +2954,15 @@
         }
 
         function loadGroup(index) {
-            currentGroupIndex = parseInt(index);
-            currentGroup = data.groups[currentGroupIndex];
-            document.getElementById('groupSelect').value = currentGroupIndex;
+            const group = Beam.Data.getGroup(index);
+            if (!group) return;
+
+            Beam.State.currentGroupIndex = parseInt(index);
+            Beam.State.currentGroup = group;
+            currentGroup = group; // Alias
+            currentGroupIndex = Beam.State.currentGroupIndex; // Alias
+
+            document.getElementById('groupSelect').value = Beam.State.currentGroupIndex;
 
             // Reset span highlight to full beam when switching groups
             highlightedSpanIndex = -1;
@@ -3046,8 +3169,9 @@
                 }
             }
 
-            // Check deficit with safety factor (Single Source: data.settings.SafetyFactor)
-            const safetyFactor = data.settings?.SafetyFactor || 1.0;
+            // Check deficit with safety factor (Single Source: settings.SafetyFactor)
+            const settings = Beam.Data.getSettings();
+            const safetyFactor = settings?.SafetyFactor || 1.0;
             const isDeficit = asReq > 0 && asProv < asReq * safetyFactor;
 
             // Format display
@@ -3126,7 +3250,10 @@
         }
 
         function prevGroup() { if (currentGroupIndex > 0) loadGroup(currentGroupIndex - 1); }
-        function nextGroup() { if (currentGroupIndex < data.groups.length - 1) loadGroup(currentGroupIndex + 1); }
+        function nextGroup() {
+            const groups = Beam.Data.getGroups();
+            if (Beam.State.currentGroupIndex < groups.length - 1) loadGroup(Beam.State.currentGroupIndex + 1);
+        }
 
         function populateOptionSelect() {
             const sel = document.getElementById('optionSelect');
@@ -3250,40 +3377,21 @@
             // Send message to C# to run rebar calculation
             window.chrome.webview?.postMessage('QUICK_CALC|' + currentGroupIndex);
         }
-
         // Called from C# after Quick Calc finished
-        function onGroupUpdated(groupIndex, groupJson) {
+        window.onGroupUpdated = function (groupIndex, groupJson) {
             try {
                 const updated = (typeof groupJson === 'string') ? JSON.parse(groupJson) : groupJson;
-                if (!data.groups || groupIndex < 0 || groupIndex >= data.groups.length) return;
-                data.groups[groupIndex] = updated;
+                const groups = Beam.Data.getGroups();
+                if (!groups || groupIndex < 0 || groupIndex >= groups.length) return;
 
-                // DEBUG: Inspect Received Data
-                console.log(`[onGroupUpdated] Received Group ${groupIndex}`, updated);
-                if (updated.Spans) {
-                    updated.Spans.forEach((s, i) => {
-                        console.log(`Span[${i}] ID=${s.SpanId} As_Top=${JSON.stringify(s.As_Top)}`);
-                    });
-                }
+                // Single Source Update (triggers observers)
+                Beam.Data.updateGroup(groupIndex, updated);
 
-                if (currentGroupIndex === groupIndex) {
-                    currentGroup = updated;
-                    selectedOptionKey = String(currentGroup?.SelectedBackboneIndex || 0);
-                    populateOptionSelect();
-                    updateLockStatus();
-                    updateGroupInfo();
-                    updateMetrics();
-                    renderCanvas();
-                    renderTable();
-
-                    // Reinitialize history for updated group
-                    Beam.History.clear();
-                    Beam.History.push();
-                }
+                console.log(`[onGroupUpdated] Successfully updated Group ${groupIndex}`);
             } catch (e) {
-                console.log('onGroupUpdated error', e);
+                console.error('[onGroupUpdated] Failed', e);
             }
-        }
+        };
 
         // NOTE: lockDesign, unlockDesign, toggleLock, restoreLockedDesign, updateLockStatus 
         // are now defined in the Beam.History section at the top of the script
@@ -3414,7 +3522,8 @@
 
                 if (canvasMode === 'long') {
                     // Editable long rebar labels: backbone (layer 0) + reinforcement layers (1..MaxLayers-1)
-                    const maxLayers = data.settings?.MaxLayers || 2;
+                    const settings = Beam.Data.getSettings();
+                    const maxLayers = settings?.MaxLayers || 2;
 
                     // Backbone label rows (inside beam)
                     const topBaseY = beamY + 12;
@@ -3662,7 +3771,8 @@
             if (!currentGroup?.Spans) return;
 
             // V3.4.2: Get MaxLayers from settings
-            const maxLayers = data.settings?.MaxLayers || 2;
+            const settings = Beam.Data.getSettings();
+            const maxLayers = settings?.MaxLayers || 2;
 
             currentGroup.Spans.forEach((span, spanIdx) => {
                 // Create n rows for each span (n = maxLayers)
@@ -3758,7 +3868,8 @@
                 const asReq = Array.isArray(reqArr) ? (Number(reqArr[reqIdx]) || 0) : 0;
 
                 // V3.4.1 FIX: Only highlight if cell has value AND is deficit
-                const safetyFactor = data.settings?.General?.SteelTolerance || 0.98;
+                const settings = Beam.Data.getSettings();
+                const safetyFactor = settings?.General?.SteelTolerance || 0.98;
                 const asProv = parseRebarArea(val);
                 const hasValue = val.trim() !== '';
                 const isUnder = hasValue && asReq > 0 && asProv < asReq * safetyFactor;
@@ -3844,20 +3955,6 @@
 
         // [FIX AUDIT] Helper function to enforce Single Source of Truth
         // Syncs span data from currentGroup (Detail View) to allBeams (Plan View)
-        function syncSpanToPlanData(span) {
-            if (!span || !span.Segments || !data.allBeams) return;
-
-            const spanHandles = span.Segments.map(s => s.EntityHandle);
-
-            // Find matching beams in the Plan View data source and update them
-            data.allBeams.forEach(b => {
-                if (spanHandles.includes(b.Handle)) {
-                    // [FIX ISSUE 1] Use only xSectionLabel - removed legacy SectionLabel fallback
-                    b.xSectionLabel = span.xSectionLabel;
-                    b.xSectionLabelLocked = span.xSectionLabelLocked;
-                }
-            });
-        }
 
         // [FIX AUDIT] Completely rewritten to sync all UI components and XData
         // Update section label (xSectionLabel) and auto-lock + send to C#
@@ -3866,29 +3963,18 @@
             if (!span) return;
 
             const trimmed = newLabel.trim();
-
-            // 1. Update Data Model (Detail View Source)
             span.xSectionLabel = trimmed || '';
             // Logic: If user types something, auto-lock. If empty, unlock
             span.xSectionLabelLocked = trimmed.length > 0;
 
-            // 2. [CRITICAL] Sync to Plan View Data Source
-            syncSpanToPlanData(span);
+            // Single Source Update (triggers observers)
+            Beam.Data.updateGroup(Beam.State.currentGroupIndex, { Spans: currentGroup.Spans });
 
             // 3. Send to C# to write XData immediately
             const handle = span.Segments?.[0]?.EntityHandle;
             if (handle) {
                 const locked = span.xSectionLabelLocked ? '1' : '0';
                 window.chrome.webview?.postMessage(`UPDATE_SECTION_LABEL|${handle}|${trimmed}|${locked}`);
-            }
-
-            // 4. Force Re-render ALL Views to reflect changes
-            renderDetailCanvas(); // Update Detail Panel
-            renderPlanView();     // Update Plan View (Canvas)
-
-            // Update Table if visible
-            if (!tablePanelCollapsed) {
-                renderTable();
             }
         }
 
@@ -3911,8 +3997,6 @@
             });
         }
 
-        // [FIX AUDIT] Rewritten to ensure Toggle updates visuals everywhere
-        // Toggle section label lock state (click on lock/unlock icon)
         function toggleSectionLock(spanIndex, event) {
             event?.stopPropagation();
 
@@ -3923,8 +4007,8 @@
             const wasLocked = span.xSectionLabelLocked === true;
             span.xSectionLabelLocked = !wasLocked;
 
-            // 2. [CRITICAL] Sync to Plan View Data Source
-            syncSpanToPlanData(span);
+            // 2. Notify Data Store (triggers auto-sync and observers)
+            Beam.Data.updateGroup(Beam.State.currentGroupIndex, { Spans: currentGroup.Spans });
 
             // 3. Send to C#
             const handle = span.Segments?.[0]?.EntityHandle;
@@ -3933,11 +4017,6 @@
                 const locked = span.xSectionLabelLocked ? '1' : '0';
                 window.chrome.webview?.postMessage(`UPDATE_SECTION_LABEL|${handle}|${label}|${locked}`);
             }
-
-            // 4. Force Re-render ALL Views
-            renderDetailCanvas();
-            renderPlanView();
-            if (!tablePanelCollapsed) renderTable();
         }
 
         function selectNoneSpans() {
@@ -4070,10 +4149,11 @@
 
         // FIX 3: Helper to find beam at screen coordinates
         function findBeamAtPoint(screenX, screenY) {
-            if (!data.allBeams) return null;
+            const allBeams = Beam.Data.getAllBeams();
+            if (!allBeams) return null;
             const z = Beam.State.currentStoryZ;
             const Z_TOL = 500;
-            const beamsOnStory = data.allBeams.filter(b => Math.abs((b.LevelZ || 0) - z) < Z_TOL);
+            const beamsOnStory = allBeams.filter(b => Math.abs((b.LevelZ || 0) - z) < Z_TOL);
             if (beamsOnStory.length === 0) return null;
 
             // Use SHARED transform state
@@ -4109,7 +4189,8 @@
         function performBoxSelection(left, right, top, bottom, isWindow) {
             const z = Beam.State.currentStoryZ;
             const Z_TOL = 500;
-            const beamsOnStory = (data.allBeams || []).filter(b =>
+            const allBeams = Beam.Data.getAllBeams();
+            const beamsOnStory = (allBeams || []).filter(b =>
                 Math.abs((b.LevelZ || 0) - z) < Z_TOL);
 
             if (beamsOnStory.length === 0) return;
@@ -4144,9 +4225,10 @@
 
         // FIX 3: Find group containing beam by handle
         function findGroupByBeamHandle(handle) {
-            if (!data.groups || !handle) return -1;
-            for (let i = 0; i < data.groups.length; i++) {
-                if (data.groups[i].EntityHandles?.includes(handle)) return i;
+            const groups = Beam.Data.getGroups();
+            if (!groups || !handle) return -1;
+            for (let i = 0; i < groups.length; i++) {
+                if (groups[i].EntityHandles?.includes(handle)) return i;
             }
             return -1;
         }
@@ -4164,7 +4246,8 @@
             // Find which span entity was clicked
             const groupHandles = currentGroup.EntityHandles || [];
             for (let spanIdx = 0; spanIdx < groupHandles.length; spanIdx++) {
-                const beam = data.allBeams.find(b => b.Handle === groupHandles[spanIdx]);
+                const allBeams = Beam.Data.getAllBeams();
+                const beam = allBeams.find(b => b.Handle === groupHandles[spanIdx]);
                 if (!beam) continue;
 
                 // Transform beam coords to screen
@@ -4239,7 +4322,8 @@
             const Z_TOL = 500;
 
             // Lọc dầm trên tầng hiện tại
-            const beamsOnStory = (data.allBeams || []).filter(b =>
+            const allBeams = Beam.Data.getAllBeams();
+            const beamsOnStory = (allBeams || []).filter(b =>
                 Math.abs((b.LevelZ || 0) - z) < Z_TOL);
 
             // Tạo map: sectionLabel -> [handles]
@@ -4297,7 +4381,8 @@
             const Z_TOL = 500;
 
             // Tìm tất cả dầm có cùng section label trên tầng hiện tại
-            const beamsOnStory = (data.allBeams || []).filter(b =>
+            const allBeams = Beam.Data.getAllBeams();
+            const beamsOnStory = (allBeams || []).filter(b =>
                 Math.abs((b.LevelZ || 0) - z) < Z_TOL);
 
             const handles = beamsOnStory
@@ -4569,7 +4654,17 @@
         function doExport() { window.chrome.webview.postMessage('EXPORT'); }
         function doImport() { window.chrome.webview.postMessage('IMPORT'); }
         function doCancel() { window.chrome.webview.postMessage('CANCEL'); }
-        function applyToDrawing() { window.chrome.webview.postMessage('APPLY|' + JSON.stringify(data)); }
+        function applyToDrawing() {
+            const finalData = {
+                mode: data.mode || 'groups',
+                groups: Beam.Data.getGroups(),
+                allBeams: Beam.Data.getAllBeams(),
+                allGrids: Beam.Data.getAllGrids(),
+                allColumns: Beam.Data.getAllColumns(),
+                settings: Beam.Data.getSettings()
+            };
+            window.chrome.webview.postMessage('APPLY|' + JSON.stringify(finalData));
+        }
 
         // [NEW] Pull latest data from CAD XData
         function pullDataFromCad() {
@@ -4578,11 +4673,12 @@
                 return;
             }
 
-            // Show waiting message (toast is disabled but log for debugging)
+            // Show waiting message
             console.log('⏳ Pulling latest data from CAD XData...');
+            showToast('⏳ Đang làm mới dữ liệu...');
 
-            // Send message PULL_DATA with current group index
-            window.chrome.webview.postMessage('PULL_DATA|' + currentGroupIndex);
+            // CRITICAL FIX: Refresh ALL Beam.Data._allBeams, not just one group
+            sendRefreshPlanData();
         }
 
         // ============ TOAST & CANVAS CONFIRM ============
